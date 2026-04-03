@@ -9,6 +9,7 @@ const { MatrixRain } = require('./effects/matrix');
 const { GlitchEffect, FloatingText } = require('./effects/glitch');
 const { ProjectileManager } = require('./effects/projectile');
 const { createRNG } = require('./rng');
+const { getSprite } = require('./sprites');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -17,6 +18,14 @@ const INTRO_DURATION_MS = 5_000;
 const OUTRO_DURATION_MS = 6_000;
 
 async function renderBattle(fighterA, fighterB, events) {
+  // Safety net: ensure both fighters have working sprites
+  // (functions don't survive JSON serialization over the relay)
+  for (const f of [fighterA, fighterB]) {
+    if (!f.sprite || typeof f.sprite.back?.draw !== 'function') {
+      f.sprite = f.specs ? getSprite(f.specs) : getSprite({ gpu: { model: '', vramMB: 0, vendor: '' }, cpu: { brand: '' }, storage: { type: 'SSD' } });
+    }
+  }
+
   const screen = new Screen();
   const rng = createRNG(99);
   const matrix = new MatrixRain(screen.width, screen.height, rng);
