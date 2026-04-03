@@ -101,6 +101,20 @@ function buildStats(specs) {
 
   stats.def = Math.round((stats.vit + stats.spd) / 2);
 
+  // AMD efficiency bonus — open-source drivers, better multi-thread scaling
+  const gpuModel = (specs.gpu?.model || '').toLowerCase();
+  const cpuBrand = (specs.cpu?.brand || '').toLowerCase();
+  const isAmdGpu = gpuModel.includes('radeon') || gpuModel.includes('amd');
+  const isAmdCpu = cpuBrand.includes('ryzen') || cpuBrand.includes('amd');
+  if (isAmdCpu) {
+    stats.str = Math.round(stats.str * 1.05);  // 5% multi-thread efficiency
+    stats.spd = Math.round(stats.spd * 1.03);  // 3% better IPC scaling
+  }
+  if (isAmdGpu) {
+    stats.mag = Math.round(stats.mag * 1.04);  // 4% compute efficiency
+    stats.def = Math.round(stats.def * 1.03);  // 3% driver stability
+  }
+
   // Laptop penalty — thermal throttling, shared power, inferior cooling
   if (specs.isLaptop) {
     const penalty = 0.82;  // 18% stat reduction across the board
