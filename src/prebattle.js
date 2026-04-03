@@ -6,6 +6,8 @@
 const { colors, RESET, rgb } = require('./palette');
 const { getOwnedItems, RARITY_COLORS } = require('./items');
 const { getAvailableMoves, getEquippedMoves, saveLoadout, MOVE_POOL } = require('./moveset');
+const { SIGNATURE_COLOR, SIGNATURE_ACCENT, SIGNATURE_ICON } = require('./signature');
+const { registerSignatureAnims } = require('./effects/projectile');
 
 const CAT_COLORS = {
   physical: colors.peach,
@@ -15,9 +17,11 @@ const CAT_COLORS = {
 };
 
 // ─── Main pre-battle menu ───
-// Returns the final equipped moves array
+// Returns the final equipped moves array (always 4)
 async function preBattleLobby(myFighter, opponent, screen) {
-  let equippedMoves = getEquippedMoves(myFighter.stats);
+  let equippedMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
+  // Register signature move animations if any are equipped
+  registerSignatureAnims(equippedMoves.filter(m => m.signature));
 
   const result = await mainMenu(myFighter, opponent, equippedMoves, screen);
   return result;
@@ -61,12 +65,19 @@ function mainMenu(myFighter, opponent, equippedMoves, screen) {
       // Divider
       screen.hline(2, cardY + 5, w - 4, '─', colors.dimmer);
 
-      // Equipped moves preview
+      // Equipped moves preview (4 moves — signature ones get special styling)
       screen.text(leftX, cardY + 6, 'EQUIPPED MOVES:', colors.dim);
       equippedMoves.forEach((m, i) => {
-        const catColor = CAT_COLORS[m.cat] || colors.dim;
-        screen.text(leftX + 2, cardY + 7 + i, `${i + 1}. ${m.label}`, colors.white);
-        screen.text(leftX + 26, cardY + 7 + i, m.cat, catColor);
+        const y = cardY + 7 + i;
+        if (m.signature) {
+          screen.text(leftX + 2, y, SIGNATURE_ICON, SIGNATURE_COLOR, null, true);
+          screen.text(leftX + 4, y, m.label, SIGNATURE_COLOR, null, true);
+          screen.text(leftX + 26, y, 'SIGNATURE', SIGNATURE_ACCENT);
+        } else {
+          const catColor = CAT_COLORS[m.cat] || colors.dim;
+          screen.text(leftX + 2, y, `${i + 1}. ${m.label}`, colors.white);
+          screen.text(leftX + 26, y, m.cat, catColor);
+        }
       });
 
       // Bag count
@@ -110,6 +121,8 @@ function mainMenu(myFighter, opponent, equippedMoves, screen) {
           cleanup();
           pickLoadout(myFighter, screen).then((newMoves) => {
             equippedMoves = newMoves;
+            // Register anims if sig moves were equipped
+            registerSignatureAnims(equippedMoves.filter(m => m.signature));
             // Re-enter main menu
             stdin.setRawMode(true);
             stdin.resume();
@@ -143,11 +156,18 @@ function mainMenu(myFighter, opponent, equippedMoves, screen) {
 }
 
 // ─── Loadout picker — toggle moves on/off, exactly 4 ───
+// Includes signature moves at the top of the pool with special styling
 function pickLoadout(fighter, screen) {
   return new Promise((resolve) => {
-    const available = getAvailableMoves(fighter.stats);
-    const currentEquipped = getEquippedMoves(fighter.stats);
+    // Full pool: signature moves first, then regular moves
+    const available = getAvailableMoves(fighter.stats, fighter.specs, fighter.archetype);
+    const currentEquipped = getEquippedMoves(fighter.stats, fighter.specs, fighter.archetype);
     const selected = new Set(currentEquipped.map(m => m.name));
+    // Build a lookup for signature moves so we can resolve them on confirm
+    const sigLookup = {};
+    for (const m of available) {
+      if (m.signature) sigLookup[m.name] = m;
+    }
     let cursor = 0;
     const pageSize = screen.height - 8;
 
@@ -173,23 +193,46 @@ function pickLoadout(fighter, screen) {
         const y = 3 + (i - startIdx);
         const isCursor = i === cursor;
         const isSelected = selected.has(m.name);
-        const catColor = CAT_COLORS[m.cat] || colors.dim;
-        const marker = isSelected ? '★' : '·';
-        const markerColor = isSelected ? colors.gold : colors.dimmer;
 
-        if (isCursor) {
-          screen.text(3, y, '▸', colors.white, null, true);
-          screen.text(5, y, marker, markerColor, null, true);
-          screen.text(7, y, m.label.padEnd(22), colors.white, null, true);
-          screen.text(30, y, m.cat.padEnd(10), catColor, null, true);
-          screen.text(41, y, m.desc.slice(0, 20), catColor);
-          // Show flavor on the right
-          screen.text(63, y, `${m.base.toUpperCase()} x${m.mult}`, colors.dim);
+        if (m.signature) {
+          // Signature moves: gold/amber styling with lightning icon
+          const marker = isSelected ? '★' : '·';
+          const markerColor = isSelected ? SIGNATURE_COLOR : colors.dimmer;
+
+          if (isCursor) {
+            screen.text(3, y, '▸', SIGNATURE_COLOR, null, true);
+            screen.text(5, y, marker, markerColor, null, true);
+            screen.text(7, y, SIGNATURE_ICON, SIGNATURE_COLOR, null, true);
+            screen.text(9, y, m.label.padEnd(20), SIGNATURE_COLOR, null, true);
+            screen.text(30, y, 'SIGNATURE'.padEnd(10), SIGNATURE_ACCENT, null, true);
+            screen.text(41, y, m.desc.slice(0, 20), SIGNATURE_ACCENT);
+            screen.text(63, y, `${m.base.toUpperCase()} x${m.mult}`, SIGNATURE_ACCENT);
+          } else {
+            screen.text(5, y, marker, markerColor);
+            screen.text(7, y, SIGNATURE_ICON, isSelected ? SIGNATURE_COLOR : SIGNATURE_ACCENT);
+            screen.text(9, y, m.label.padEnd(20), isSelected ? SIGNATURE_COLOR : SIGNATURE_ACCENT);
+            screen.text(30, y, 'SIGNATURE'.padEnd(10), isSelected ? SIGNATURE_ACCENT : colors.dimmer);
+            screen.text(41, y, m.desc.slice(0, 20), colors.dimmer);
+          }
         } else {
-          screen.text(5, y, marker, markerColor);
-          screen.text(7, y, m.label.padEnd(22), isSelected ? colors.white : colors.dim);
-          screen.text(30, y, m.cat.padEnd(10), isSelected ? catColor : colors.dimmer);
-          screen.text(41, y, m.desc.slice(0, 20), colors.dimmer);
+          // Regular moves: original styling
+          const catColor = CAT_COLORS[m.cat] || colors.dim;
+          const marker = isSelected ? '★' : '·';
+          const markerColor = isSelected ? colors.gold : colors.dimmer;
+
+          if (isCursor) {
+            screen.text(3, y, '▸', colors.white, null, true);
+            screen.text(5, y, marker, markerColor, null, true);
+            screen.text(7, y, m.label.padEnd(22), colors.white, null, true);
+            screen.text(30, y, m.cat.padEnd(10), catColor, null, true);
+            screen.text(41, y, m.desc.slice(0, 20), catColor);
+            screen.text(63, y, `${m.base.toUpperCase()} x${m.mult}`, colors.dim);
+          } else {
+            screen.text(5, y, marker, markerColor);
+            screen.text(7, y, m.label.padEnd(22), isSelected ? colors.white : colors.dim);
+            screen.text(30, y, m.cat.padEnd(10), isSelected ? catColor : colors.dimmer);
+            screen.text(41, y, m.desc.slice(0, 20), colors.dimmer);
+          }
         }
       }
 
@@ -217,14 +260,18 @@ function pickLoadout(fighter, screen) {
           const names = [...selected];
           saveLoadout(names);
           cleanup();
-          const moves = names.map(n => ({ name: n, ...MOVE_POOL[n] }));
+          // Resolve moves — check signature lookup first, then regular pool
+          const moves = names.map(n => {
+            if (sigLookup[n]) return sigLookup[n];
+            return { name: n, ...MOVE_POOL[n] };
+          });
           resolve(moves);
         }
         // If not 4 selected, do nothing (can't confirm)
       } else if (key === '\x1b' || key === 'q') {
         // Cancel — return current equipped unchanged
         cleanup();
-        resolve(getEquippedMoves(fighter.stats));
+        resolve(getEquippedMoves(fighter.stats, fighter.specs, fighter.archetype));
       } else if (key === '\x03') {
         cleanup();
         process.exit(0);

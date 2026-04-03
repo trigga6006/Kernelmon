@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ═══════════════════════════════════════════════════
-// WorkstationOff Relay — matchmaking server
+// Rigemon Relay — matchmaking server
 // Zero dependencies. Brokers fighter JSON exchange
 // between two players, then gets out of the way.
 // ═══════════════════════════════════════════════════
@@ -274,6 +274,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`WorkstationOff Relay listening on port ${PORT}`);
+  console.log(`Rigémon Relay listening on port ${PORT}`);
   console.log(`Max rooms: ${ROOM_LIMIT} | TTL: ${ROOM_TTL / 1000}s | Rate: ${RATE_LIMIT}/min`);
 });

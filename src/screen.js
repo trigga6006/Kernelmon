@@ -1,5 +1,5 @@
-// Flicker-free terminal screen buffer with row-level diff rendering
-// Skips entirely unchanged rows; redraws changed rows in full for correct color state
+// Flicker-free terminal screen buffer with segment-level diff rendering
+// Only outputs the specific cells that changed — not entire rows
 
 const { ESC, RESET } = require('./palette');
 
@@ -17,7 +17,6 @@ class Screen {
     if (this.height < 20) this.height = 20;
 
     this.buffer = this._createBuffer();
-    // Snapshot of previous frame for row-level diffing
     this.prev = this._createBuffer();
     this.active = false;
     this._firstRender = true;
@@ -56,6 +55,18 @@ class Screen {
     }
   }
 
+  // Clean up handlers but STAY in alt screen — for seamless handoff to another Screen
+  handoff() {
+    if (!this.active) return;
+    this.active = false;
+    // Clear screen for the next Screen to take over cleanly
+    process.stdout.write(CLEAR_SCREEN);
+    if (this._cleanup) {
+      process.removeListener('SIGINT', this._cleanup);
+      process.removeListener('SIGTERM', this._cleanup);
+    }
+  }
+
   clear() {
     for (let y = 0; y < this.height; y++) {
       const row = this.buffer[y];
@@ -66,14 +77,13 @@ class Screen {
     }
   }
 
-  // Force next render() to redraw every row (clears diff state)
+  // Force next render() to redraw every cell (clears diff state)
   resetDiff() {
     this._firstRender = true;
     for (let y = 0; y < this.height; y++) {
       const prow = this.prev[y];
       for (let x = 0; x < this.width; x++) {
         const p = prow[x];
-        // Set to sentinel that won't match any real content
         p.char = '\x00'; p.fg = '\x00'; p.bg = null; p.bold = false;
       }
     }
@@ -133,60 +143,48 @@ class Screen {
     }
   }
 
-  // Row-level diff render: skip unchanged rows, redraw changed rows in full
+  // Segment-level diff render: only output the specific cells that changed.
+  // Unchanged cells are skipped entirely — no cursor move, no output.
+  // Nearby changed cells are merged into segments to avoid excessive cursor jumps.
   render() {
-    // Skip entire frame if stdout hasn't drained — avoids buffer buildup
     if (this._writePending) return;
 
     const parts = [];
     const full = this._firstRender;
+    const MERGE_GAP = 4; // merge changed segments separated by ≤4 unchanged cells
 
     for (let y = 0; y < this.height; y++) {
       const row = this.buffer[y];
       const prow = this.prev[y];
 
-      // Quick check: did any cell in this row change?
-      if (!full) {
+      let segStart = -1; // start of current changed segment
+      let segEnd = -1;   // end of current changed segment
+
+      for (let x = 0; x <= this.width; x++) {
         let changed = false;
-        for (let x = 0; x < this.width; x++) {
+        if (x < this.width) {
           const c = row[x]; const p = prow[x];
-          if (c.char !== p.char || c.fg !== p.fg || c.bg !== p.bg || c.bold !== p.bold) {
-            changed = true;
-            break;
+          changed = full || c.char !== p.char || c.fg !== p.fg || c.bg !== p.bg || c.bold !== p.bold;
+        }
+
+        if (changed) {
+          if (segStart === -1) {
+            segStart = x;
+            segEnd = x;
+          } else if (x - segEnd <= MERGE_GAP) {
+            segEnd = x; // close enough — merge into current segment
+          } else {
+            // Gap too large — flush current segment, start new one
+            this._emitSegment(parts, y, row, prow, segStart, segEnd);
+            segStart = x;
+            segEnd = x;
           }
         }
-        if (!changed) continue; // skip this row entirely
       }
 
-      // Render the full row (correct color state guaranteed)
-      parts.push(`${ESC}${y + 1};1H`);
-      let lastFg = null;
-      let lastBg = null;
-      let lastBold = false;
-
-      for (let x = 0; x < this.width; x++) {
-        const c = row[x];
-        const needFg = c.fg !== lastFg;
-        const needBg = c.bg !== lastBg;
-        const needBold = c.bold !== lastBold;
-
-        if (needFg || needBg || needBold) {
-          parts.push(RESET);
-          if (c.bg) parts.push(c.bg);
-          if (c.fg) parts.push(c.fg);
-          if (c.bold) parts.push(`${ESC}1m`);
-          lastFg = c.fg;
-          lastBg = c.bg;
-          lastBold = c.bold;
-        }
-        parts.push(c.char);
-      }
-      parts.push(RESET);
-
-      // Snapshot this row into prev
-      for (let x = 0; x < this.width; x++) {
-        const c = row[x]; const p = prow[x];
-        p.char = c.char; p.fg = c.fg; p.bg = c.bg; p.bold = c.bold;
+      // Flush final segment for this row
+      if (segStart !== -1) {
+        this._emitSegment(parts, y, row, prow, segStart, segEnd);
       }
     }
 
@@ -199,6 +197,37 @@ class Screen {
     }
 
     this._firstRender = false;
+  }
+
+  // Output a segment of cells from startX to endX (inclusive) on row y
+  _emitSegment(parts, y, row, prow, startX, endX) {
+    parts.push(`${ESC}${y + 1};${startX + 1}H`); // position cursor
+    let lastFg = null;
+    let lastBg = null;
+    let lastBold = false;
+
+    for (let x = startX; x <= endX; x++) {
+      const c = row[x];
+      const needFg = c.fg !== lastFg;
+      const needBg = c.bg !== lastBg;
+      const needBold = c.bold !== lastBold;
+
+      if (needFg || needBg || needBold) {
+        parts.push(RESET);
+        if (c.bg) parts.push(c.bg);
+        if (c.fg) parts.push(c.fg);
+        if (c.bold) parts.push(`${ESC}1m`);
+        lastFg = c.fg;
+        lastBg = c.bg;
+        lastBold = c.bold;
+      }
+      parts.push(c.char);
+
+      // Snapshot this cell
+      const p = prow[x];
+      p.char = c.char; p.fg = c.fg; p.bg = c.bg; p.bold = c.bold;
+    }
+    parts.push(RESET);
   }
 }
 

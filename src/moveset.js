@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const WSO_DIR = path.join(__dirname, '..', '.wso');
+const WSO_DIR = path.join(__dirname, '..', '.rigemon');
 const LOADOUT_FILE = path.join(WSO_DIR, 'loadout.json');
 
 // ─── Full Move Pool (expanded) ───
@@ -48,18 +48,27 @@ const MOVE_POOL = {
   ROOTKIT:          { cat: 'special',  base: 'spd', mult: 1.3,  req: 'spd', minStat: 55, label: 'Rootkit',          desc: 'root.inject()',      flavor: 'Bypass defenses entirely', special: 'pierce' },
 };
 
-// Get all moves a fighter's hardware qualifies for
-function getAvailableMoves(stats) {
+// Get all moves a fighter's hardware qualifies for.
+// If specs + archetype provided, signature moves are included at the front.
+function getAvailableMoves(stats, specs, archetype) {
   const reqMap = { cpu: 'str', gpu: 'mag', spd: 'spd', vit: 'vit' };
-  return Object.entries(MOVE_POOL)
+  const pool = Object.entries(MOVE_POOL)
     .filter(([, move]) => {
       const reqStat = stats[reqMap[move.req]] || 0;
       return reqStat >= move.minStat;
     })
     .map(([name, move]) => ({ name, ...move }));
+
+  if (specs && archetype) {
+    const { generateSignatureMoves } = require('./signature');
+    const sig = generateSignatureMoves(stats, specs, archetype);
+    return [...sig, ...pool];
+  }
+
+  return pool;
 }
 
-// Score and auto-assign best 4 moves
+// Score and auto-assign best 4 moves (regular pool only)
 function assignMoveset(stats) {
   const available = getAvailableMoves(stats);
 
@@ -106,16 +115,27 @@ function saveLoadout(moveNames) {
   fs.writeFileSync(LOADOUT_FILE, JSON.stringify(moveNames, null, 2));
 }
 
-// Get equipped moves — either from saved loadout or auto-assigned
-function getEquippedMoves(stats) {
+// Get equipped moves — either from saved loadout or auto-assigned.
+// Accepts optional specs/archetype to resolve signature moves in saved loadouts.
+function getEquippedMoves(stats, specs, archetype) {
   const saved = loadLoadout();
   if (saved && Array.isArray(saved) && saved.length === 4) {
-    // Validate saved moves still exist and are unlocked
+    // Build a lookup for signature moves so saved loadouts can reference them
+    let sigLookup = {};
+    if (specs && archetype) {
+      const { generateSignatureMoves } = require('./signature');
+      const sig = generateSignatureMoves(stats, specs, archetype);
+      sigLookup = Object.fromEntries(sig.map(m => [m.name, m]));
+    }
+
+    const reqMap = { cpu: 'str', gpu: 'mag', spd: 'spd', vit: 'vit' };
     const equipped = saved
       .map(name => {
+        // Check signature moves first
+        if (sigLookup[name]) return sigLookup[name];
+        // Then regular pool
         const move = MOVE_POOL[name];
         if (!move) return null;
-        const reqMap = { cpu: 'str', gpu: 'mag', spd: 'spd', vit: 'vit' };
         const reqStat = stats[reqMap[move.req]] || 0;
         if (reqStat < move.minStat) return null;
         return { name, ...move };

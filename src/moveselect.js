@@ -6,6 +6,7 @@
 
 const { colors, rgb, RESET, ESC } = require('./palette');
 const { getOwnedItems, useItem, ITEMS, RARITY_COLORS } = require('./items');
+const { SIGNATURE_COLOR, SIGNATURE_ACCENT, SIGNATURE_ICON } = require('./signature');
 
 const CAT_COLORS = {
   physical: colors.peach,
@@ -54,18 +55,33 @@ function selectMove(moves, screen, logX, logY, logW, logH, onTick) {
           const m = moves[i];
           const y = logY + 1 + i;
           const selected = i === cursor;
-          const icon = CAT_ICONS[m.cat] || '·';
-          const catColor = CAT_COLORS[m.cat] || colors.dim;
 
-          if (selected) {
-            screen.text(logX + 1, y, '▸', colors.white, null, true);
-            screen.text(logX + 3, y, icon, catColor, null, true);
-            screen.text(logX + 5, y, m.label.padEnd(20), colors.white, null, true);
-            screen.text(logX + 26, y, m.desc, catColor);
+          if (m.signature) {
+            // Signature moves get gold/amber treatment
+            if (selected) {
+              screen.text(logX + 1, y, '▸', SIGNATURE_COLOR, null, true);
+              screen.text(logX + 3, y, SIGNATURE_ICON, SIGNATURE_COLOR, null, true);
+              screen.text(logX + 5, y, m.label.padEnd(20), SIGNATURE_COLOR, null, true);
+              screen.text(logX + 26, y, m.desc, SIGNATURE_ACCENT);
+            } else {
+              screen.text(logX + 3, y, SIGNATURE_ICON, SIGNATURE_ACCENT);
+              screen.text(logX + 5, y, m.label.padEnd(20), SIGNATURE_ACCENT);
+              screen.text(logX + 26, y, m.desc, rgb(180, 140, 50));
+            }
           } else {
-            screen.text(logX + 3, y, icon, colors.dimmer);
-            screen.text(logX + 5, y, m.label.padEnd(20), colors.dim);
-            screen.text(logX + 26, y, m.desc, colors.dimmer);
+            const icon = CAT_ICONS[m.cat] || '·';
+            const catColor = CAT_COLORS[m.cat] || colors.dim;
+
+            if (selected) {
+              screen.text(logX + 1, y, '▸', colors.white, null, true);
+              screen.text(logX + 3, y, icon, catColor, null, true);
+              screen.text(logX + 5, y, m.label.padEnd(20), colors.white, null, true);
+              screen.text(logX + 26, y, m.desc, catColor);
+            } else {
+              screen.text(logX + 3, y, icon, colors.dimmer);
+              screen.text(logX + 5, y, m.label.padEnd(20), colors.dim);
+              screen.text(logX + 26, y, m.desc, colors.dimmer);
+            }
           }
         }
 

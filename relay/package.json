@@ -1,7 +1,7 @@
 {
-  "name": "workstation-off-relay",
+  "name": "rigemon-relay",
   "version": "1.0.0",
-  "description": "Matchmaking relay for WorkstationOff battles",
+  "description": "Matchmaking relay for Rigemon battles",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -5,7 +5,7 @@
 
 const { Screen } = require('./screen');
 const { colors, hpColor, RESET, BOLD, rgb } = require('./palette');
-const { MatrixRain } = require('./effects/matrix');
+const { MatrixRain, CodeSparkle } = require('./effects/matrix');
 const { GlitchEffect, FloatingText } = require('./effects/glitch');
 const { ProjectileManager } = require('./effects/projectile');
 const { createRNG } = require('./rng');
@@ -28,10 +28,17 @@ async function renderBattle(fighterA, fighterB, events) {
 
   const screen = new Screen();
   const rng = createRNG(99);
-  const matrix = new MatrixRain(screen.width, screen.height, rng);
+  const matrix = new MatrixRain(screen.width, screen.height, rng); // used only for intro
+  const sparkle = new CodeSparkle(screen.width, screen.height, rng, 20);
   const glitch = new GlitchEffect(rng);
   const floats = new FloatingText();
   const projectiles = new ProjectileManager(rng, screen.width, screen.height);
+
+  // Tame the intro rain
+  for (const col of matrix.columns) {
+    col.active = rng.chance(0.20);
+    col.speed = rng.float(0.2, 0.7);
+  }
 
   const w = screen.width;
   const h = screen.height;
@@ -130,7 +137,18 @@ async function renderBattle(fighterA, fighterB, events) {
       if (p2HitFrames > 0) p2HitFrames--;
 
       // Update effects
-      matrix.update();
+      if (phase === 'intro') {
+        matrix.update();
+      } else {
+        sparkle.exclusionZones = [
+          { x: plyX - 1, y: plyY - 1, w: 18, h: 14 },
+          { x: oppX - 1, y: oppY - 1, w: 16, h: 12 },
+          { x: 1, y: oppBarY, w: oppBarW + 12, h: 3 },
+          { x: plyBarX - 1, y: plyBarY - 1, w: plyBarW + 12, h: 5 },
+          { x: 0, y: logY - 1, w, h: logHeight + 2 },
+        ];
+        sparkle.update();
+      }
       glitch.update();
       floats.update();
       projectiles.update();
@@ -138,14 +156,13 @@ async function renderBattle(fighterA, fighterB, events) {
       // ─── DRAW ───
       screen.clear();
 
-      // BG: matrix rain (always)
-      matrix.draw(screen);
-
       if (phase === 'intro') {
-        // Intro: ONLY draw matrix + intro overlay — no fighters, no UI
+        // Intro: matrix rain + intro overlay — no fighters, no UI
+        matrix.draw(screen);
         drawIntro(screen, elapsed);
       } else {
-        // Battle / Outro: draw the full scene
+        // Battle / Outro: sparkle BG + full scene
+        sparkle.draw(screen);
         drawGround(screen);
         drawFighterSprites(screen);
         drawUI(screen, elapsed);
@@ -323,7 +340,7 @@ async function renderBattle(fighterA, fighterB, events) {
 
   function drawUI(screen, elapsed) {
     // Title
-    const title = ' W O R K S T A T I O N   O F F ';
+    const title = ' R I G E M O N';
     screen.centerText(0, '─'.repeat(w), colors.dimmer);
     screen.centerText(0, title, colors.cyan, null, true);
 
@@ -336,6 +353,8 @@ async function renderBattle(fighterA, fighterB, events) {
     const oppNameX = 3;
     const oppInfoY = 2;
     screen.text(oppNameX, oppInfoY, fighterB.name.slice(0, 24), colors.p2, null, true);
+    const oppArch = fighterB.archetype?.name || '';
+    if (oppArch) screen.text(oppNameX + Math.min(fighterB.name.length, 24) + 1, oppInfoY, oppArch, colors.dimmer);
     // HP bar
     const ratioB = Math.max(0, hpB / fighterB.stats.maxHp);
     screen.bar(oppNameX, oppInfoY + 1, oppBarW, ratioB, hpColor(ratioB), colors.dimmer);
@@ -348,6 +367,8 @@ async function renderBattle(fighterA, fighterB, events) {
     // ─── Player info (bottom-right, near player's side) ───
     const plyInfoY = plyBarY;
     screen.text(plyBarX, plyInfoY, fighterA.name.slice(0, 24), colors.p1, null, true);
+    const plyArch = fighterA.archetype?.name || '';
+    if (plyArch) screen.text(plyBarX + Math.min(fighterA.name.length, 24) + 1, plyInfoY, plyArch, colors.dimmer);
     // HP bar
     const ratioA = Math.max(0, hpA / fighterA.stats.maxHp);
     screen.bar(plyBarX, plyInfoY + 1, plyBarW, ratioA, hpColor(ratioA), colors.dimmer);
@@ -364,7 +385,7 @@ async function renderBattle(fighterA, fighterB, events) {
     // Log box at bottom
     screen.hline(1, logY - 1, w - 2, '─', colors.dimmer);
     screen.text(3, logY - 1, ' BATTLE LOG ', colors.dim);
-    screen.text(w - 22, h - 1, '─ workstation-off ─', colors.dimmer);
+    screen.text(w - 22, h - 1, '─ rigémon ─', colors.dimmer);
 
     for (let i = 0; i < battleLog.length && i < logHeight; i++) {
       const entry = battleLog[i];
@@ -388,7 +409,7 @@ async function renderBattle(fighterA, fighterB, events) {
     }
 
     // Title always visible
-    const title = ' W O R K S T A T I O N   O F F ';
+    const title = ' R I G E M O N';
     screen.centerText(0, '─'.repeat(w), colors.dimmer);
     screen.centerText(0, title, colors.cyan, null, true);
 

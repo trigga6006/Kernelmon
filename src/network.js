@@ -52,19 +52,19 @@ function host(myFighter, port = PORT) {
       const addr = server.address();
       console.log('');
       console.log('\x1b[38;2;130;220;235m  ╭─────────────────────────────────────╮\x1b[0m');
-      console.log('\x1b[38;2;130;220;235m  │   WORKSTATION OFF — Waiting...      │\x1b[0m');
+      console.log('\x1b[38;2;130;220;235m  │   RIGÉMON — Waiting...              │\x1b[0m');
       console.log('\x1b[38;2;130;220;235m  │                                     │\x1b[0m');
       console.log(`\x1b[38;2;130;220;235m  │   Port: \x1b[1m${addr.port}\x1b[22m                         │\x1b[0m`);
       console.log('\x1b[38;2;130;220;235m  │                                     │\x1b[0m');
       console.log('\x1b[38;2;100;100;130m  │   Share your IP with your opponent:  │\x1b[0m');
-      console.log('\x1b[38;2;100;100;130m  │   wso join <your-ip>                │\x1b[0m');
+      console.log('\x1b[38;2;100;100;130m  │   rgm join <your-ip>                │\x1b[0m');
       console.log('\x1b[38;2;130;220;235m  ╰─────────────────────────────────────╯\x1b[0m');
       console.log('');
     });
 
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE') {
-        reject(new Error(`Port ${port} is already in use. Try: wso host --port ${port + 1}`));
+        reject(new Error(`Port ${port} is already in use. Try: rgm host --port ${port + 1}`));
       } else {
         reject(err);
       }

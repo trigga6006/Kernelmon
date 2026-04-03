@@ -1,13 +1,14 @@
 {
-  "name": "workstation-off",
+  "name": "rigemon",
   "version": "1.0.0",
-  "description": "Profile your PC specs into a fighter avatar and battle other workstations in the terminal",
+  "description": "Your rig is your fighter — scan your PC specs and battle other rigs in the terminal",
   "main": "src/index.js",
   "bin": {
-    "workstation-off": "./bin/cli.js",
-    "wso": "./bin/cli.js"
+    "rigemon": "./bin/cli.js",
+    "rgm": "./bin/cli.js"
   },
   "scripts": {
+    "play": "node bin/launcher.js",
     "start": "node bin/cli.js",
     "host": "node bin/cli.js host",
     "join": "node bin/cli.js join",

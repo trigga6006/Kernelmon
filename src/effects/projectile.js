@@ -45,14 +45,14 @@ const MOVE_ANIMS = {
     screenEffect: null,
   },
   CACHE_SLAM: {
-    style: 'slam',            // single heavy projectile, screen shake on impact
-    lead: ['█', '█', '▓'],
-    trail: ['▓', '▒', '░', '░', '·'],
+    style: 'slam',
+    lead: ['▓', '▒'],
+    trail: ['░', '·', '·'],
     color: rgb(220, 160, 100),
     trailColor: colors.dim,
-    speed: 0.06,
-    trailLen: 5,
-    screenEffect: 'shake',
+    speed: 0.07,
+    trailLen: 3,
+    screenEffect: null,
   },
   BRANCH_PREDICT: {
     style: 'zigzag',          // projectile zigzags unpredictably
@@ -147,15 +147,13 @@ const MOVE_ANIMS = {
     screenEffect: null,
   },
   INTERRUPT_SPIKE: {
-    style: 'multishot',
-    lead: ['▸', '▹', '▸'],
-    trail: ['·', '·'],
+    style: 'basic',
+    lead: ['▸', '▹'],
+    trail: ['·'],
     color: colors.gold,
     trailColor: colors.dim,
-    speed: 0.14,
-    trailLen: 3,
-    count: 2,
-    spread: 3,
+    speed: 0.1,
+    trailLen: 2,
     screenEffect: null,
   },
 
@@ -337,15 +335,94 @@ const MOVE_ANIMS = {
   },
 };
 
-// Fallback for moves not in the map
+// ══════ SIGNATURE MOVE ANIMATIONS ══════
+// Signature moves get dramatic, multi-phase visuals unique to their category.
+// These are the showstoppers — nothing else in the game looks like them.
+
+const SIGNATURE_ANIMS = {
+  physical: {
+    style: 'sig_physical',       // multi-phase: charge → dash → shockwave
+    lead: ['█', '▓', '▒'],
+    trail: ['█', '▓', '▒', '░', '░', '·'],
+    color: rgb(255, 200, 50),
+    trailColor: rgb(200, 140, 20),
+    accentColor: rgb(255, 255, 180),
+    speed: 0.025,
+    trailLen: 30,
+    beamWidth: 5,
+    screenEffect: 'flash',
+  },
+  magic: {
+    style: 'sig_magic',          // multi-phase: runes appear → converge → detonation
+    lead: ['◈', '✦', '★', '◆'],
+    trail: ['·', '°', '·'],
+    color: rgb(200, 120, 255),
+    trailColor: rgb(140, 60, 220),
+    accentColor: rgb(255, 180, 255),
+    speed: 0.022,
+    trailLen: 0,
+    screenEffect: 'flash',
+  },
+  speed: {
+    style: 'sig_speed',          // multi-phase: afterimages → blink strike → static burst
+    lead: ['»', '›', '▸'],
+    trail: ['─', '─', '·'],
+    color: rgb(80, 220, 255),
+    trailColor: rgb(40, 140, 200),
+    accentColor: rgb(200, 240, 255),
+    speed: 0.03,
+    trailLen: 20,
+    screenEffect: 'glitchWave',
+  },
+  special: {
+    style: 'sig_special',        // multi-phase: screen corrupt → code cascade → reset
+    lead: [],
+    trail: [],
+    color: rgb(255, 215, 0),
+    trailColor: rgb(255, 170, 50),
+    accentColor: rgb(255, 255, 200),
+    speed: 0.02,
+    trailLen: 0,
+    screenEffect: 'flash',
+  },
+};
+
+// Synergy moves: dual-helix with expanding rings at midpoint
+const SIGNATURE_SYNERGY_ANIM = {
+  style: 'sig_synergy',
+  lead: ['◆', '◇', '★'],
+  trail: ['═', '═', '─', '─', '·', '·'],
+  color: rgb(255, 180, 60),
+  trailColor: rgb(200, 100, 255),
+  accentColor: rgb(255, 255, 100),
+  speed: 0.025,
+  trailLen: 20,
+  screenEffect: 'flash',
+};
+
+// Register signature moves into MOVE_ANIMS so existing projectile code works
+function registerSignatureAnims(signatureMoves) {
+  for (const move of signatureMoves) {
+    if (!move || !move.name || MOVE_ANIMS[move.name]) continue;
+    // Synergy moves (have altBase) get the dual-color helix
+    if (move.altBase) {
+      MOVE_ANIMS[move.name] = { ...SIGNATURE_SYNERGY_ANIM };
+    } else {
+      // Ultimate moves get category-based signature anim
+      MOVE_ANIMS[move.name] = { ...(SIGNATURE_ANIMS[move.cat] || SIGNATURE_ANIMS.physical) };
+    }
+  }
+}
+
+// Fallback for moves not in the map — deliberately simple
 const DEFAULT_ANIM = {
   style: 'basic',
-  lead: ['◆', '◇', '●'],
-  trail: ['─', '·'],
-  color: colors.cyan,
-  trailColor: colors.dimmer,
-  speed: 0.07,
-  trailLen: 4,
+  lead: ['·', '•'],
+  trail: ['·'],
+  color: colors.dim,
+  trailColor: colors.ghost,
+  speed: 0.08,
+  trailLen: 3,
   screenEffect: null,
 };
 
@@ -463,7 +540,7 @@ class Projectile {
     }
 
     // Non-traveling styles — just have a duration, no position tracking
-    const durationOnly = ['fullscreen','heal','codestorm','explosion','drip','shield_up','wipe','flush','scatter_reform','infiltrate'];
+    const durationOnly = ['fullscreen','heal','codestorm','explosion','drip','shield_up','wipe','flush','scatter_reform','infiltrate','sig_physical','sig_magic','sig_speed','sig_special','sig_synergy'];
     if (durationOnly.includes(this.anim.style)) {
       this.progress += this.anim.speed;
       if (this.progress >= 1.0) this.alive = false;
@@ -982,6 +1059,337 @@ class Projectile {
       return;
     }
 
+    // ══════════════════════════════════════════════════════════
+    // SIGNATURE MOVE RENDERS — multi-phase spectacles
+    // ══════════════════════════════════════════════════════════
+
+    // ── SIG PHYSICAL: charge up → massive beam with shockwave ──
+    if (a.style === 'sig_physical') {
+      if (!this.alive) return;
+      const t = this.progress;
+      const sx = this.startX + 5;
+      const sy = this.startY + 3;
+      const tx = this.endX;
+      const ty = this.endY;
+
+      if (t < 0.25) {
+        // Phase 1: Charge — energy gathering at attacker
+        const chargeT = t / 0.25;
+        const r = (1 - chargeT) * 8 + 2;
+        const particles = Math.floor(chargeT * 12);
+        for (let i = 0; i < particles; i++) {
+          const angle = (i / particles) * Math.PI * 2 + t * 15;
+          const px = sx + Math.round(Math.cos(angle) * r);
+          const py = sy + Math.round(Math.sin(angle) * r * 0.4);
+          screen.set(px, py, '✦', a.accentColor || a.color, null, true);
+        }
+        // Pulsing core
+        screen.set(sx, sy, chargeT > 0.5 ? '█' : '▓', a.color, null, true);
+        screen.set(sx - 1, sy, '▓', a.trailColor);
+        screen.set(sx + 1, sy, '▓', a.trailColor);
+      } else if (t < 0.7) {
+        // Phase 2: Massive beam fires across
+        const beamT = (t - 0.25) / 0.45;
+        const beamHead = sx + (tx - sx) * beamT;
+        const bw = 3;
+        for (let x = sx; x <= Math.round(beamHead); x++) {
+          const distFromHead = Math.abs(x - beamHead);
+          for (let dy = -bw; dy <= bw; dy++) {
+            const edgeDist = Math.abs(dy);
+            if (edgeDist === bw) {
+              screen.set(x, sy + dy, '░', a.trailColor);
+            } else if (distFromHead < 3) {
+              screen.set(x, sy + dy, '█', a.accentColor || a.color, null, true);
+            } else if (distFromHead < 8) {
+              screen.set(x, sy + dy, '▓', a.color, null, true);
+            } else {
+              screen.set(x, sy + dy, '▒', a.trailColor);
+            }
+          }
+        }
+        // Beam head glow
+        const hx = Math.round(beamHead);
+        screen.set(hx + 1, sy, '▶', a.accentColor || a.color, null, true);
+        screen.set(hx + 2, sy, '▸', a.color);
+      } else {
+        // Phase 3: Shockwave rings expanding from impact
+        const waveT = (t - 0.7) / 0.3;
+        const maxR = 10;
+        for (let ring = 0; ring < 2; ring++) {
+          const r = waveT * maxR - ring * 3;
+          if (r < 0) continue;
+          for (let i = 0; i < 16; i++) {
+            const angle = (i / 16) * Math.PI * 2;
+            const px = tx + Math.round(Math.cos(angle) * r);
+            const py = ty + Math.round(Math.sin(angle) * r * 0.35);
+            const ch = ring === 0 ? '◆' : '·';
+            screen.set(px, py, ch, ring === 0 ? a.color : a.trailColor);
+          }
+        }
+        // Lingering impact core
+        screen.set(tx, ty, '╳', a.accentColor || a.color, null, true);
+      }
+      return;
+    }
+
+    // ── SIG MAGIC: rune circle appears → runes converge → detonation ──
+    if (a.style === 'sig_magic') {
+      if (!this.alive) return;
+      const t = this.progress;
+      const tx = this.endX;
+      const ty = this.endY;
+      const RUNES = ['◈', '✦', '★', '◆', '◇', '▣', '⊕', '⊗', '⊙', '⊛', '⊘', '◉'];
+
+      if (t < 0.35) {
+        // Phase 1: Rune circle materializes around target
+        const formT = t / 0.35;
+        const r = 8;
+        const count = Math.floor(formT * 12);
+        for (let i = 0; i < count; i++) {
+          const angle = (i / 12) * Math.PI * 2 - t * 4;
+          const px = tx + Math.round(Math.cos(angle) * r);
+          const py = ty + Math.round(Math.sin(angle) * r * 0.35);
+          screen.set(px, py, RUNES[i % RUNES.length], a.color, null, true);
+        }
+        // Connecting lines between runes
+        if (formT > 0.5) {
+          for (let i = 0; i < count; i++) {
+            const angle = (i / 12) * Math.PI * 2 - t * 4;
+            const nextAngle = ((i + 1) / 12) * Math.PI * 2 - t * 4;
+            const mx = tx + Math.round(Math.cos((angle + nextAngle) / 2) * (r * 0.7));
+            const my = ty + Math.round(Math.sin((angle + nextAngle) / 2) * (r * 0.7) * 0.35);
+            screen.set(mx, my, '·', a.trailColor);
+          }
+        }
+      } else if (t < 0.65) {
+        // Phase 2: Runes converge inward, spinning faster
+        const convT = (t - 0.35) / 0.3;
+        const r = 8 * (1 - convT);
+        for (let i = 0; i < 12; i++) {
+          const angle = (i / 12) * Math.PI * 2 - t * 12;
+          const px = tx + Math.round(Math.cos(angle) * r);
+          const py = ty + Math.round(Math.sin(angle) * r * 0.35);
+          screen.set(px, py, RUNES[i], a.accentColor || a.color, null, true);
+        }
+        // Energy trails spiraling in
+        for (let i = 0; i < 6; i++) {
+          const angle = (i / 6) * Math.PI * 2 - t * 20;
+          const sr = r + 2;
+          const sx = tx + Math.round(Math.cos(angle) * sr);
+          const sy = ty + Math.round(Math.sin(angle) * sr * 0.35);
+          screen.set(sx, sy, '─', a.trailColor);
+        }
+      } else {
+        // Phase 3: Detonation — expanding blast with rune fragments
+        const blastT = (t - 0.65) / 0.35;
+        const blastR = blastT * 12;
+        // Blast ring
+        for (let i = 0; i < 20; i++) {
+          const angle = (i / 20) * Math.PI * 2;
+          const px = tx + Math.round(Math.cos(angle) * blastR);
+          const py = ty + Math.round(Math.sin(angle) * blastR * 0.35);
+          const ch = RUNES[Math.floor(this.rng.next() * RUNES.length)];
+          screen.set(px, py, ch, blastT < 0.5 ? a.accentColor || a.color : a.trailColor, null, blastT < 0.3);
+        }
+        // Inner flash
+        if (blastT < 0.4) {
+          for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -3; dx <= 3; dx++) {
+              screen.set(tx + dx, ty + dy, '█', a.accentColor || a.color, null, true);
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    // ── SIG SPEED: afterimages → blink strike → static burst ──
+    if (a.style === 'sig_speed') {
+      if (!this.alive) return;
+      const t = this.progress;
+      const sx = this.startX + 5;
+      const sy = this.startY + 3;
+      const tx = this.endX;
+      const ty = this.endY;
+
+      if (t < 0.2) {
+        // Phase 1: Afterimages — attacker vibrates with ghost copies
+        const vibeT = t / 0.2;
+        for (let i = 0; i < 4; i++) {
+          const ox = Math.round(vibeT * (i + 1) * 2);
+          const fade = 1 - (i / 4);
+          screen.set(sx + ox, sy, '▸', fade > 0.6 ? a.color : a.trailColor, null, fade > 0.5);
+          screen.set(sx + ox, sy - 1, '─', a.trailColor);
+          screen.set(sx + ox, sy + 1, '─', a.trailColor);
+        }
+      } else if (t < 0.5) {
+        // Phase 2: Blink strike — disappear, trail of dashes, reappear at target
+        const blinkT = (t - 0.2) / 0.3;
+        // Dash trail
+        const steps = 20;
+        for (let i = 0; i < steps; i++) {
+          const st = i / steps;
+          if (st > blinkT) break;
+          const dx = sx + (tx - sx) * st;
+          const dy = sy + (ty - sy) * st;
+          const distFromHead = Math.abs(st - blinkT);
+          if (distFromHead < 0.15) {
+            screen.set(Math.round(dx), Math.round(dy), '»', a.accentColor || a.color, null, true);
+          } else {
+            screen.set(Math.round(dx), Math.round(dy), '─', a.trailColor);
+          }
+        }
+      } else {
+        // Phase 3: Static burst at impact — electric discharge
+        const burstT = (t - 0.5) / 0.5;
+        const burstR = burstT * 8;
+        // Lightning bolts radiating from impact
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2 + burstT * 5;
+          let bx = tx, by = ty;
+          const segments = Math.floor(burstR);
+          for (let s = 0; s < segments; s++) {
+            bx += Math.round(Math.cos(angle) * 1.5) + this.rng.int(-1, 1);
+            by += Math.round(Math.sin(angle) * 0.6);
+            const ch = s === segments - 1 ? '╳' : (this.rng.chance(0.5) ? '╱' : '╲');
+            screen.set(bx, by, ch, s < 2 ? a.accentColor || a.color : a.color);
+          }
+        }
+        // Impact core flash
+        if (burstT < 0.3) {
+          screen.set(tx, ty, '█', a.accentColor || a.color, null, true);
+          screen.set(tx - 1, ty, '▓', a.color); screen.set(tx + 1, ty, '▓', a.color);
+        }
+      }
+      return;
+    }
+
+    // ── SIG SPECIAL: screen corruption → code cascade → reset ──
+    if (a.style === 'sig_special') {
+      if (!this.alive) return;
+      const t = this.progress;
+      const tx = this.endX;
+      const ty = this.endY;
+      const w = screen.width;
+      const h = screen.height;
+      const CORRUPT = ['█', '▓', '▒', '░', '╳', '╬', '┼', '#', '@', '!', '?', '0', '1'];
+
+      if (t < 0.3) {
+        // Phase 1: Screen corruption spreads from edges
+        const corruptT = t / 0.3;
+        const bandW = Math.floor(corruptT * 15);
+        for (let y = 2; y < h - 7; y++) {
+          for (let i = 0; i < bandW; i++) {
+            if (this.rng.next() < 0.4) {
+              screen.set(i, y, CORRUPT[Math.floor(this.rng.next() * CORRUPT.length)], a.color);
+              screen.set(w - 1 - i, y, CORRUPT[Math.floor(this.rng.next() * CORRUPT.length)], a.trailColor);
+            }
+          }
+        }
+      } else if (t < 0.65) {
+        // Phase 2: Code cascade raining down on target area
+        const cascadeT = (t - 0.3) / 0.35;
+        const CODE = ['sudo rm -rf /', 'chmod 777', ':(){ :|:& };:', 'dd if=/dev/zero', 'fork()', 'exec("crash")', 'kill -9 *'];
+        const lines = Math.floor(cascadeT * 8);
+        for (let i = 0; i < lines; i++) {
+          const ly = 3 + Math.floor(cascadeT * (h - 12)) * (i + 1) / lines;
+          if (ly < h - 7) {
+            const code = CODE[i % CODE.length];
+            screen.text(tx - Math.floor(code.length / 2), Math.round(ly), code,
+              cascadeT > 0.7 ? a.accentColor || a.color : a.color, null, cascadeT > 0.5);
+          }
+        }
+        // Glitch bands
+        for (let b = 0; b < 3; b++) {
+          const by = this.rng.int(3, h - 8);
+          const bw = this.rng.int(10, 30);
+          const bx = this.rng.int(0, w - bw);
+          for (let x = bx; x < bx + bw; x++) {
+            screen.set(x, by, '░', a.color);
+          }
+        }
+      } else {
+        // Phase 3: Everything snaps back with a flash
+        const resetT = (t - 0.65) / 0.35;
+        if (resetT < 0.3) {
+          // Flash
+          for (let y = 2; y < h - 7; y++) {
+            for (let x = 0; x < w; x++) {
+              if (this.rng.next() < 0.15 * (1 - resetT * 3)) {
+                screen.set(x, y, '█', a.accentColor || a.color);
+              }
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    // ── SIG SYNERGY: dual helix with expanding energy rings at midpoint ──
+    if (a.style === 'sig_synergy') {
+      if (!this.alive) return;
+      const t = this.progress;
+      const sx = this.startX + 5;
+      const sy = this.startY + 3;
+      const tx = this.endX;
+      const ty = this.endY;
+      const mx = (sx + tx) / 2;
+      const my = (sy + ty) / 2;
+
+      if (t < 0.6) {
+        // Dual helix traveling toward target
+        const helixT = t / 0.6;
+        const headX = sx + (tx - sx) * helixT;
+        const headY = sy + (ty - sy) * helixT;
+        // Trail
+        const steps = 20;
+        for (let i = 0; i < steps; i++) {
+          const st = i / steps;
+          if (st > helixT) break;
+          const px = sx + (tx - sx) * st;
+          const py = sy + (ty - sy) * st;
+          const phase = st * Math.PI * 10;
+          const offset = Math.sin(phase) * 2.5;
+          screen.set(Math.round(px), Math.round(py + offset), '◆', a.color);
+          screen.set(Math.round(px), Math.round(py - offset), '◇', a.trailColor);
+          // Connecting energy
+          if (i % 3 === 0) {
+            const minY = Math.round(py - Math.abs(offset));
+            const maxY = Math.round(py + Math.abs(offset));
+            for (let dy = minY; dy <= maxY; dy++) {
+              screen.set(Math.round(px), dy, '│', colors.ghost);
+            }
+          }
+        }
+        // Bright lead
+        screen.set(Math.round(headX), Math.round(headY), '★', a.accentColor || a.color, null, true);
+
+        // Energy rings at midpoint once helix passes
+        if (helixT > 0.5) {
+          const ringT = (helixT - 0.5) / 0.5;
+          const r = ringT * 5;
+          for (let i = 0; i < 10; i++) {
+            const angle = (i / 10) * Math.PI * 2;
+            screen.set(Math.round(mx + Math.cos(angle) * r), Math.round(my + Math.sin(angle) * r * 0.4), '○', a.color);
+          }
+        }
+      } else {
+        // Detonation at target
+        const blastT = (t - 0.6) / 0.4;
+        const blastR = blastT * 10;
+        for (let i = 0; i < 16; i++) {
+          const angle = (i / 16) * Math.PI * 2;
+          const px = tx + Math.round(Math.cos(angle) * blastR);
+          const py = ty + Math.round(Math.sin(angle) * blastR * 0.35);
+          screen.set(px, py, i % 2 === 0 ? '◆' : '◇', blastT < 0.4 ? a.accentColor || a.color : a.trailColor, null, blastT < 0.3);
+        }
+        if (blastT < 0.3) {
+          screen.set(tx, ty, '★', a.accentColor || a.color, null, true);
+        }
+      }
+      return;
+    }
+
     // ── BASIC FALLBACK ──
     for (let i = 0; i < this.trail.length; i++) {
       const pos = this.trail[i];
@@ -1121,4 +1529,4 @@ class ProjectileManager {
   }
 }
 
-module.exports = { Projectile, ProjectileManager, MOVE_ANIMS, ScreenEffects };
+module.exports = { Projectile, ProjectileManager, MOVE_ANIMS, ScreenEffects, registerSignatureAnims };

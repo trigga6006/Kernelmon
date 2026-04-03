@@ -1,7 +1,9 @@
 // Deterministic battle simulation engine
 // Given two fighters + a shared seed, produces an array of timed events
+// Now with archetype passives and underdog balancing.
 
 const { createRNG } = require('./rng');
+const { getCombatModifiers, effectiveStat } = require('./balance');
 
 // Attack move pools — names reference actual hardware
 const MOVES = {
@@ -38,10 +40,20 @@ function simulate(fighterA, fighterB, seed) {
   const events = [];
   let tick = 0;
 
-  // Clone HP
+  // Clone HP + archetype info
   const state = {
-    a: { ...fighterA.stats, hp: fighterA.stats.hp, maxHp: fighterA.stats.maxHp, stunned: false, debuffed: false },
-    b: { ...fighterB.stats, hp: fighterB.stats.hp, maxHp: fighterB.stats.maxHp, stunned: false, debuffed: false },
+    a: {
+      ...fighterA.stats, hp: fighterA.stats.hp, maxHp: fighterA.stats.maxHp,
+      stunned: false, debuffed: false,
+      archetype: fighterA.archetype?.name || 'DAEMON',
+      consecutiveAttacks: 0,
+    },
+    b: {
+      ...fighterB.stats, hp: fighterB.stats.hp, maxHp: fighterB.stats.maxHp,
+      stunned: false, debuffed: false,
+      archetype: fighterB.archetype?.name || 'DAEMON',
+      consecutiveAttacks: 0,
+    },
   };
 
   events.push({ tick: tick++, type: 'intro', a: fighterA, b: fighterB });
@@ -53,22 +65,44 @@ function simulate(fighterA, fighterB, seed) {
   while (state.a.hp > 0 && state.b.hp > 0 && round < maxRounds) {
     round++;
 
-    // Determine attack order by SPD (with small random variance)
-    const spdA = state.a.spd + rng.int(-5, 5);
-    const spdB = state.b.spd + rng.int(-5, 5);
+    // Get combat modifiers for both fighters this round
+    const modsA = getCombatModifiers({
+      atkArchetype: state.a.archetype, defArchetype: state.b.archetype,
+      atk: state.a, def: state.b, rng, turn: round,
+      consecutiveAttacks: state.a.consecutiveAttacks, move: null,
+    });
+    const modsB = getCombatModifiers({
+      atkArchetype: state.b.archetype, defArchetype: state.a.archetype,
+      atk: state.b, def: state.a, rng, turn: round,
+      consecutiveAttacks: state.b.consecutiveAttacks, move: null,
+    });
+
+    // Determine attack order by SPD (with archetype penalties)
+    const spdA = state.a.spd - (modsA.spdPenalty || 0) + rng.int(-5, 5);
+    const spdB = state.b.spd - (modsB.spdPenalty || 0) + rng.int(-5, 5);
     const order = spdA >= spdB ? ['a', 'b'] : ['b', 'a'];
 
     for (const attacker of order) {
       const defender = attacker === 'a' ? 'b' : 'a';
       const atk = state[attacker];
       const def = state[defender];
+      const mods = attacker === 'a' ? modsA : modsB;
+      const defMods = attacker === 'a' ? modsB : modsA;
 
       if (def.hp <= 0) break;
+
+      // Archetype skip/stall chance
+      if (mods.skipChance > 0 && rng.chance(mods.skipChance)) {
+        events.push({ tick: tick++, type: 'stall', who: attacker, round, passive: atk.archetype });
+        atk.consecutiveAttacks = 0;
+        continue;
+      }
 
       // Skip if stunned
       if (atk.stunned) {
         events.push({ tick: tick++, type: 'stunned', who: attacker, round });
         atk.stunned = false;
+        atk.consecutiveAttacks = 0;
         continue;
       }
 
@@ -76,23 +110,28 @@ function simulate(fighterA, fighterB, seed) {
       let category;
       const roll = rng.next();
       if (roll < 0.08) {
-        category = 'special';     // 8% special
+        category = 'special';
       } else if (roll < 0.35) {
-        category = 'magic';       // 27% magic
+        category = 'magic';
       } else if (roll < 0.55) {
-        category = 'speed';       // 20% speed
+        category = 'speed';
       } else {
-        category = 'physical';    // 45% physical
+        category = 'physical';
       }
 
       const move = rng.pick(MOVES[category]);
-      const baseStat = atk[move.base] || atk.str;
+      const baseStat = effectiveStat(atk[move.base] || atk.str);
 
-      // Damage calculation with variance
-      let damage = Math.round(baseStat * move.mult * rng.float(0.7, 1.3));
+      // Variance (archetype may override)
+      const variance = mods.varianceOverride || [0.7, 1.3];
+      let damage = Math.round(baseStat * move.mult * rng.float(variance[0], variance[1]));
 
-      // Defense reduction
-      const defReduction = def.def * rng.float(0.15, 0.35);
+      // Apply archetype damage multiplier + underdog flat damage
+      damage = Math.round(damage * mods.damageMult) + (mods.flatDamage || 0);
+
+      // Defense reduction (with defender's passive defense bonus)
+      const defValue = effectiveStat(def.def);
+      const defReduction = defValue * rng.float(0.15, 0.35) * (defMods.defMult || 1);
       damage = Math.max(1, Math.round(damage - defReduction));
 
       // Debuffed attacker does less
@@ -101,13 +140,16 @@ function simulate(fighterA, fighterB, seed) {
         atk.debuffed = false;
       }
 
-      // Critical hit chance (5-15% based on speed)
-      const critChance = 0.05 + (atk.spd / 1000);
+      // Critical hit chance (with archetype crit bonus)
+      const critChance = Math.max(0, 0.05 + (atk.spd / 1000) + (mods.critBonus || 0));
       const isCrit = rng.chance(critChance);
-      if (isCrit) damage = Math.round(damage * 1.8);
+      if (isCrit) {
+        const critMultiplier = mods.critMult || 1.8;
+        damage = Math.round(damage * critMultiplier);
+      }
 
-      // Dodge chance (3-10% based on defender speed)
-      const dodgeChance = 0.03 + (def.spd / 1500);
+      // Dodge chance (with defender's archetype dodge bonus)
+      const dodgeChance = Math.min(0.35, 0.03 + (def.spd / 1500) + (defMods.dodgeBonus || 0));
       const isDodge = rng.chance(dodgeChance);
 
       // Handle special effects
@@ -115,6 +157,7 @@ function simulate(fighterA, fighterB, seed) {
       if (move.special === 'heal') {
         const healAmt = Math.round(baseStat * move.mult * rng.float(0.8, 1.2));
         atk.hp = Math.min(atk.maxHp, atk.hp + healAmt);
+        atk.consecutiveAttacks = 0;
         events.push({
           tick: tick++, type: 'heal', who: attacker, round,
           move: move.name, flavor: move.flavor, amount: healAmt,
@@ -124,6 +167,7 @@ function simulate(fighterA, fighterB, seed) {
       }
 
       if (isDodge) {
+        atk.consecutiveAttacks++;
         events.push({
           tick: tick++, type: 'dodge', who: defender, attacker, round,
           move: move.name, flavor: move.flavor,
@@ -134,6 +178,14 @@ function simulate(fighterA, fighterB, seed) {
 
       // Apply damage
       def.hp = Math.max(0, def.hp - damage);
+      atk.consecutiveAttacks++;
+
+      // Self-damage on crit (Berserker instability)
+      let selfDmg = 0;
+      if (isCrit && mods.selfDamageOnCrit > 0 && rng.chance(mods.selfDamageOnCrit)) {
+        selfDmg = Math.round(atk.maxHp * mods.selfDamageAmount);
+        atk.hp = Math.max(1, atk.hp - selfDmg);
+      }
 
       // Apply special effects
       if (move.special === 'stun' && rng.chance(0.6)) {
@@ -146,23 +198,17 @@ function simulate(fighterA, fighterB, seed) {
         specialEffect = 'pierce';
       }
 
-      events.push({
-        tick: tick++,
-        type: 'attack',
-        who: attacker,
-        target: defender,
-        round,
-        move: move.name,
-        flavor: move.flavor,
-        category,
-        damage,
-        isCrit,
-        specialEffect,
-        hpA: state.a.hp,
-        hpB: state.b.hp,
-        maxHpA: state.a.maxHp,
-        maxHpB: state.b.maxHp,
-      });
+      const attackEvent = {
+        tick: tick++, type: 'attack', who: attacker, target: defender, round,
+        move: move.name, flavor: move.flavor, category,
+        damage, isCrit, specialEffect,
+        hpA: state.a.hp, hpB: state.b.hp,
+        maxHpA: state.a.maxHp, maxHpB: state.b.maxHp,
+      };
+      if (mods.fizzle) attackEvent.fizzle = true;
+      if (selfDmg > 0) attackEvent.selfDamage = selfDmg;
+
+      events.push(attackEvent);
 
       if (def.hp <= 0) break;
     }
