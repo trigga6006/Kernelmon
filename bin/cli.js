@@ -438,6 +438,25 @@ async function main() {
         break;
       }
 
+      case 'dash': {
+        console.log(`\n\x1b[38;2;240;160;140m  ▸ DASH MODE — Side-scroll obstacle runner\x1b[0m`);
+        console.log('\x1b[38;2;240;160;140m  ▸ Scanning hardware...\x1b[0m\n');
+        const dashSpecs = await getSpecs();
+        const dashFighter = await buildFighter(dashSpecs);
+        printFighter(dashFighter, '\x1b[38;2;240;160;140m', true);
+        console.log('\x1b[38;2;240;220;140m  ▸ Starting in 2 seconds...\x1b[0m\n');
+        await sleep(2000);
+        const { renderDash } = require('../src/dashrenderer');
+        const dashResult = await renderDash(dashFighter);
+        console.log('');
+        console.log(`\x1b[38;2;240;220;140m  ▸ Final Score: ${dashResult.score}\x1b[0m`);
+        if (dashResult.reason === 'dead') {
+          console.log('\x1b[38;2;240;150;170m  Your rig crashed!\x1b[0m');
+        }
+        console.log('');
+        break;
+      }
+
       case 'demo':
       default: {
         const turnMode = args.includes('--turns');

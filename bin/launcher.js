@@ -23,6 +23,9 @@ const { combinedSeed } = require('../src/rng');
 let renderTurnBattle;
 try { renderTurnBattle = require('../src/turnrenderer').renderTurnBattle; } catch (e) {}
 
+let renderDash;
+try { renderDash = require('../src/dashrenderer').renderDash; } catch (e) {}
+
 const { saveMatch } = require('../src/history');
 const { rollRewards, addItem, printRewards } = require('../src/items');
 
@@ -54,6 +57,7 @@ const SUBTITLE = '◄ YOUR RIG. YOUR FIGHTER. ►';
 const MENU_ITEMS = [
   { key: 'demo',        label: 'QUICK BATTLE',    desc: 'Auto-battle vs Chromebook',  icon: '⚡' },
   { key: 'demo_turns',  label: 'TURN BATTLE',     desc: 'Turn-based vs Chromebook',   icon: '◆' },
+  { key: 'dash',        label: 'DASH MODE',       desc: 'Side-scroll obstacle runner', icon: '▸' },
   { key: 'profile',     label: 'MY PROFILE',      desc: 'View your fighter stats',    icon: '◈' },
   { key: 'loadout',     label: 'LOADOUT',          desc: 'Configure equipped moves',   icon: '⚔' },
   { key: 'bag',         label: 'BAG',              desc: 'View collected items',       icon: '◰' },
@@ -68,6 +72,7 @@ const MENU_ITEMS = [
 const ITEM_COLORS = {
   demo:        colors.peach,
   demo_turns:  colors.gold,
+  dash:        colors.coral,
   profile:     colors.cyan,
   loadout:     colors.lavender,
   bag:         colors.mint,
@@ -701,6 +706,35 @@ async function handleDemo(fighter, turnMode) {
     } else {
       scr.centerText(cy - 1, 'D E F E A T', colors.rose, null, true);
       scr.centerText(cy + 1, '...the Chromebook won. Somehow.', colors.dim);
+    }
+  });
+}
+
+async function handleDash(fighter) {
+  if (!fighter) {
+    await withLoadingScreen('Scanning hardware', async () => {
+      const specs = await getSpecs();
+      fighter = await buildFighter(specs);
+    });
+  }
+
+  if (!renderDash) {
+    await showInfoScreen('DASH MODE', (scr, w, h) => {
+      scr.centerText(Math.floor(h / 2), 'Dash mode unavailable.', colors.rose);
+    });
+    return;
+  }
+
+  const result = await renderDash(fighter);
+
+  await showInfoScreen('RUN COMPLETE', (scr, w, h) => {
+    const cy = Math.floor(h / 2);
+    scr.centerText(cy - 2, '▸ ▸ ▸  D A S H  M O D E  ◂ ◂ ◂', colors.coral, null, true);
+    scr.centerText(cy, `Final Score: ${result.score}`, colors.gold, null, true);
+    if (result.reason === 'dead') {
+      scr.centerText(cy + 2, 'Your rig crashed!', colors.rose);
+    } else {
+      scr.centerText(cy + 2, 'Run ended.', colors.dim);
     }
   });
 }
@@ -1355,6 +1389,9 @@ async function run() {
         break;
       case 'demo_turns':
         await handleDemo(fighter, true);
+        break;
+      case 'dash':
+        await handleDash(fighter);
         break;
       case 'profile':
         await handleProfile(fighter);
