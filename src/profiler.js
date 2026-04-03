@@ -12,7 +12,10 @@ async function getSpecs() {
     si.chassis().catch(() => ({ type: '' })),
   ]);
 
-  const gpuMain = graphics.controllers?.[0] || {};
+  // Pick the strongest GPU — many systems have both integrated (Intel UHD) and discrete (RTX 4080).
+  // Sort by VRAM descending so the discrete card wins.
+  const gpuControllers = (graphics.controllers || []).slice().sort((a, b) => (b.vram || 0) - (a.vram || 0));
+  const gpuMain = gpuControllers[0] || {};
   const primaryDisk = disks?.[0] || {};
   const chassisType = (chassis.type || '').toLowerCase();
 
