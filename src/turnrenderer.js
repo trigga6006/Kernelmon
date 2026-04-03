@@ -14,6 +14,7 @@ const { getSprite } = require('./sprites');
 const { selectMove } = require('./moveselect');
 const { createBattleState, processTurn, isOver, getWinner } = require('./turnbattle');
 const { submitAndWait, endBattle } = require('./turnrelay');
+const { useItem, ITEMS } = require('./items');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -77,6 +78,117 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     if (battleLog.length > logHeight) battleLog.shift();
   }
 
+  // ─── Item effect application ───
+  function applyItemEffect(item, state, who) {
+    const fighter = state[who];
+    const opponent = state[who === 'a' ? 'b' : 'a'];
+
+    switch (item.effect) {
+      case 'heal': {
+        const healAmt = Math.round(fighter.maxHp * item.value);
+        fighter.hp = Math.min(fighter.maxHp, fighter.hp + healAmt);
+        if (who === 'a') targetHpA = fighter.hp;
+        else targetHpB = fighter.hp;
+        addLog(`  +${healAmt} HP restored`, colors.mint);
+        floats.add(plyCenterX, plyCenterY - 3, `+${healAmt}`, colors.mint, 14);
+        break;
+      }
+      case 'boost_str': {
+        const boost = Math.round(fighter.str * item.value);
+        fighter.str += boost;
+        fighter._boosts = fighter._boosts || [];
+        fighter._boosts.push({ stat: 'str', amount: boost, turns: item.duration });
+        addLog(`  STR +${boost} for ${item.duration} turns`, colors.peach);
+        break;
+      }
+      case 'boost_def': {
+        const boost = Math.round(fighter.def * item.value);
+        fighter.def += boost;
+        fighter._boosts = fighter._boosts || [];
+        fighter._boosts.push({ stat: 'def', amount: boost, turns: item.duration });
+        addLog(`  DEF +${boost} for ${item.duration} turns`, colors.sky);
+        break;
+      }
+      case 'boost_spd': {
+        const boost = Math.round(fighter.spd * item.value);
+        fighter.spd += boost;
+        fighter._boosts = fighter._boosts || [];
+        fighter._boosts.push({ stat: 'spd', amount: boost, turns: item.duration });
+        addLog(`  SPD +${boost} for ${item.duration} turns`, colors.sky);
+        break;
+      }
+      case 'boost_mag': {
+        const boost = Math.round(fighter.mag * item.value);
+        fighter.mag += boost;
+        fighter._boosts = fighter._boosts || [];
+        fighter._boosts.push({ stat: 'mag', amount: boost, turns: item.duration });
+        addLog(`  MAG +${boost} for ${item.duration} turns`, colors.lavender);
+        break;
+      }
+      case 'shield': {
+        fighter._shield = true;
+        addLog(`  Firewall active — next hit blocked`, colors.sky);
+        break;
+      }
+      case 'cleanse': {
+        fighter.stunned = false;
+        fighter.debuffed = false;
+        addLog(`  Status effects cleared`, colors.mint);
+        break;
+      }
+      case 'reflect': {
+        fighter._reflect = item.value;
+        addLog(`  Reflect active — 50% damage returned`, colors.lavender);
+        break;
+      }
+      case 'direct_damage': {
+        const dmg = Math.round(opponent.maxHp * item.value);
+        opponent.hp = Math.max(0, opponent.hp - dmg);
+        if (who === 'a') targetHpB = opponent.hp;
+        else targetHpA = opponent.hp;
+        addLog(`  Dealt ${dmg} direct damage`, colors.peach);
+        const ox = who === 'a' ? oppCenterX : plyCenterX;
+        const oy = who === 'a' ? oppCenterY : plyCenterY;
+        floats.add(ox, oy - 3, `${dmg}`, colors.damage, 14);
+        glitch.burst(ox, oy, 5, 5);
+        break;
+      }
+      case 'stun': {
+        opponent.stunned = true;
+        addLog(`  Opponent stunned for 1 turn`, colors.rose);
+        break;
+      }
+      case 'nuke': {
+        const dmg = Math.round(opponent.maxHp * item.value);
+        opponent.hp = Math.max(0, opponent.hp - dmg);
+        opponent.stunned = true;
+        if (who === 'a') targetHpB = opponent.hp;
+        else targetHpA = opponent.hp;
+        addLog(`  NUKE! ${dmg} damage + stun`, colors.gold);
+        glitch.screenTear(w, 6);
+        glitch.scatter(w / 2, h / 2, w, h, 20, 8);
+        break;
+      }
+    }
+  }
+
+  // ─── Tick down temporary boosts at end of each turn ───
+  function tickBoosts(state) {
+    for (const who of ['a', 'b']) {
+      const fighter = state[who];
+      if (!fighter._boosts) continue;
+      fighter._boosts = fighter._boosts.filter(b => {
+        b.turns--;
+        if (b.turns <= 0) {
+          fighter[b.stat] -= b.amount;
+          return false;
+        }
+        return true;
+      });
+    }
+    // Tick shield/reflect (they last 1 hit, handled in battle engine)
+  }
+
   screen.enter();
 
   // ─── Main battle loop ───
@@ -88,33 +200,48 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       // Render the scene with move selection UI
       drawScene();
 
-      // ── Player selects move ──
-      const myMove = await selectMove(movesetA, screen, logX, logY, logW, logHeight);
-      addLog(`You chose: ${myMove.label}`, colors.p1);
+      // ── Player selects move or item ──
+      const choice = await selectMove(movesetA, screen, logX, logY, logW, logHeight);
+
+      let myMove = null;
+      let usedItemThisTurn = false;
+
+      if (choice.type === 'item') {
+        // ── ITEM USAGE — apply immediately, then still attack ──
+        const item = choice.item;
+        const consumed = useItem(item.id);
+        if (consumed) {
+          addLog(`Used: ${item.name}`, colors.mint);
+          applyItemEffect(item, battleState, 'a');
+          usedItemThisTurn = true;
+          await animateIdle(800);
+          drawScene();
+        }
+        // After item, auto-pick first move (items don't replace your attack)
+        myMove = movesetA[0];
+        addLog(`Auto-attack: ${myMove.label}`, colors.p1);
+      } else {
+        myMove = choice.move;
+        addLog(`You chose: ${myMove.label}`, colors.p1);
+      }
 
       let opponentMove;
       if (isOnline) {
-        // Submit and wait for opponent
-        drawScene(); // redraw without selection UI
+        drawScene();
         addLog('Waiting for opponent...', colors.dim);
         drawScene();
 
+        // Send move name (items are local-only, opponent just sees our attack)
         const result = await submitAndWait(relayUrl, roomCode, role, myMove.name, turnNum - 1);
         const oppMoveName = role === 'host' ? result.joinerMove : result.hostMove;
         opponentMove = movesetB.find(m => m.name === oppMoveName) || movesetB[0];
       } else {
-        // Demo/local: AI picks randomly (seeded)
         opponentMove = movesetB[battleState.rng.int(0, movesetB.length - 1)];
       }
 
       addLog(`Opponent chose: ${opponentMove.label}`, colors.p2);
 
       // ── Process turn ──
-      const myMoveForEngine = role === 'joiner'
-        ? { a: opponentMove, b: myMove }
-        : { a: myMove, b: opponentMove };
-
-      // In the engine, A is always the host perspective
       const events = processTurn(
         battleState,
         role === 'joiner' ? opponentMove : myMove,
@@ -130,6 +257,9 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         targetHpA = lastHpEvent.hpA;
         targetHpB = lastHpEvent.hpB;
       }
+
+      // Tick down temporary boosts
+      tickBoosts(battleState);
 
       // Small pause between turns
       await animateIdle(500);

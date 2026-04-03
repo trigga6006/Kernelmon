@@ -16,9 +16,10 @@ const { hostOnline, joinOnline, DEFAULT_RELAY_URL, ROOM_CODE_PATTERN } = require
 const { combinedSeed } = require('../src/rng');
 const { colors, RESET } = require('../src/palette');
 const { getSprite } = require('../src/sprites');
-const { assignMoveset } = require('../src/moveset');
+const { assignMoveset, getAvailableMoves, getEquippedMoves, saveLoadout, MOVE_POOL } = require('../src/moveset');
 const { renderTurnBattle } = require('../src/turnrenderer');
 const { saveMatch, printHistory } = require('../src/history');
+const { rollRewards, addItem, printInventory, printRewards } = require('../src/items');
 
 const args = process.argv.slice(2);
 const command = args[0] || 'demo';
@@ -42,6 +43,23 @@ async function buildFighter(specs) {
     specs,
     sprite, // hardware-matched visual identity
   };
+}
+
+// Post-battle: save match + award loot if won
+function postBattle(myFighter, opponent, winner, mode) {
+  saveMatch(myFighter, opponent, winner, mode);
+  const won = winner === 'a';
+  if (won) {
+    const { createRNG } = require('../src/rng');
+    const rng = createRNG(Date.now());
+    const tier = opponent.sprite?.hw?.tier || 'mid';
+    const rewards = rollRewards(rng, tier, true);
+    for (const r of rewards) addItem(r.id);
+    if (rewards.length > 0) {
+      console.log('');
+      printRewards(rewards);
+    }
+  }
 }
 
 function printFighter(fighter, color, compact = false) {
@@ -140,6 +158,57 @@ async function main() {
         break;
       }
 
+      case 'bag': {
+        console.log('');
+        printInventory();
+        console.log('');
+        break;
+      }
+
+      case 'loadout': {
+        console.log('\n\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m\n');
+        const specs = await getSpecs();
+        const fighter = await buildFighter(specs);
+        const available = getAvailableMoves(fighter.stats);
+        const equipped = getEquippedMoves(fighter.stats);
+
+        const cyan = '\x1b[38;2;130;220;235m';
+        const bright = '\x1b[38;2;230;230;245m';
+        const dim = '\x1b[38;2;100;100;130m';
+        const gold = '\x1b[38;2;240;220;140m';
+
+        console.log(`${cyan}  ╭──────────────────────────────────────────────────╮${RESET}`);
+        console.log(`${cyan}  │  ${bright}EQUIPPED MOVES (4)${dim}                               ${cyan}│${RESET}`);
+        console.log(`${cyan}  ├──────────────────────────────────────────────────┤${RESET}`);
+        equipped.forEach((m, i) => {
+          console.log(`${cyan}  │  ${gold}${i + 1}. ${bright}${m.label.padEnd(22)}${dim}${m.cat.padEnd(10)} ${m.desc.padEnd(16).slice(0,16)}${cyan}│${RESET}`);
+        });
+        console.log(`${cyan}  ├──────────────────────────────────────────────────┤${RESET}`);
+        console.log(`${cyan}  │  ${bright}AVAILABLE MOVES (${available.length})${dim}                          ${cyan}│${RESET}`);
+        console.log(`${cyan}  ├──────────────────────────────────────────────────┤${RESET}`);
+        available.forEach(m => {
+          const isEquipped = equipped.some(e => e.name === m.name);
+          const marker = isEquipped ? `${gold}★` : `${dim}·`;
+          console.log(`${cyan}  │  ${marker} ${isEquipped ? bright : dim}${m.label.padEnd(22)}${dim}${m.cat.padEnd(10)} ${m.desc.padEnd(16).slice(0,16)}${cyan}│${RESET}`);
+        });
+        console.log(`${cyan}  ╰──────────────────────────────────────────────────╯${RESET}`);
+        console.log(`${dim}  To change loadout: wso loadout set <move1> <move2> <move3> <move4>${RESET}`);
+
+        // Handle "wso loadout set ..."
+        if (args[1] === 'set' && args.length >= 6) {
+          const names = args.slice(2, 6).map(n => n.toUpperCase());
+          const valid = names.every(n => MOVE_POOL[n] && available.some(m => m.name === n));
+          if (valid) {
+            saveLoadout(names);
+            console.log(`${gold}  ★ Loadout saved!${RESET}`);
+          } else {
+            console.log(`\x1b[38;2;240;150;170m  ✗ Invalid move names. Use exact names from the pool above.${RESET}`);
+          }
+        }
+        console.log('');
+        break;
+      }
+
       case 'profile': {
         console.log('\n\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m\n');
         const specs = await getSpecs();
@@ -183,7 +252,7 @@ async function main() {
         let winner;
 
         if (turnMode) {
-          const myMoves = assignMoveset(myFighter.stats);
+          const myMoves = getEquippedMoves(myFighter.stats);
           const oppMoves = assignMoveset(opponent.stats);
           console.log('\x1b[38;2;240;220;140m  ◆ Turn-based battle starting...\x1b[0m\n');
           await sleep(2000);
@@ -197,7 +266,7 @@ async function main() {
           winner = await renderBattle(myFighter, opponent, events);
         }
 
-        saveMatch(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
+        postBattle(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
         console.log('');
         if (winner === 'a') {
           console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION WINS! ★\x1b[0m');
@@ -251,7 +320,7 @@ async function main() {
 
         if (turnMode) {
           // Turn-based: joiner is fighterA (foreground), opponent is fighterB
-          const myMoves = assignMoveset(myFighter.stats);
+          const myMoves = getEquippedMoves(myFighter.stats);
           const oppMoves = assignMoveset(opponent.stats);
           console.log('\x1b[38;2;240;220;140m  ◆ Turn-based battle starting...\x1b[0m\n');
           await sleep(2000);
@@ -280,7 +349,7 @@ async function main() {
           winner = await renderBattle(myFighter, opponent, swapped);
         }
 
-        saveMatch(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
+        postBattle(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
         console.log('');
         if (winner === 'a') {
           console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION WINS! ★\x1b[0m');
@@ -305,7 +374,7 @@ async function main() {
         printFighter(opponent, '\x1b[38;2;180;160;240m');
 
         if (turnMode) {
-          const myMoves = assignMoveset(myFighter.stats);
+          const myMoves = getEquippedMoves(myFighter.stats);
           const oppMoves = assignMoveset(opponent.stats);
           console.log('\x1b[38;2;130;220;235m  ◆ Your moves:\x1b[0m');
           myMoves.forEach(m => console.log(`\x1b[38;2;100;100;130m    ${m.label.padEnd(20)} ${m.desc}\x1b[0m`));
@@ -315,7 +384,7 @@ async function main() {
           const seed = combinedSeed(myFighter.id, opponent.id);
           const winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, { role: 'host', seed });
 
-          saveMatch(myFighter, opponent, winner, 'turns');
+          postBattle(myFighter, opponent, winner, 'turns');
           console.log('');
           if (winner === 'a') {
             console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION DESTROYS THE CHROMEBOOK! ★\x1b[0m');
@@ -330,7 +399,7 @@ async function main() {
           const events = simulate(myFighter, opponent, seed);
           const winner = await renderBattle(myFighter, opponent, events);
 
-          saveMatch(myFighter, opponent, winner, 'auto');
+          postBattle(myFighter, opponent, winner, 'auto');
           console.log('');
           if (winner === 'a') {
             console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION DESTROYS THE CHROMEBOOK! ★\x1b[0m');
