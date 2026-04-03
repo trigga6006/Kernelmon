@@ -104,8 +104,8 @@ async function main() {
           opponent = result.opponent;
         }
 
-        // Rebuild opponent sprite from their specs (they sent raw specs over the wire)
-        if (opponent.specs && !opponent.sprite) {
+        // Always rebuild opponent sprite — functions don't survive JSON serialization
+        if (opponent.specs) {
           opponent.sprite = getSprite(opponent.specs);
         }
 

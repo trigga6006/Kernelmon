@@ -10,7 +10,7 @@ const crypto = require('node:crypto');
 
 const PORT = parseInt(process.env.PORT, 10) || 8080;
 const MAX_BODY = 8192;          // 8KB max payload
-const ROOM_TTL = 5 * 60_000;   // 5 min room lifetime
+const ROOM_TTL = 15 * 60_000;  // 15 min room lifetime
 const ROOM_LIMIT = 100;         // max concurrent rooms
 const CLEANUP_INTERVAL = 30_000;
 const RATE_LIMIT = 10;          // requests per minute per IP

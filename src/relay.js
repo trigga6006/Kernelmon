@@ -8,7 +8,7 @@ const DEFAULT_RELAY_URL = 'https://wso-relay.fly.dev';
 
 const REQUEST_TIMEOUT = 10_000;
 const POLL_INTERVAL = 2_000;
-const POLL_TIMEOUT = 5 * 60_000;  // 5 min max wait
+const POLL_TIMEOUT = 15 * 60_000; // 15 min max wait
 
 // ─── HTTP helper ───
 
