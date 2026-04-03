@@ -2,11 +2,10 @@
 
 // WORKSTATION OFF — CLI entry point
 // Usage:
-//   wso host [--online]             Host a battle (--online for internet play)
-//   wso host [--port 7331]          Host on LAN
+//   wso host [--online] [--turns]   Host a battle (--turns for turn-based mode)
 //   wso join <room-code>            Join an online battle
 //   wso join <ip> [--port 7331]     Join a LAN battle
-//   wso demo                        Battle your PC against a mock Chromebook
+//   wso demo [--turns]              Demo battle (--turns for turn-based)
 //   wso profile                     Show your PC's fighter stats
 
 const { getSpecs, buildStats, fighterName, gpuName } = require('../src/profiler');
@@ -17,6 +16,8 @@ const { hostOnline, joinOnline, DEFAULT_RELAY_URL, ROOM_CODE_PATTERN } = require
 const { combinedSeed } = require('../src/rng');
 const { colors, RESET } = require('../src/palette');
 const { getSprite } = require('../src/sprites');
+const { assignMoveset } = require('../src/moveset');
+const { renderTurnBattle } = require('../src/turnrenderer');
 
 const args = process.argv.slice(2);
 const command = args[0] || 'demo';
@@ -87,6 +88,7 @@ async function main() {
 
       case 'host': {
         const online = args.includes('--online');
+        const turnMode = args.includes('--turns');
         const port = parseInt(getFlag('--port', PORT), 10);
         const relayUrl = getFlag('--relay', DEFAULT_RELAY_URL);
 
@@ -95,17 +97,18 @@ async function main() {
         const myFighter = await buildFighter(specs);
         printFighter(myFighter, '\x1b[38;2;130;220;235m');
 
-        let opponent, matchSeed = 0;
+        let opponent, matchSeed = 0, roomCode;
         if (online) {
           const result = await hostOnline(myFighter, relayUrl);
           opponent = result.opponent;
           matchSeed = result.matchSeed || 0;
+          roomCode = result.roomCode;
         } else {
           const result = await host(myFighter, port);
           opponent = result.opponent;
         }
 
-        // Always rebuild opponent sprite — functions don't survive JSON serialization
+        // Always rebuild opponent sprite
         if (opponent.specs) {
           opponent.sprite = getSprite(opponent.specs);
         }
@@ -113,12 +116,23 @@ async function main() {
         console.log('\x1b[38;2;180;160;240m  ◆ Opponent found!\x1b[0m');
         printFighter(opponent, '\x1b[38;2;180;160;240m');
 
-        console.log('\n\x1b[38;2;240;220;140m  ◆ Battle starting in 3 seconds...\x1b[0m\n');
-        await sleep(3000);
-
         const seed = combinedSeed(myFighter.id, opponent.id) ^ matchSeed;
-        const events = simulate(myFighter, opponent, seed);
-        const winner = await renderBattle(myFighter, opponent, events);
+        let winner;
+
+        if (turnMode) {
+          const myMoves = assignMoveset(myFighter.stats);
+          const oppMoves = assignMoveset(opponent.stats);
+          console.log('\x1b[38;2;240;220;140m  ◆ Turn-based battle starting...\x1b[0m\n');
+          await sleep(2000);
+          winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, {
+            role: 'host', roomCode, relayUrl, seed,
+          });
+        } else {
+          console.log('\n\x1b[38;2;240;220;140m  ◆ Battle starting in 3 seconds...\x1b[0m\n');
+          await sleep(3000);
+          const events = simulate(myFighter, opponent, seed);
+          winner = await renderBattle(myFighter, opponent, events);
+        }
 
         console.log('');
         if (winner === 'a') {
@@ -148,17 +162,19 @@ async function main() {
         const myFighter = await buildFighter(specs);
         printFighter(myFighter, '\x1b[38;2;180;160;240m');
 
-        let opponent, matchSeed = 0;
+        const turnMode = args.includes('--turns');
+        let opponent, matchSeed = 0, roomCode;
         if (isRoomCode) {
           const result = await joinOnline(myFighter, target, relayUrl);
           opponent = result.opponent;
           matchSeed = result.matchSeed || 0;
+          roomCode = target;
         } else {
           const result = await join(myFighter, target, port);
           opponent = result.opponent;
         }
 
-        // Always rebuild opponent sprite — functions don't survive JSON serialization
+        // Always rebuild opponent sprite
         if (opponent.specs) {
           opponent.sprite = getSprite(opponent.specs);
         }
@@ -166,32 +182,39 @@ async function main() {
         console.log('\x1b[38;2;130;220;235m  ◆ Opponent found!\x1b[0m');
         printFighter(opponent, '\x1b[38;2;130;220;235m');
 
-        console.log('\n\x1b[38;2;240;220;140m  ◆ Battle starting in 3 seconds...\x1b[0m\n');
-        await sleep(3000);
-
-        // Simulate in canonical order (host=A, joiner=B) for deterministic results
-        // matchSeed ensures rematches play out differently
         const seed = combinedSeed(opponent.id, myFighter.id) ^ matchSeed;
-        const events = simulate(opponent, myFighter, seed);
+        let winner;
 
-        // Swap perspective: remap events so joiner sees THEMSELVES in the foreground
-        const swapped = events.map(e => {
-          const s = { ...e };
-          // Swap all a↔b references
-          const swapAB = v => v === 'a' ? 'b' : v === 'b' ? 'a' : v;
-          if ('who' in s) s.who = swapAB(s.who);
-          if ('target' in s) s.target = swapAB(s.target);
-          if ('winner' in s) s.winner = swapAB(s.winner);
-          if ('loser' in s) s.loser = swapAB(s.loser);
-          if ('attacker' in s) s.attacker = swapAB(s.attacker);
-          // Swap HP values
-          const tmpHp = s.hpA; s.hpA = s.hpB; s.hpB = tmpHp;
-          const tmpMax = s.maxHpA; s.maxHpA = s.maxHpB; s.maxHpB = tmpMax;
-          const tmpFinal = s.finalHpA; s.finalHpA = s.finalHpB; s.finalHpB = tmpFinal;
-          return s;
-        });
+        if (turnMode) {
+          // Turn-based: joiner is fighterA (foreground), opponent is fighterB
+          const myMoves = assignMoveset(myFighter.stats);
+          const oppMoves = assignMoveset(opponent.stats);
+          console.log('\x1b[38;2;240;220;140m  ◆ Turn-based battle starting...\x1b[0m\n');
+          await sleep(2000);
+          winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, {
+            role: 'joiner', roomCode, relayUrl, seed,
+          });
+        } else {
+          console.log('\n\x1b[38;2;240;220;140m  ◆ Battle starting in 3 seconds...\x1b[0m\n');
+          await sleep(3000);
+          const events = simulate(opponent, myFighter, seed);
 
-        const winner = await renderBattle(myFighter, opponent, swapped);
+          // Swap perspective for auto-battle mode
+          const swapped = events.map(e => {
+            const s = { ...e };
+            const swapAB = v => v === 'a' ? 'b' : v === 'b' ? 'a' : v;
+            if ('who' in s) s.who = swapAB(s.who);
+            if ('target' in s) s.target = swapAB(s.target);
+            if ('winner' in s) s.winner = swapAB(s.winner);
+            if ('loser' in s) s.loser = swapAB(s.loser);
+            if ('attacker' in s) s.attacker = swapAB(s.attacker);
+            const tmpHp = s.hpA; s.hpA = s.hpB; s.hpB = tmpHp;
+            const tmpMax = s.maxHpA; s.maxHpA = s.maxHpB; s.maxHpB = tmpMax;
+            const tmpFinal = s.finalHpA; s.finalHpA = s.finalHpB; s.finalHpB = tmpFinal;
+            return s;
+          });
+          winner = await renderBattle(myFighter, opponent, swapped);
+        }
 
         console.log('');
         if (winner === 'a') {
@@ -205,7 +228,8 @@ async function main() {
 
       case 'demo':
       default: {
-        console.log('\n\x1b[38;2;130;220;235m  ◆ DEMO MODE — Battle against a Chromebook\x1b[0m');
+        const turnMode = args.includes('--turns');
+        console.log(`\n\x1b[38;2;130;220;235m  ◆ DEMO MODE${turnMode ? ' (Turn-Based)' : ''} — Battle against a Chromebook\x1b[0m`);
         console.log('\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m\n');
         const specs = await getSpecs();
         const myFighter = await buildFighter(specs);
@@ -215,18 +239,37 @@ async function main() {
         console.log('\x1b[38;2;180;160;240m  ◆ Opponent:\x1b[0m');
         printFighter(opponent, '\x1b[38;2;180;160;240m');
 
-        console.log('\x1b[38;2;240;220;140m  ◆ Battle starting in 3 seconds...\x1b[0m\n');
-        await sleep(3000);
+        if (turnMode) {
+          const myMoves = assignMoveset(myFighter.stats);
+          const oppMoves = assignMoveset(opponent.stats);
+          console.log('\x1b[38;2;130;220;235m  ◆ Your moves:\x1b[0m');
+          myMoves.forEach(m => console.log(`\x1b[38;2;100;100;130m    ${m.label.padEnd(20)} ${m.desc}\x1b[0m`));
+          console.log('\x1b[38;2;240;220;140m  ◆ Battle starting in 2 seconds...\x1b[0m\n');
+          await sleep(2000);
 
-        const seed = combinedSeed(myFighter.id, opponent.id);
-        const events = simulate(myFighter, opponent, seed);
-        const winner = await renderBattle(myFighter, opponent, events);
+          const seed = combinedSeed(myFighter.id, opponent.id);
+          const winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, { role: 'host', seed });
 
-        console.log('');
-        if (winner === 'a') {
-          console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION DESTROYS THE CHROMEBOOK! ★\x1b[0m');
+          console.log('');
+          if (winner === 'a') {
+            console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION DESTROYS THE CHROMEBOOK! ★\x1b[0m');
+          } else {
+            console.log('\x1b[38;2;240;150;170m  ...the Chromebook won. Somehow.\x1b[0m');
+          }
         } else {
-          console.log('\x1b[38;2;240;150;170m  ...the Chromebook won. Somehow.\x1b[0m');
+          console.log('\x1b[38;2;240;220;140m  ◆ Battle starting in 3 seconds...\x1b[0m\n');
+          await sleep(3000);
+
+          const seed = combinedSeed(myFighter.id, opponent.id);
+          const events = simulate(myFighter, opponent, seed);
+          const winner = await renderBattle(myFighter, opponent, events);
+
+          console.log('');
+          if (winner === 'a') {
+            console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION DESTROYS THE CHROMEBOOK! ★\x1b[0m');
+          } else {
+            console.log('\x1b[38;2;240;150;170m  ...the Chromebook won. Somehow.\x1b[0m');
+          }
         }
         console.log('');
         break;
