@@ -18,6 +18,7 @@ const { colors, RESET } = require('../src/palette');
 const { getSprite } = require('../src/sprites');
 const { assignMoveset } = require('../src/moveset');
 const { renderTurnBattle } = require('../src/turnrenderer');
+const { saveMatch, printHistory } = require('../src/history');
 
 const args = process.argv.slice(2);
 const command = args[0] || 'demo';
@@ -132,6 +133,13 @@ function mockOpponent() {
 async function main() {
   try {
     switch (command) {
+      case 'history': {
+        console.log('');
+        printHistory();
+        console.log('');
+        break;
+      }
+
       case 'profile': {
         console.log('\n\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m\n');
         const specs = await getSpecs();
@@ -189,6 +197,7 @@ async function main() {
           winner = await renderBattle(myFighter, opponent, events);
         }
 
+        saveMatch(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
         console.log('');
         if (winner === 'a') {
           console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION WINS! ★\x1b[0m');
@@ -271,6 +280,7 @@ async function main() {
           winner = await renderBattle(myFighter, opponent, swapped);
         }
 
+        saveMatch(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
         console.log('');
         if (winner === 'a') {
           console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION WINS! ★\x1b[0m');
@@ -305,6 +315,7 @@ async function main() {
           const seed = combinedSeed(myFighter.id, opponent.id);
           const winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, { role: 'host', seed });
 
+          saveMatch(myFighter, opponent, winner, 'turns');
           console.log('');
           if (winner === 'a') {
             console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION DESTROYS THE CHROMEBOOK! ★\x1b[0m');
@@ -319,6 +330,7 @@ async function main() {
           const events = simulate(myFighter, opponent, seed);
           const winner = await renderBattle(myFighter, opponent, events);
 
+          saveMatch(myFighter, opponent, winner, 'auto');
           console.log('');
           if (winner === 'a') {
             console.log('\x1b[38;2;240;220;140m  ★ YOUR WORKSTATION DESTROYS THE CHROMEBOOK! ★\x1b[0m');
