@@ -95,10 +95,11 @@ async function main() {
         const myFighter = await buildFighter(specs);
         printFighter(myFighter, '\x1b[38;2;130;220;235m');
 
-        let opponent;
+        let opponent, matchSeed = 0;
         if (online) {
           const result = await hostOnline(myFighter, relayUrl);
           opponent = result.opponent;
+          matchSeed = result.matchSeed || 0;
         } else {
           const result = await host(myFighter, port);
           opponent = result.opponent;
@@ -115,7 +116,7 @@ async function main() {
         console.log('\n\x1b[38;2;240;220;140m  ◆ Battle starting in 3 seconds...\x1b[0m\n');
         await sleep(3000);
 
-        const seed = combinedSeed(myFighter.id, opponent.id);
+        const seed = combinedSeed(myFighter.id, opponent.id) ^ matchSeed;
         const events = simulate(myFighter, opponent, seed);
         const winner = await renderBattle(myFighter, opponent, events);
 
@@ -147,17 +148,18 @@ async function main() {
         const myFighter = await buildFighter(specs);
         printFighter(myFighter, '\x1b[38;2;180;160;240m');
 
-        let opponent;
+        let opponent, matchSeed = 0;
         if (isRoomCode) {
           const result = await joinOnline(myFighter, target, relayUrl);
           opponent = result.opponent;
+          matchSeed = result.matchSeed || 0;
         } else {
           const result = await join(myFighter, target, port);
           opponent = result.opponent;
         }
 
-        // Rebuild opponent sprite from their specs
-        if (opponent.specs && !opponent.sprite) {
+        // Always rebuild opponent sprite — functions don't survive JSON serialization
+        if (opponent.specs) {
           opponent.sprite = getSprite(opponent.specs);
         }
 
@@ -168,7 +170,8 @@ async function main() {
         await sleep(3000);
 
         // Simulate in canonical order (host=A, joiner=B) for deterministic results
-        const seed = combinedSeed(opponent.id, myFighter.id);
+        // matchSeed ensures rematches play out differently
+        const seed = combinedSeed(opponent.id, myFighter.id) ^ matchSeed;
         const events = simulate(opponent, myFighter, seed);
 
         // Swap perspective: remap events so joiner sees THEMSELVES in the foreground

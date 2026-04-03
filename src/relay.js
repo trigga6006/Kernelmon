@@ -69,7 +69,9 @@ async function hostOnline(myFighter, relayUrl = DEFAULT_RELAY_URL) {
 
   // Create room
   console.log('\x1b[38;2;130;220;235m  ◆ Creating room on relay...\x1b[0m');
-  const { code } = await httpRequest(`${base}/rooms`, 'POST', { fighter: myFighter });
+  const createResult = await httpRequest(`${base}/rooms`, 'POST', { fighter: myFighter });
+  const code = createResult.code;
+  let matchSeed = createResult.matchSeed || 0;
 
   console.log('');
   console.log('\x1b[38;2;130;220;235m  ╭─────────────────────────────────────╮\x1b[0m');
@@ -90,7 +92,7 @@ async function hostOnline(myFighter, relayUrl = DEFAULT_RELAY_URL) {
     try {
       const result = await httpRequest(`${base}/rooms/${code}`, 'GET');
       if (result.status === 'matched' && result.fighter) {
-        return { opponent: result.fighter, roomCode: code };
+        return { opponent: result.fighter, roomCode: code, matchSeed: result.matchSeed || matchSeed };
       }
     } catch (err) {
       // Transient error — keep polling
@@ -117,7 +119,7 @@ async function joinOnline(myFighter, roomCode, relayUrl = DEFAULT_RELAY_URL) {
   }
 
   console.log('\x1b[38;2;180;160;240m  ◆ Matched! Exchanging specs...\x1b[0m');
-  return { opponent: result.fighter };
+  return { opponent: result.fighter, matchSeed: result.matchSeed || 0 };
 }
 
 function sleep(ms) {

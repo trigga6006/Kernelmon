@@ -141,14 +141,18 @@ const server = http.createServer(async (req, res) => {
       } while (rooms.has(normalized) && attempts < 5);
       if (rooms.has(normalized)) return error(res, 503, 'Could not generate room code. Try again.');
 
+      // matchSeed: random number both players get for per-match variety
+      const matchSeed = crypto.randomBytes(4).readUInt32BE(0);
+
       rooms.set(normalized, {
         hostFighter: body.fighter,
         joinerFighter: null,
         createdAt: Date.now(),
+        matchSeed,
       });
 
       console.log(`[+] Room ${code} created by ${ip} (${rooms.size} active)`);
-      return json(res, 201, { code });
+      return json(res, 201, { code, matchSeed });
     }
 
     // GET /rooms/:code — host polls for joiner
@@ -161,8 +165,9 @@ const server = http.createServer(async (req, res) => {
       if (room.joinerFighter) {
         // Match found — return joiner's fighter, schedule room cleanup
         const fighter = room.joinerFighter;
+        const { matchSeed } = room;
         setTimeout(() => rooms.delete(normalized), 10_000);
-        return json(res, 200, { status: 'matched', fighter });
+        return json(res, 200, { status: 'matched', fighter, matchSeed });
       }
       return json(res, 200, { status: 'waiting' });
     }
@@ -180,7 +185,7 @@ const server = http.createServer(async (req, res) => {
 
       room.joinerFighter = body.fighter;
       console.log(`[*] Room ${joinMatch[1]} matched! (${ip})`);
-      return json(res, 200, { status: 'matched', fighter: room.hostFighter });
+      return json(res, 200, { status: 'matched', fighter: room.hostFighter, matchSeed: room.matchSeed });
     }
 
     // 404
