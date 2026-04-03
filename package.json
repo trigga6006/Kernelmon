@@ -1,0 +1,21 @@
+{
+  "name": "workstation-off",
+  "version": "1.0.0",
+  "description": "Profile your PC specs into a fighter avatar and battle other workstations in the terminal",
+  "main": "src/index.js",
+  "bin": {
+    "workstation-off": "./bin/cli.js",
+    "wso": "./bin/cli.js"
+  },
+  "scripts": {
+    "start": "node bin/cli.js",
+    "host": "node bin/cli.js host",
+    "join": "node bin/cli.js join",
+    "demo": "node bin/cli.js demo"
+  },
+  "keywords": ["cli", "terminal", "battle", "pc-specs", "ascii-art", "game"],
+  "license": "MIT",
+  "dependencies": {
+    "systeminformation": "^5.22.0"
+  }
+}
