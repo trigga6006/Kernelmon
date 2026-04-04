@@ -219,7 +219,7 @@ function openWorkshop(realSpecs, screen) {
       }
 
       // ── Divider ──
-      const slotsBottom = slotY + (SLOT_ORDER.length - 1) * 2 + 2;
+      const slotsBottom = slotY + (SLOT_ORDER.length - 1) * 3 + 2; // 3 lines per slot (art height)
       const statsBottom = slotY + STAT_NAMES.length;
       const divY = Math.max(slotsBottom, statsBottom) + 1;
       screen.hline(2, divY, w - 4, '─', colors.dimmer);
@@ -227,23 +227,21 @@ function openWorkshop(realSpecs, screen) {
       // ── Bottom panel ──
       if (mode === 'naming') {
         screen.text(leftX, divY + 1, 'NAME YOUR CHARACTER:', GOLD, null, true);
-        screen.text(leftX, divY + 3, `> ${nameBuffer}_`, colors.white, null, true);
-        screen.text(leftX, divY + 5, 'Type a name and press Enter (Esc to cancel)', colors.dimmer);
+        screen.text(leftX, divY + 2, `> ${nameBuffer}_`, colors.white, null, true);
+        screen.text(leftX, divY + 3, 'Type a name + Enter (Esc = cancel)', colors.dimmer);
       } else if (mode === 'slots') {
-        // Controls
-        const controls = [];
-        controls.push('↑↓ slot');
-        controls.push('Enter = swap');
-        controls.push('U = unequip');
-        controls.push('←→ character');
-        controls.push('N = new');
-        if (!build.main) controls.push('D = delete');
-        if (isBuildComplete(tabIndex)) controls.push('A = set active');
-        screen.text(leftX, divY + 1, controls.join('   '), colors.dimmer);
+        // Controls — split into two compact rows so they fit standard terminals
+        const row1 = '↑↓ slot  Enter swap  U unequip  ←→ character';
+        let row2 = 'N new';
+        if (!build.main) row2 += '  D delete';
+        if (isBuildComplete(tabIndex)) row2 += '  A set active';
+        row2 += '  Esc quit';
+        screen.text(leftX, divY + 1, row1, colors.dimmer);
+        screen.text(leftX, divY + 2, row2, colors.dimmer);
 
         // Inventory summary
         const owned = getOwnedParts();
-        screen.text(rightX, divY + 1, `${owned.length} part types in inventory`, colors.dim);
+        screen.text(rightX, divY + 1, `${owned.length} parts in inventory`, colors.dim);
         const byCat = {};
         for (const p of owned) byCat[p.type] = (byCat[p.type] || 0) + p.count;
         let summY = divY + 2;
@@ -256,10 +254,10 @@ function openWorkshop(realSpecs, screen) {
       } else if (mode === 'parts') {
         const type = SLOT_ORDER[slotCursor];
         screen.text(leftX, divY + 1, `SELECT ${TYPE_LABELS[type]}`, TYPE_COLORS[type], null, true);
-        screen.text(leftX + 18, divY + 1, 'Enter = equip   Esc = back', colors.dimmer);
+        screen.text(leftX + 18, divY + 1, 'Enter equip  Esc back', colors.dimmer);
 
-        const listY = divY + 3;
-        const maxVisible = Math.max(1, Math.floor((h - listY - 1) / 4)); // 4 lines per item (3 art + 1 gap)
+        const listY = divY + 2;
+        const maxVisible = Math.max(1, Math.floor((h - listY - 1) / 3)); // 3 lines per item (art + info, no gap)
         const startIdx = Math.max(0, partCursor - maxVisible + 1);
         const endIdx = Math.min(partsList.length, startIdx + maxVisible);
 
@@ -270,7 +268,7 @@ function openWorkshop(realSpecs, screen) {
 
         for (let i = startIdx; i < endIdx; i++) {
           const p = partsList[i];
-          const y = listY + (i - startIdx) * 4; // 3 art lines + 1 gap
+          const y = listY + (i - startIdx) * 3; // 3 lines per item (no gap row)
           const isCur = i === partCursor;
           const rc = RARITY_COLORS[p.rarity] || colors.dim;
 

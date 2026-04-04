@@ -194,7 +194,9 @@ const RARITY_COLORS = {
   uncommon:  '\x1b[38;2;140;230;180m',
   rare:      '\x1b[38;2;140;190;250m',
   epic:      '\x1b[38;2;200;170;240m',
-  legendary: '\x1b[38;2;240;220;140m',
+  legendary:    '\x1b[38;2;240;220;140m',
+  mythic:       '\x1b[38;2;255;100;100m',
+  transcendent: '\x1b[38;2;200;120;255m',
 };
 
 // ─── Inventory persistence ───

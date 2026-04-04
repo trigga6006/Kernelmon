@@ -2406,4 +2406,9 @@ function getSprite(specs) {
   };
 }
 
-module.exports = { getSprite, identifyHardware, THEMES };
+module.exports = {
+  getSprite, identifyHardware, THEMES,
+  // Exported for skin sprite reuse
+  drawHit, drawKO,
+  cycle, coreGlow, ventChar, fanChar, eyeChar, eyeState, ledSweep, dataParticle,
+};

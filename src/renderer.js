@@ -24,6 +24,13 @@ async function renderBattle(fighterA, fighterB, events) {
   for (const f of [fighterA, fighterB]) {
     if (!f.sprite || typeof f.sprite.back?.draw !== 'function') {
       f.sprite = f.specs ? getSprite(f.specs) : getSprite({ gpu: { model: '', vramMB: 0, vendor: '' }, cpu: { brand: '' }, storage: { type: 'SSD' } });
+      // Re-apply skin override if present
+      if (f.skinId) {
+        try {
+          const { applySkinOverride } = require('./skins');
+          f.sprite = applySkinOverride(f.sprite, f.skinId);
+        } catch {}
+      }
     }
   }
 

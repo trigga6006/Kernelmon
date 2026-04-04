@@ -15,6 +15,7 @@ const { getEquippedMoves, assignMoveset } = require('../src/moveset');
 const { generateSignatureMoves, SIGNATURE_ICON } = require('../src/signature');
 const { registerSignatureAnims } = require('../src/effects/projectile');
 const { getOwnedItems, RARITY_COLORS } = require('../src/items');
+const { getEquippedSkinId, applySkinOverride } = require('../src/skins');
 const { printHistory } = require('../src/history');
 const { simulate } = require('../src/battle');
 const { renderBattle } = require('../src/renderer');
@@ -88,7 +89,9 @@ const MENU_ITEMS = [
   { key: 'loadout',     label: 'LOADOUT',          desc: 'Configure equipped moves',   icon: '⚔' },
   { key: 'bag',         label: 'BAG',              desc: 'View collected items',       icon: '◰' },
   { key: 'workshop',    label: 'WORKSHOP',         desc: 'Swap parts on your build',   icon: '▣' },
+  { key: 'skins',       label: 'SKIN LOCKER',      desc: 'View & equip Transcendent skins', icon: '✧' },
   { key: 'lootbox',     label: 'LOOT BOX',         desc: 'Spend credits on crates',    icon: '✦' },
+  { key: 'market',      label: 'MARKET',            desc: 'Trade skins with players',   icon: '⇌' },
   { key: 'history',     label: 'BATTLE LOG',       desc: 'Past match history',         icon: '▤' },
   { key: 'host',        label: 'HOST GAME',        desc: 'Host a battle for others',   icon: '◎' },
   { key: 'join',        label: 'JOIN BATTLE',      desc: 'Enter a room code to join',  icon: '↗' },
@@ -104,7 +107,9 @@ const ITEM_COLORS = {
   loadout:     colors.lavender,
   bag:         colors.mint,
   workshop:    rgb(255, 215, 0),
+  skins:       rgb(200, 120, 255),
   lootbox:     rgb(240, 170, 50),
+  market:      rgb(180, 220, 140),
   history:     colors.dim,
   host:        colors.coral,
   join:        colors.lilac,
@@ -134,7 +139,7 @@ const MENU_GROUPS = [
     desc: 'Profile, moves, and fighter setup',
     icon: '*',
     defaultExpanded: false,
-    items: ['profile', 'loadout'],
+    items: ['profile', 'loadout', 'skins'],
   },
   { type: 'item', key: 'bag' },
   { type: 'item', key: 'workshop' },
@@ -145,7 +150,7 @@ const MENU_GROUPS = [
     desc: 'Loot, battle log, and future extras',
     icon: '.',
     defaultExpanded: false,
-    items: ['lootbox', 'history'],
+    items: ['lootbox', 'market', 'history'],
   },
   { type: 'item', key: 'quit' },
 ];
@@ -180,14 +185,20 @@ function getVisibleMenuEntries(sectionState) {
 
 // ─── Build fighter helper ───
 async function buildFighter(rawSpecs) {
-  const { applyBuildOverrides } = require('../src/parts');
+  const { applyBuildOverrides, getActiveBuildIndex } = require('../src/parts');
   const specs = applyBuildOverrides(rawSpecs);
   const stats = buildStats(specs);
   const name = fighterName(specs);
   const gpu = gpuName(specs);
-  const sprite = getSprite(specs);
+  let sprite = getSprite(specs);
   const archetype = classifyArchetype(stats, specs);
-  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype };
+
+  // Apply cosmetic skin override if equipped
+  const buildIdx = getActiveBuildIndex();
+  const skinId = getEquippedSkinId(buildIdx);
+  if (skinId) sprite = applySkinOverride(sprite, skinId);
+
+  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId };
 }
 
 async function ensureSessionSpecs(sessionState, loadingLabel = 'Scanning hardware') {
@@ -1157,6 +1168,34 @@ async function handleLootBox() {
   }
 }
 
+async function handleSkins(fighter, sessionState) {
+  try {
+    const { openSkinLocker } = require('../src/market');
+    const skinScreen = new Screen();
+    skinScreen.enter();
+    await openSkinLocker(skinScreen);
+    skinScreen.exit();
+  } catch (e) {
+    await showInfoScreen('SKIN LOCKER', (scr) => {
+      scr.text(4, 4, 'Skin locker not available.', colors.dim);
+    });
+  }
+}
+
+async function handleMarket() {
+  try {
+    const { openMarket } = require('../src/market');
+    const marketScreen = new Screen();
+    marketScreen.enter();
+    await openMarket(marketScreen);
+    marketScreen.exit();
+  } catch (e) {
+    await showInfoScreen('MARKET', (scr) => {
+      scr.text(4, 4, 'Market not available.', colors.dim);
+    });
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // INLINE MULTIPLAYER — Host & Join flows inside the launcher
 // ═══════════════════════════════════════════════════════════════
@@ -1499,8 +1538,11 @@ async function handleHost(fighter, sessionState) {
       opponent = result.opponent;
     }
 
-    // Rebuild opponent sprite
-    if (opponent.specs) opponent.sprite = getSprite(opponent.specs);
+    // Rebuild opponent sprite (apply skin if they have one)
+    if (opponent.specs) {
+      opponent.sprite = getSprite(opponent.specs);
+      if (opponent.skinId) opponent.sprite = applySkinOverride(opponent.sprite, opponent.skinId);
+    }
     await prepareBenchToBattle(myFighter, opponent);
 
     console.log = origLog;
@@ -1567,7 +1609,10 @@ async function handleJoin(fighter, sessionState) {
       }
     });
 
-    if (opponent.specs) opponent.sprite = getSprite(opponent.specs);
+    if (opponent.specs) {
+      opponent.sprite = getSprite(opponent.specs);
+      if (opponent.skinId) opponent.sprite = applySkinOverride(opponent.sprite, opponent.skinId);
+    }
     await prepareBenchToBattle(myFighter, opponent);
 
     console.log = origLog;
@@ -1700,8 +1745,14 @@ async function run() {
       case 'workshop':
         await handleWorkshop(fighter, sessionState);
         break;
+      case 'skins':
+        await handleSkins(fighter, sessionState);
+        break;
       case 'lootbox':
         await handleLootBox();
+        break;
+      case 'market':
+        await handleMarket();
         break;
       case 'history':
         await handleHistory();

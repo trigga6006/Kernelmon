@@ -10,6 +10,7 @@ const { getBalance, spendCredits, formatBalance } = require('./credits');
 const { ITEMS, addItem } = require('./items');
 const { PARTS, RARITY_COLORS, RARITY_ICONS, TYPE_LABELS, TYPE_COLORS, addPart } = require('./parts');
 const { drawArt, getItemArt, getPartArt } = require('./itemart');
+const { SKINS, addSkin } = require('./skins');
 
 // ─── Box tiers ───
 
@@ -39,7 +40,16 @@ const BOXES = [
     icon: '★',
     color: colors.gold,
     desc: 'High-tier loot guaranteed',
-    weights: { common: 5, uncommon: 15, rare: 35, epic: 28, legendary: 14, mythic: 3 },
+    weights: { common: 5, uncommon: 15, rare: 35, epic: 28, legendary: 14, mythic: 2.98, transcendent: 0.02 },
+  },
+  {
+    key: 'transcendent',
+    name: 'Transcendent Crate',
+    cost: 10000,
+    icon: '✧',
+    color: rgb(200, 120, 255),
+    desc: 'Ultra-rare Transcendent chance',
+    weights: { common: 0, uncommon: 0, rare: 10, epic: 30, legendary: 35, mythic: 20, transcendent: 5 },
   },
 ];
 
@@ -61,6 +71,13 @@ function buildRewardPool() {
     });
   }
 
+  // Add all skins (transcendent rarity)
+  for (const [id, skin] of Object.entries(SKINS)) {
+    pool.push({
+      type: 'skin', id, rarity: skin.rarity, name: skin.name, icon: skin.icon,
+    });
+  }
+
   return pool;
 }
 
@@ -72,6 +89,7 @@ const TYPE_WEIGHTS = {
   storage: 3,
   cpu: 1,
   gpu: 1,
+  skin: 1,
 };
 
 function rollReward(box, rng) {
@@ -118,6 +136,8 @@ async function openLootBoxAnimated(box, screen) {
   // Apply reward
   if (reward.type === 'item') {
     addItem(reward.id);
+  } else if (reward.type === 'skin') {
+    addSkin(reward.id, 'lootbox_' + box.key);
   } else {
     addPart(reward.id);
   }
@@ -203,10 +223,18 @@ async function openLootBoxAnimated(box, screen) {
   screen.centerText(cy - 3, '║                                ║', rc);
 
   // Art sprite centered above the name
-  const rewardArt = reward.type === 'item' ? getItemArt(reward.id) : getPartArt(reward.partType);
-  if (rewardArt) {
-    const artX = cx - 3; // center the 7-wide art
-    drawArt(screen, artX, cy - 3, rewardArt.lines, rewardArt.colors);
+  if (reward.type === 'skin') {
+    // Transcendent skin: draw a shimmering icon instead of item art
+    const { transcendentGlow } = require('./skinsprites');
+    const shimmer = transcendentGlow || (() => rc);
+    screen.centerText(cy - 3, '·  ✧  ·', typeof shimmer === 'function' ? shimmer(0, 0) : rc);
+    screen.centerText(cy - 2, '✧     ✧', typeof shimmer === 'function' ? shimmer(0, 10) : rc);
+  } else {
+    const rewardArt = reward.type === 'item' ? getItemArt(reward.id) : getPartArt(reward.partType);
+    if (rewardArt) {
+      const artX = cx - 3; // center the 7-wide art
+      drawArt(screen, artX, cy - 3, rewardArt.lines, rewardArt.colors);
+    }
   }
 
   screen.centerText(cy - 0, '║', rc);
@@ -218,7 +246,10 @@ async function openLootBoxAnimated(box, screen) {
   screen.centerText(cy + 1, '║', rc);
   screen.centerText(cy + 1, rarityLine, rc, null, true);
 
-  if (reward.type === 'part') {
+  if (reward.type === 'skin') {
+    screen.centerText(cy + 2, '║', rc);
+    screen.centerText(cy + 2, '✧ Transcendent Skin ✧', rgb(200, 120, 255));
+  } else if (reward.type === 'part') {
     const typeLine = `${TYPE_LABELS[reward.partType]} component`;
     screen.centerText(cy + 2, '║', rc);
     screen.centerText(cy + 2, typeLine, TYPE_COLORS[reward.partType]);

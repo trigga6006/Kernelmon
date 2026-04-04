@@ -112,6 +112,13 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   for (const f of [fighterA, fighterB]) {
     if (!f.sprite || typeof f.sprite.back?.draw !== 'function') {
       f.sprite = f.specs ? getSprite(f.specs) : getSprite({ gpu: { model: '', vramMB: 0, vendor: '' }, cpu: { brand: '' }, storage: { type: 'SSD' } });
+      // Re-apply skin override if present
+      if (f.skinId) {
+        try {
+          const { applySkinOverride } = require('./skins');
+          f.sprite = applySkinOverride(f.sprite, f.skinId);
+        } catch {}
+      }
     }
   }
 
@@ -1032,6 +1039,96 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     if (p2KO) sprB?.drawFrontKO(screen, oppX, oppY);
     else if (p2HitFrames > 0) sprB?.drawFrontHit(screen, oppX, oppY, frameCount);
     else sprB?.front.draw(screen, oppX, oppY, null, frameCount);
+
+    // ─── Evolution aura — ultraviolet/oxidized swirl with code flickers ───
+    if (evolved || oppEvolved) {
+      // Code fragments that flicker in the aura
+      const codeGlyphs = [
+        '0x', 'ff', '&&', '||', '>>', '<<', '::',  '//', '!=', '**',
+        '~$', '#!', '%d', '0b', '=>', '{}', '[]', ';;', '++', '--',
+      ];
+
+      // Ultraviolet / oxidized color palette — cycles over time
+      const auraColors = [
+        rgb(140, 60, 220),   // deep violet
+        rgb(180, 80, 255),   // bright ultraviolet
+        rgb(100, 40, 180),   // dark purple
+        rgb(80, 200, 180),   // oxidized teal
+        rgb(60, 170, 160),   // verdigris
+        rgb(100, 220, 200),  // bright patina
+        rgb(160, 100, 240),  // lavender violet
+        rgb(70, 190, 170),   // copper-green
+        rgb(200, 120, 255),  // hot violet
+        rgb(50, 160, 140),   // deep oxidized
+      ];
+
+      const drawAura = (cx, cy, isPlayer) => {
+        const t = frameCount * 0.05;  // slow rotation
+        const numParticles = 28;
+        const rx = isPlayer ? 9 : 8;  // radius x (wider for back sprite)
+        const ry = isPlayer ? 6 : 5;  // radius y (terminal chars are tall)
+
+        for (let i = 0; i < numParticles; i++) {
+          const angle = (i / numParticles) * Math.PI * 2 + t;
+          // Two interleaved orbits spinning in opposite directions
+          const orbit = i % 2 === 0 ? 1 : -1;
+          const a = angle * orbit + (i % 3) * 0.3;
+          // Wobble the radius for organic swirl
+          const wobble = 1 + Math.sin(frameCount * 0.12 + i * 1.7) * 0.2;
+          const px = cx + Math.round(Math.cos(a) * rx * wobble);
+          const py = cy + Math.round(Math.sin(a) * ry * wobble * 0.5);
+
+          if (px < 0 || px >= w || py < 1 || py >= h - 7) continue;
+
+          // Color cycles through palette based on position + time
+          const colorIdx = Math.floor((i * 3 + frameCount * 0.3) % auraColors.length);
+          const color = auraColors[colorIdx];
+
+          // Decide: code glyph or energy particle
+          const glyphChance = (Math.sin(frameCount * 0.08 + i * 2.1) + 1) / 2;
+          if (glyphChance > 0.65) {
+            // Code flicker — brief glyph appearance
+            const glyphIdx = (i + Math.floor(frameCount * 0.15)) % codeGlyphs.length;
+            const glyph = codeGlyphs[glyphIdx];
+            // Only show glyph for a few frames (flicker)
+            const flickerPhase = Math.floor(frameCount * 0.2 + i * 0.7) % 5;
+            if (flickerPhase < 2) {
+              for (let c = 0; c < glyph.length && px + c < w; c++) {
+                screen.set(px + c, py, glyph[c], color);
+              }
+            }
+          } else {
+            // Energy particle
+            const energyChars = ['◈', '◆', '✦', '·', '∘', '⊹', '⋆'];
+            const eIdx = (i + frameCount) % energyChars.length;
+            // Fade particles that are "behind" the sprite (top/bottom)
+            const distFromCenter = Math.abs(Math.sin(a));
+            if (distFromCenter > 0.3) {
+              screen.set(px, py, energyChars[eIdx], color);
+            }
+          }
+        }
+
+        // Inner glow — subtle shimmer close to the sprite
+        const innerGlyphs = ['·', ':', '.', '`'];
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + t * 1.5;
+          const ir = isPlayer ? 5 : 4;
+          const px = cx + Math.round(Math.cos(a) * ir);
+          const py = cy + Math.round(Math.sin(a) * ir * 0.4);
+          if (px >= 0 && px < w && py >= 1 && py < h - 7) {
+            const flicker = (frameCount + i * 3) % 4;
+            if (flicker < 2) {
+              const ic = auraColors[(i * 2 + Math.floor(frameCount * 0.5)) % auraColors.length];
+              screen.set(px, py, innerGlyphs[i % innerGlyphs.length], ic);
+            }
+          }
+        }
+      };
+
+      if (evolved) drawAura(plyCenterX, plyCenterY, true);
+      if (oppEvolved) drawAura(oppCenterX, oppCenterY, false);
+    }
 
     // Item ring effect — expanding green ring
     if (itemRing) {

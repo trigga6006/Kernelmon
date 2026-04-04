@@ -14,7 +14,7 @@ const BUILD_FILE = path.join(WSO_DIR, 'build.json');
 
 // ─── Rarity tiers ───
 
-const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'transcendent'];
 
 const RARITY_COLORS = {
   common:    '\x1b[38;2;160;165;180m',
@@ -22,11 +22,12 @@ const RARITY_COLORS = {
   rare:      '\x1b[38;2;140;190;250m',
   epic:      '\x1b[38;2;200;170;240m',
   legendary: '\x1b[38;2;240;220;140m',
-  mythic:    '\x1b[38;2;255;100;100m',
+  mythic:       '\x1b[38;2;255;100;100m',
+  transcendent: '\x1b[38;2;200;120;255m',
 };
 
 const RARITY_ICONS = {
-  common: '·', uncommon: '◇', rare: '◆', epic: '★', legendary: '✦', mythic: '⚡',
+  common: '·', uncommon: '◇', rare: '◆', epic: '★', legendary: '✦', mythic: '⚡', transcendent: '✧',
 };
 
 // ─── Parts Catalog ───
