@@ -10,8 +10,20 @@ const { GlitchEffect, FloatingText } = require('./effects/glitch');
 const { ProjectileManager } = require('./effects/projectile');
 const { createRNG } = require('./rng');
 const { getSprite } = require('./sprites');
-const { createBattleState, processTurn, isOver, getWinner } = require('./turnbattle');
-const { submitAndWait, endBattle } = require('./turnrelay');
+const {
+  createBattleState,
+  processTurn,
+  isOver,
+  getWinner,
+  serializeBattleState,
+  applyBattleStateSnapshot,
+} = require('./turnbattle');
+const {
+  submitAndWait,
+  publishTurnResolution,
+  waitForTurnResolution,
+  endBattle,
+} = require('./turnrelay');
 const { useItem, getOwnedItems, ITEMS, RARITY_COLORS } = require('./items');
 const { preBattleLobby } = require('./prebattle');
 
@@ -79,6 +91,19 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   function toDisplay(stateSlot) {
     if (isHost) return stateSlot;
     return stateSlot === 'a' ? 'b' : 'a';
+  }
+
+  function syncDisplayHpFromState() {
+    targetHpA = isHost ? battleState.a.hp : battleState.b.hp;
+    targetHpB = isHost ? battleState.b.hp : battleState.a.hp;
+  }
+
+  function resolveSubmittedMove(submittedRole, moveName) {
+    if (!moveName || moveName === '__FORFEIT__') return null;
+    const pool = submittedRole === 'host'
+      ? (isHost ? movesetA : movesetB)
+      : (isHost ? movesetB : movesetA);
+    return pool.find(m => m.name === moveName) || pool[0] || null;
   }
 
   // Ensure sprites
@@ -541,7 +566,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       addLog(`═══ Turn ${turnNum} ═══`, colors.gold);
 
       // Quick-time event — 8% chance per turn (skip turn 1)
-      if (turnNum > 1 && battleState.rng.chance(QTE_CHANCE)) {
+      if (!isOnline && turnNum > 1 && battleState.rng.chance(QTE_CHANCE)) {
         addLog(`⚡ QUICK HACK — type the command!`, colors.gold);
         const success = await runQuickTime();
 
@@ -610,23 +635,34 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       }
 
       let opponentMove;
+      let hostMove = null;
+      let joinerMove = null;
       let oppItem = null;
+      let opponentForfeited = false;
+      const relayTurnNum = turnNum - 1;
       if (isOnline) {
         addLog('Waiting for opponent...', colors.dim);
         phase = 'waiting';
 
         const moveName = forfeited ? '__FORFEIT__' : myMove.name;
-        const result = await submitAndWait(relayUrl, roomCode, role, moveName, turnNum - 1, myItem?.id);
-        const oppMoveName = role === 'host' ? result.joinerMove : result.hostMove;
-        opponentMove = movesetB.find(m => m.name === oppMoveName) || movesetB[0];
+        const result = await submitAndWait(relayUrl, roomCode, role, moveName, relayTurnNum, myItem?.id);
+        hostMove = resolveSubmittedMove('host', result.hostMove);
+        joinerMove = resolveSubmittedMove('joiner', result.joinerMove);
+        opponentMove = role === 'host' ? joinerMove : hostMove;
+        opponentForfeited = role === 'host'
+          ? result.joinerMove === '__FORFEIT__'
+          : result.hostMove === '__FORFEIT__';
 
         const oppItemId = role === 'host' ? result.joinerItem : result.hostItem;
         if (oppItemId) oppItem = ITEMS[oppItemId] || null;
       } else {
         opponentMove = movesetB[battleState.rng.int(0, movesetB.length - 1)];
+        hostMove = isHost ? (forfeited ? null : myMove) : opponentMove;
+        joinerMove = isHost ? opponentMove : (forfeited ? null : myMove);
       }
 
-      addLog(`Opponent chose: ${opponentMove.label}`, colors.p2);
+      if (opponentForfeited) addLog('Opponent forfeited turn', colors.rose);
+      else addLog(`Opponent chose: ${opponentMove.label}`, colors.p2);
 
       // Apply items in deterministic order: host first, then joiner
       const hostItem = isHost ? myItem : oppItem;
@@ -641,33 +677,39 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         await animateIdle(900);
       }
 
-      // Process turn — forfeit means only opponent attacks
-      if (forfeited) {
-        // Only opponent attacks (pass null for the forfeiting player's move)
-        const hostMove = isHost ? null : opponentMove;
-        const joinerMove = isHost ? opponentMove : null;
-        const events = processTurn(battleState, hostMove, joinerMove);
-        await runAnimation(events);
+      let events = null;
+      let stateSnapshot = null;
 
-        const lastHpEvent = [...events].reverse().find(e => e.hpA !== undefined);
-        if (lastHpEvent) {
-          targetHpA = isHost ? lastHpEvent.hpA : lastHpEvent.hpB;
-          targetHpB = isHost ? lastHpEvent.hpB : lastHpEvent.hpA;
-        }
-      } else {
-        const hostMove = isHost ? myMove : opponentMove;
-        const joinerMove = isHost ? opponentMove : myMove;
-        const events = processTurn(battleState, hostMove, joinerMove);
-        await runAnimation(events);
-
-        const lastHpEvent = [...events].reverse().find(e => e.hpA !== undefined);
-        if (lastHpEvent) {
-          targetHpA = isHost ? lastHpEvent.hpA : lastHpEvent.hpB;
-          targetHpB = isHost ? lastHpEvent.hpB : lastHpEvent.hpA;
-        }
+      if (isOnline && isHost) {
+        events = processTurn(battleState, hostMove, joinerMove);
+        tickBoosts(battleState);
+        stateSnapshot = serializeBattleState(battleState);
+        try {
+          await publishTurnResolution(relayUrl, roomCode, relayTurnNum, {
+            events,
+            battleState: stateSnapshot,
+          });
+        } catch {}
+      } else if (isOnline) {
+        try {
+          const resolved = await waitForTurnResolution(relayUrl, roomCode, relayTurnNum);
+          if (resolved?.resolution) {
+            events = Array.isArray(resolved.resolution.events) ? resolved.resolution.events : [];
+            stateSnapshot = resolved.resolution.battleState || null;
+          }
+        } catch {}
       }
 
-      tickBoosts(battleState);
+      if (!Array.isArray(events)) {
+        events = processTurn(battleState, hostMove, joinerMove);
+        tickBoosts(battleState);
+        stateSnapshot = serializeBattleState(battleState);
+      }
+
+      await runAnimation(events);
+
+      if (stateSnapshot) applyBattleStateSnapshot(battleState, stateSnapshot);
+      syncDisplayHpFromState();
       await animateIdle(500);
     }
 

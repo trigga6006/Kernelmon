@@ -56,14 +56,15 @@ async function renderBattle(fighterA, fighterB, events) {
   const plyCenterX = plyX + 7;
   const plyCenterY = plyY + 5;
 
-  // Health bar positions
-  const oppBarX = oppX - 8;
+  // Health bar positions — centered, stacked (matches turn-based layout)
+  const barW = Math.min(24, Math.floor(w * 0.2));
+  const oppBarX = Math.floor(w * 0.33);
   const oppBarY = oppY;
-  const oppBarW = Math.min(24, Math.floor(w * 0.2));
+  const oppBarW = barW;
 
-  const plyBarX = Math.floor(w * 0.5);
+  const plyBarX = Math.floor(w * 0.28);
   const plyBarY = plyY + 8;
-  const plyBarW = Math.min(28, Math.floor(w * 0.25));
+  const plyBarW = barW;
 
   // Battle log
   const logY = h - 7;
@@ -349,22 +350,21 @@ async function renderBattle(fighterA, fighterB, events) {
     const timerStr = `${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, '0')}`;
     screen.text(w - 8, 0, timerStr, colors.dim);
 
-    // ─── Opponent info (top-left, Pokemon-style — away from sprite) ───
-    const oppNameX = 3;
+    // ─── Opponent info (centered, above player — matches turn-based layout) ───
     const oppInfoY = 2;
-    screen.text(oppNameX, oppInfoY, fighterB.name.slice(0, 24), colors.p2, null, true);
+    screen.text(oppBarX, oppInfoY, fighterB.name.slice(0, 24), colors.p2, null, true);
     const oppArch = fighterB.archetype?.name || '';
-    if (oppArch) screen.text(oppNameX + Math.min(fighterB.name.length, 24) + 1, oppInfoY, oppArch, colors.dimmer);
+    if (oppArch) screen.text(oppBarX + Math.min(fighterB.name.length, 24) + 1, oppInfoY, oppArch, colors.dimmer);
     // HP bar
     const ratioB = Math.max(0, hpB / fighterB.stats.maxHp);
-    screen.bar(oppNameX, oppInfoY + 1, oppBarW, ratioB, hpColor(ratioB), colors.dimmer);
+    screen.bar(oppBarX, oppInfoY + 1, oppBarW, ratioB, hpColor(ratioB), colors.dimmer);
     const hpTextB = ` ${Math.round(Math.max(0, hpB))}/${fighterB.stats.maxHp}`;
-    screen.text(oppNameX + oppBarW, oppInfoY + 1, hpTextB, hpColor(ratioB));
+    screen.text(oppBarX + oppBarW, oppInfoY + 1, hpTextB, hpColor(ratioB));
     // Mini stats
     const bst = fighterB.stats;
-    screen.text(oppNameX, oppInfoY + 2, `STR:${bst.str} MAG:${bst.mag} SPD:${bst.spd}`, colors.dimmer);
+    screen.text(oppBarX, oppInfoY + 2, `STR:${bst.str} MAG:${bst.mag} SPD:${bst.spd}`, colors.dimmer);
 
-    // ─── Player info (bottom-right, near player's side) ───
+    // ─── Player info (centered, below opponent — matches turn-based layout) ───
     const plyInfoY = plyBarY;
     screen.text(plyBarX, plyInfoY, fighterA.name.slice(0, 24), colors.p1, null, true);
     const plyArch = fighterA.archetype?.name || '';

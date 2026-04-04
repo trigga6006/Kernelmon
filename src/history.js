@@ -133,4 +133,4 @@ function printHistory() {
   console.log(`${cyan}  ╰──────────────────────────────────────────────────╯${RESET}`);
 }
 
-module.exports = { saveMatch, loadHistory, getRecords, printHistory };
+module.exports = { saveMatch, loadHistory, getRecords, printHistory, timeAgo };

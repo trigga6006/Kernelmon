@@ -6,6 +6,7 @@
 //   rgm join <room-code>            Join an online battle
 //   rgm join <ip> [--port 7331]     Join a LAN battle
 //   rgm demo [--turns]              Demo battle (--turns for turn-based)
+//   rgm rogue                       Rogue-like exploration mode
 //   rgm profile                     Show your PC's fighter stats
 
 const { getSpecs, buildStats, fighterName, gpuName, classifyArchetype } = require('../src/profiler');
@@ -286,11 +287,15 @@ async function main() {
       }
 
       case 'profile': {
+        const { Screen } = require('../src/screen');
+        const { openProfile } = require('../src/profilescreen');
         console.log('\n\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m\n');
-        const specs = await getSpecs();
-        const fighter = await buildFighter(specs);
-        printFighter(fighter, '\x1b[38;2;130;220;235m');
-        console.log('');
+        const profileSpecs = await getSpecs();
+        const profileFighter = await buildFighter(profileSpecs);
+        const profileScreen = new Screen();
+        profileScreen.enter();
+        await openProfile(profileFighter, profileScreen);
+        profileScreen.exit();
         break;
       }
 
@@ -457,33 +462,56 @@ async function main() {
         break;
       }
 
+      case 'rogue': {
+        console.log(`\n\x1b[38;2;75;150;90m  ▸ ROGUE MODE — Explore the void\x1b[0m`);
+        console.log('\x1b[38;2;75;150;90m  ▸ Scanning hardware...\x1b[0m\n');
+        const rogueSpecs = await getSpecs();
+        const rogueFighter = await buildFighter(rogueSpecs);
+        printFighter(rogueFighter, '\x1b[38;2;75;150;90m', true);
+        console.log('\x1b[38;2;240;220;140m  ▸ Entering in 2 seconds...\x1b[0m\n');
+        await sleep(2000);
+        const { renderRogue } = require('../src/roguelike');
+        const rogueResult = await renderRogue(rogueFighter);
+        console.log('');
+        if (rogueResult.reason === 'victory') {
+          console.log(`\x1b[38;2;240;220;140m  ★ ALL ENEMIES DEFEATED — ${rogueResult.battlesWon} battles won ★\x1b[0m`);
+
+          // Award credits for rogue completion
+          const { calculateBattleCredits, addCredits, printCreditEarned } = require('../src/credits');
+          const bonusCredits = 500 * rogueResult.battlesWon;
+          const newBal = addCredits(bonusCredits);
+          console.log('');
+          printCreditEarned(bonusCredits, newBal);
+        } else {
+          console.log(`\x1b[38;2;100;100;130m  Exited rogue mode. Battles won: ${rogueResult.battlesWon}\x1b[0m`);
+        }
+        console.log('');
+        break;
+      }
+
       case 'demo':
       default: {
         const turnMode = args.includes('--turns');
-        console.log(`\n\x1b[38;2;130;220;235m  ◆ DEMO MODE${turnMode ? ' (Turn-Based)' : ''} — Battle against a Chromebook\x1b[0m`);
-        console.log('\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m\n');
-        const specs = await getSpecs();
-        const myFighter = await buildFighter(specs);
-        printFighter(myFighter, '\x1b[38;2;130;220;235m');
+        console.log('\n\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m\n');
+        const demoSpecs = await getSpecs();
+        const myFighter = await buildFighter(demoSpecs);
 
-        const opponent = mockOpponent();
-        console.log('\x1b[38;2;180;160;240m  ◆ Opponent:\x1b[0m');
-        printFighter(opponent, '\x1b[38;2;180;160;240m');
+        // Opponent selection screen
+        const { Screen } = require('../src/screen');
+        const { selectOpponent } = require('../src/opponentselect');
+        const selectScreen = new Screen();
+        selectScreen.enter();
+        const opponent = await selectOpponent(selectScreen);
+        selectScreen.exit();
+
+        if (!opponent) break; // user pressed ESC
+
+        const oppName = opponent.name || 'the opponent';
 
         if (turnMode) {
           const myMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
           registerSignatureAnims(myMoves.filter(m => m.signature));
           const oppMoves = assignMoveset(opponent.stats);
-          console.log('\x1b[38;2;130;220;235m  ◆ Your moves:\x1b[0m');
-          myMoves.forEach(m => {
-            if (m.signature) {
-              console.log(`\x1b[38;2;255;215;0m    ${SIGNATURE_ICON} ${m.label.padEnd(20)} ${m.desc}\x1b[0m`);
-            } else {
-              console.log(`\x1b[38;2;100;100;130m    ${m.label.padEnd(20)} ${m.desc}\x1b[0m`);
-            }
-          });
-          console.log('\x1b[38;2;240;220;140m  ◆ Battle starting in 2 seconds...\x1b[0m\n');
-          await sleep(2000);
 
           const seed = combinedSeed(myFighter.id, opponent.id);
           const winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, { role: 'host', seed });
@@ -491,14 +519,11 @@ async function main() {
           postBattle(myFighter, opponent, winner, 'turns');
           console.log('');
           if (winner === 'a') {
-            console.log('\x1b[38;2;240;220;140m  ★ YOUR RIG DESTROYS THE CHROMEBOOK! ★\x1b[0m');
+            console.log(`\x1b[38;2;240;220;140m  ★ YOUR RIG DESTROYS ${oppName.toUpperCase()}! ★\x1b[0m`);
           } else {
-            console.log('\x1b[38;2;240;150;170m  ...the Chromebook won. Somehow.\x1b[0m');
+            console.log(`\x1b[38;2;240;150;170m  ...${oppName} won.\x1b[0m`);
           }
         } else {
-          console.log('\x1b[38;2;240;220;140m  ◆ Battle starting in 3 seconds...\x1b[0m\n');
-          await sleep(3000);
-
           const seed = combinedSeed(myFighter.id, opponent.id);
           const events = simulate(myFighter, opponent, seed);
           const winner = await renderBattle(myFighter, opponent, events);
@@ -506,9 +531,9 @@ async function main() {
           postBattle(myFighter, opponent, winner, 'auto');
           console.log('');
           if (winner === 'a') {
-            console.log('\x1b[38;2;240;220;140m  ★ YOUR RIG DESTROYS THE CHROMEBOOK! ★\x1b[0m');
+            console.log(`\x1b[38;2;240;220;140m  ★ YOUR RIG DESTROYS ${oppName.toUpperCase()}! ★\x1b[0m`);
           } else {
-            console.log('\x1b[38;2;240;150;170m  ...the Chromebook won. Somehow.\x1b[0m');
+            console.log(`\x1b[38;2;240;150;170m  ...${oppName} won.\x1b[0m`);
           }
         }
         console.log('');

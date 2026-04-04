@@ -77,6 +77,22 @@ function simulate(fighterA, fighterB, seed) {
       consecutiveAttacks: state.b.consecutiveAttacks, move: null,
     });
 
+    // Passive heal-per-turn (KERNEL_GOD regen)
+    for (const who of ['a', 'b']) {
+      const m = who === 'a' ? modsA : modsB;
+      if (m.healPerTurn && state[who].hp > 0) {
+        const heal = Math.min(m.healPerTurn, state[who].maxHp - state[who].hp);
+        if (heal > 0) {
+          state[who].hp += heal;
+          events.push({
+            tick: tick++, type: 'heal', who, round,
+            move: 'REGEN', flavor: 'passive.heal()', amount: heal,
+            hpA: state.a.hp, hpB: state.b.hp,
+          });
+        }
+      }
+    }
+
     // Determine attack order by SPD (with archetype penalties)
     const spdA = state.a.spd - (modsA.spdPenalty || 0) + rng.int(-5, 5);
     const spdB = state.b.spd - (modsB.spdPenalty || 0) + rng.int(-5, 5);
@@ -149,7 +165,7 @@ function simulate(fighterA, fighterB, seed) {
       }
 
       // Dodge chance (with defender's archetype dodge bonus)
-      const dodgeChance = Math.min(0.35, 0.03 + (def.spd / 1500) + (defMods.dodgeBonus || 0));
+      const dodgeChance = Math.min(0.25, 0.03 + (def.spd / 1500) + (defMods.dodgeBonus || 0));
       const isDodge = rng.chance(dodgeChance);
 
       // Handle special effects

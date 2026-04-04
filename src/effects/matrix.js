@@ -44,7 +44,8 @@ class MatrixRain {
         col.y = this.rng.int(-8, -1);
         col.speed = this.rng.float(0.3, 1.2);
         col.length = this.rng.int(4, 14);
-        col.active = this.rng.chance(0.55);
+        // Stay active — initial activation controls density, reset just recycles
+        // (previously rng.chance(0.55) could deactivate evenly-spaced columns)
       }
     }
   }

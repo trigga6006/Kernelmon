@@ -27,6 +27,10 @@ const GOLD = rgb(255, 215, 0);
 const AMBER = rgb(255, 170, 50);
 
 function openWorkshop(realSpecs, screen) {
+  // Seed inventory from real hardware on first visit
+  const { seedPartsFromHardware } = require('./parts');
+  seedPartsFromHardware(realSpecs);
+
   return new Promise((resolve) => {
     let tabIndex = getActiveBuildIndex();
     let mode = 'slots';     // 'slots' | 'parts' | 'naming'

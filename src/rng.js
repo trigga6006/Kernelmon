@@ -42,7 +42,11 @@ function createRNG(seed) {
     return a;
   }
 
-  return { next, float, int, chance, pick, shuffle };
+  function getState() {
+    return s | 0;
+  }
+
+  return { next, float, int, chance, pick, shuffle, getState };
 }
 
 // Generate a seed from two machine IDs (XOR hash)

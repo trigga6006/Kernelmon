@@ -162,11 +162,11 @@ function buildStats(specs) {
 
   const stats = {
     // STR: Raw processing power (CPU cores * speed)
-    str: normalize(cpuRaw, 2, 200),
+    str: normalize(cpuRaw, 2, 1000),
     // VIT: Endurance / HP pool (RAM)
-    vit: normalize(ramRaw, 2, 128),
+    vit: normalize(ramRaw, 2, 1024),
     // MAG: Special attack power (GPU)
-    mag: normalize(gpuRaw, 256, 24000),
+    mag: normalize(gpuRaw, 256, 98304),
     // SPD: Initiative and dodge (storage + single-thread CPU)
     spd: normalize(specs.cpu.speedMax * storageMultiplier, 1, 20),
     // DEF: Derived — average of VIT and SPD
@@ -174,22 +174,6 @@ function buildStats(specs) {
   };
 
   stats.def = Math.round((stats.vit + stats.spd) / 2);
-
-  // Hardware-specific tuning
-  const gpuModel = (specs.gpu?.model || '').toLowerCase();
-  const cpuBrand = (specs.cpu?.brand || '').toLowerCase();
-
-  // Specific hardware calibration
-  const is7800XT = gpuModel.includes('7800 xt') || gpuModel.includes('7800xt');
-  const is7900X = cpuBrand.includes('7900x');
-  if (is7900X) {
-    stats.str = Math.round(stats.str * 1.04);
-    stats.spd = Math.round(stats.spd * 1.02);
-  }
-  if (is7800XT) {
-    stats.mag = Math.round(stats.mag * 1.03);
-    stats.def = Math.round(stats.def * 1.02);
-  }
 
   // Laptop penalty — thermal throttling, shared power, inferior cooling
   if (specs.isLaptop) {
@@ -238,6 +222,7 @@ function gpuName(specs) {
 // Returns { name, tagline, color } — the fighter's "species"
 
 const ARCHETYPES = {
+  APEX:      { name: 'KERNEL_GOD',    tagline: 'ring -1 — owns the hypervisor' },
   TITAN:     { name: 'ROOT_GOD',      tagline: 'sudo rm -rf /your/chances' },
   HIVEMIND:  { name: 'FORK_BOMB',     tagline: ':(){ :|:& };: — infinite threads' },
   ARCMAGE:   { name: 'SHADER_WITCH',  tagline: 'Pipelines overflow with dark energy' },
@@ -263,14 +248,17 @@ function classifyArchetype(stats, specs) {
   const avg = (str + mag + spd + def) / 4;
   const minStat = Math.min(str, mag, spd, def);
 
-  // TITAN — elite across the board (needs truly high everything)
-  if (avg >= 65 && minStat >= 55) return ARCHETYPES.TITAN;
+  // APEX — supercomputer tier, maxed across every stat (avg ~95+)
+  if (avg >= 90 && minStat >= 85) return ARCHETYPES.APEX;
+
+  // TITAN — enthusiast elite, very strong across the board (avg ~76-89)
+  if (avg >= 76 && minStat >= 68) return ARCHETYPES.TITAN;
 
   // SCRAPPER — integrated GPU + weak overall
   if (isIntegrated && avg < 40) return ARCHETYPES.SCRAPPER;
 
-  // HIVEMIND — many-core workstation / threadripper
-  if (cores >= 12 && str >= 55) return ARCHETYPES.HIVEMIND;
+  // HIVEMIND — many-core workstation / threadripper (not already TITAN/APEX)
+  if (cores >= 16 && str >= 65) return ARCHETYPES.HIVEMIND;
 
   // NOMAD — laptop (checked after TITAN so beastly laptops can be TITAN)
   if (isLaptop) return ARCHETYPES.NOMAD;
@@ -279,16 +267,16 @@ function classifyArchetype(stats, specs) {
   if (mag >= 60 && mag >= str && mag >= spd) return ARCHETYPES.ARCMAGE;
 
   // BLITZ — speed dominant (fast clock + NVMe)
-  if (spd >= 60 && spd >= str && spd >= mag) return ARCHETYPES.BLITZ;
+  if (spd >= 65 && spd >= str + 10 && spd >= mag) return ARCHETYPES.BLITZ;
 
   // FORTRESS — high RAM tank
   if (def >= 55 && ramGB >= 32) return ARCHETYPES.FORTRESS;
 
   // BERSERKER — high STR, offense-heavy
-  if (str >= 55 && str >= mag + 15) return ARCHETYPES.BERSERKER;
+  if (str >= 55 && str >= mag + 10) return ARCHETYPES.BERSERKER;
 
   // PHANTOM — fast but fragile
-  if (spd >= 50 && hp <= 750) return ARCHETYPES.PHANTOM;
+  if (spd >= 55 && hp <= 800) return ARCHETYPES.PHANTOM;
 
   // SENTINEL — balanced mid-range (default)
   return ARCHETYPES.SENTINEL;

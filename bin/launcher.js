@@ -26,6 +26,9 @@ try { renderTurnBattle = require('../src/turnrenderer').renderTurnBattle; } catc
 let renderDash;
 try { renderDash = require('../src/dashrenderer').renderDash; } catch (e) {}
 
+let renderRogue;
+try { renderRogue = require('../src/roguelike').renderRogue; } catch (e) {}
+
 const { saveMatch } = require('../src/history');
 const { rollRewards, addItem, printRewards } = require('../src/items');
 
@@ -58,6 +61,7 @@ const MENU_ITEMS = [
   { key: 'demo',        label: 'QUICK BATTLE',    desc: 'Auto-battle vs Chromebook',  icon: '⚡' },
   { key: 'demo_turns',  label: 'TURN BATTLE',     desc: 'Turn-based vs Chromebook',   icon: '◆' },
   { key: 'dash',        label: 'DASH MODE',       desc: 'Side-scroll obstacle runner', icon: '▸' },
+  { key: 'rogue',       label: 'ROGUE MODE',      desc: 'Explore the void, find battles', icon: '◉' },
   { key: 'profile',     label: 'MY PROFILE',      desc: 'View your fighter stats',    icon: '◈' },
   { key: 'loadout',     label: 'LOADOUT',          desc: 'Configure equipped moves',   icon: '⚔' },
   { key: 'bag',         label: 'BAG',              desc: 'View collected items',       icon: '◰' },
@@ -73,6 +77,7 @@ const ITEM_COLORS = {
   demo:        colors.peach,
   demo_turns:  colors.gold,
   dash:        colors.coral,
+  rogue:       rgb(75, 150, 90),
   profile:     colors.cyan,
   loadout:     colors.lavender,
   bag:         colors.mint,
@@ -114,31 +119,94 @@ function mockOpponent() {
 function postBattle(myFighter, opponent, winner, mode) {
   saveMatch(myFighter, opponent, winner, mode);
 
-  // Award credits regardless of win/loss
-  const { calculateBattleCredits, addCredits, printCreditEarned } = require('../src/credits');
+  const { calculateBattleCredits, addCredits } = require('../src/credits');
   const earned = calculateBattleCredits(winner, myFighter, opponent, mode);
   const newBal = addCredits(earned);
-  console.log('');
-  printCreditEarned(earned, newBal);
 
+  // 8% chance to drop a bag item on win
+  let itemDrop = null;
   if (winner === 'a') {
     const rng = createRNG(Date.now());
-    const tier = opponent.sprite?.hw?.tier || 'mid';
-    const rewards = rollRewards(rng, tier, true);
-    for (const r of rewards) addItem(r.id);
-    if (rewards.length > 0) {
-      console.log('');
-      printRewards(rewards);
-    }
-    // Roll for part drop
-    const { rollPartDrop, addPart: addPartInv, printPartDrop } = require('../src/parts');
-    const partDrop = rollPartDrop(rng, tier);
-    if (partDrop) {
-      addPartInv(partDrop.id);
-      console.log('');
-      printPartDrop(partDrop);
+    if (rng.next() < 0.08) {
+      const { ITEMS } = require('../src/items');
+      const rarityW = { common: 50, uncommon: 30, rare: 15, epic: 4, legendary: 1 };
+      const totalW = Object.values(rarityW).reduce((s, w) => s + w, 0);
+      let roll = rng.next() * totalW;
+      let rarity = 'common';
+      for (const [r, w] of Object.entries(rarityW)) {
+        roll -= w;
+        if (roll <= 0) { rarity = r; break; }
+      }
+      const candidates = Object.entries(ITEMS).filter(([, i]) => i.rarity === rarity);
+      if (candidates.length > 0) {
+        const [id, item] = candidates[Math.floor(rng.next() * candidates.length)];
+        addItem(id);
+        itemDrop = { id, ...item };
+      }
     }
   }
+
+  return { earned, newBal, itemDrop };
+}
+
+// ─── Animated battle reward screen ───
+async function showBattleRewards(winner, rewards, winMsg, loseMsg) {
+  const scr = new Screen();
+  scr.enter();
+  const w = scr.width;
+  const h = scr.height;
+  const cy = Math.floor(h / 2);
+
+  scr.centerText(0, '─'.repeat(w), colors.dimmer);
+  scr.centerText(0, ' BATTLE COMPLETE ', colors.cyan, null, true);
+
+  // Phase 1: Victory / Defeat banner
+  if (winner === 'a') {
+    scr.centerText(cy - 4, '★ ★ ★  V I C T O R Y  ★ ★ ★', colors.gold, null, true);
+    scr.centerText(cy - 2, winMsg, colors.cyan);
+  } else {
+    scr.centerText(cy - 4, 'D E F E A T', colors.rose, null, true);
+    scr.centerText(cy - 2, loseMsg, colors.dim);
+  }
+  scr.render();
+  await sleep(700);
+
+  // Phase 2: Credit counter ticks up
+  const { earned, newBal, itemDrop } = rewards;
+  const steps = Math.min(earned, 24);
+  for (let i = 1; i <= steps; i++) {
+    const current = Math.floor((earned * i) / steps);
+    scr.centerText(cy, `◆ +${current} credits`, colors.gold, null, true);
+    scr.render();
+    await sleep(35);
+  }
+  scr.centerText(cy, `◆ +${earned} credits`, colors.gold, null, true);
+  scr.centerText(cy + 1, `Balance: ${newBal}`, colors.dim);
+  scr.render();
+  await sleep(400);
+
+  // Phase 3: Item drop reveal
+  if (itemDrop) {
+    const rc = RARITY_COLORS[itemDrop.rarity] || colors.dim;
+    // Flash
+    for (let f = 0; f < 4; f++) {
+      scr.centerText(cy + 3, f % 2 === 0 ? '▸ ITEM DROP ◂' : '             ', colors.mint, null, true);
+      scr.render();
+      await sleep(100);
+    }
+    scr.centerText(cy + 3, '▸ ITEM DROP ◂', colors.mint, null, true);
+    scr.centerText(cy + 4, `${itemDrop.icon}  ${itemDrop.name}  (${itemDrop.rarity})`, rc, null, true);
+    scr.render();
+    await sleep(500);
+  }
+
+  scr.hline(2, h - 4, w - 4, '─', colors.ghost);
+  scr.centerText(h - 3, 'Press any key to continue', colors.dimmer);
+  scr.text(w - 14, h - 1, '─ rigémon ─', colors.dimmer);
+  scr.render();
+
+  await waitForKey();
+  scr.exit();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -165,10 +233,16 @@ async function mainMenu() {
   const { getAllBuilds, getActiveBuildIndex, setActiveBuild, getBuild, applyBuildOverrides: applyOverrides, buildSpecsFromParts, isBuildComplete } = require('../src/parts');
   cardBuildIdx = getActiveBuildIndex();
 
-  // Sparse rain for menu — deactivate most columns so it's atmospheric, not overwhelming
+  // Sparse rain for menu — evenly spaced columns with slight jitter for organic feel
+  const spacing = 7; // ~14% density, guaranteed even left-to-right coverage
   for (const col of matrix.columns) {
-    col.active = rng.chance(0.12);  // ~12% density (vs 55% in battles)
-    col.speed = rng.float(0.15, 0.6); // slower
+    col.active = false;
+    col.speed = rng.float(0.15, 0.6);
+  }
+  for (let base = 0; base < matrix.columns.length; base += spacing) {
+    const jitter = rng.int(-1, 1);
+    const x = Math.max(0, Math.min(matrix.columns.length - 1, base + jitter));
+    matrix.columns[x].active = true;
   }
 
   // Scan hardware in background while menu renders
@@ -552,131 +626,40 @@ async function handleProfile(fighter) {
       fighter = await buildFighter(specs);
     });
   }
-  const { generateLore } = require('../src/lore');
-  const lore = generateLore(fighter.stats, fighter.specs, fighter.archetype);
+  const { openProfile } = require('../src/profilescreen');
+  const { getPassiveInfo } = require('../src/balance');
+  const { getBalance, formatBalance } = require('../src/credits');
 
-  await showInfoScreen('MY PROFILE', (scr, w, h) => {
-    const s = fighter.stats;
-    const sp = fighter.specs || {};
-    const arch = fighter.archetype || { name: '???', tagline: '' };
-    const x = 4;
-    const rightX = Math.max(42, Math.floor(w / 2) + 2);
-    let y = 2;
+  const arch = fighter.archetype || { name: '???', tagline: '' };
+  const passive = getPassiveInfo(arch.name);
+  const creditsStr = formatBalance(getBalance());
 
-    // ── Left: Identity + Stats ──
-    scr.text(x, y, fighter.name, colors.white, null, true);
-    scr.text(x + fighter.name.length + 2, y++, arch.name, colors.gold, null, true);
-    scr.text(x, y++, arch.tagline, colors.dimmer);
-    y++;
-
-    const bar = (val, max = 100, bw = 16) => {
-      const filled = Math.round((val / max) * bw);
-      return '█'.repeat(Math.min(filled, bw)) + '░'.repeat(bw - Math.min(filled, bw));
-    };
-
-    const cpuLabel = (sp.cpu?.brand || 'Unknown').slice(0, 30);
-    const gpuLabel = (fighter.gpu || 'Integrated').slice(0, 30);
-    const ramGB = sp.ram?.totalGB || '?';
-    const storType = sp.storage?.type || 'Unknown';
-
-    scr.text(x, y, 'CPU', colors.dim); scr.text(x + 5, y++, cpuLabel, colors.white);
-    scr.text(x, y, 'STR', colors.peach); scr.text(x + 5, y, bar(s.str), colors.peach); scr.text(x + 22, y++, String(s.str), colors.white);
-
-    scr.text(x, y, 'GPU', colors.dim); scr.text(x + 5, y++, gpuLabel, colors.white);
-    scr.text(x, y, 'MAG', colors.lavender); scr.text(x + 5, y, bar(s.mag), colors.lavender); scr.text(x + 22, y++, String(s.mag), colors.white);
-
-    scr.text(x, y, 'RAM', colors.dim); scr.text(x + 5, y++, `${ramGB}GB`, colors.white);
-    scr.text(x, y, 'HP ', colors.mint); scr.text(x + 5, y, bar(s.hp, 2000), colors.mint); scr.text(x + 22, y++, String(s.hp), colors.white);
-
-    scr.text(x, y, 'DSK', colors.dim); scr.text(x + 5, y++, storType, colors.white);
-    scr.text(x, y, 'SPD', colors.sky); scr.text(x + 5, y, bar(s.spd), colors.sky); scr.text(x + 22, y++, String(s.spd), colors.white);
-
-    scr.text(x, y, 'DEF', colors.cyan); scr.text(x + 5, y, bar(s.def), colors.cyan); scr.text(x + 22, y++, String(s.def), colors.white);
-
-    // ── Right: Lore ──
-    let ry = 2;
-
-    scr.text(rightX, ry++, 'ORIGIN', colors.gold, null, true);
-    // Word-wrap origin text
-    const originWords = lore.origin.split(' ');
-    let line = '';
-    const maxLineW = w - rightX - 4;
-    for (const word of originWords) {
-      if ((line + ' ' + word).length > maxLineW && line.length > 0) {
-        scr.text(rightX, ry++, line, colors.dim);
-        line = word;
-      } else {
-        line = line ? line + ' ' + word : word;
-      }
-    }
-    if (line) scr.text(rightX, ry++, line, colors.dim);
-
-    ry++;
-    scr.text(rightX, ry++, 'TRAITS', colors.lavender, null, true);
-    for (const trait of lore.traits) {
-      scr.text(rightX, ry, '·', colors.dimmer);
-      scr.text(rightX + 2, ry++, trait, colors.white);
-    }
-
-    ry++;
-    scr.text(rightX, ry++, 'BATTLE STYLE', colors.peach, null, true);
-    const styleWords = lore.battleStyle.split(' ');
-    line = '';
-    for (const word of styleWords) {
-      if ((line + ' ' + word).length > maxLineW && line.length > 0) {
-        scr.text(rightX, ry++, line, colors.dim);
-        line = word;
-      } else {
-        line = line ? line + ' ' + word : word;
-      }
-    }
-    if (line) scr.text(rightX, ry++, line, colors.dim);
-
-    // ── Passive ability ──
-    ry++;
-    const { getPassiveInfo } = require('../src/balance');
-    const passive = getPassiveInfo(arch.name);
-    if (passive) {
-      scr.text(rightX, ry++, 'PASSIVE', rgb(255, 215, 0), null, true);
-      scr.text(rightX, ry, passive.name, colors.white, null, true);
-      ry++;
-      const passiveWords = passive.desc.split(' ');
-      line = '';
-      for (const word of passiveWords) {
-        if ((line + ' ' + word).length > maxLineW && line.length > 0) {
-          scr.text(rightX, ry++, line, colors.dim);
-          line = word;
-        } else {
-          line = line ? line + ' ' + word : word;
-        }
-      }
-      if (line) scr.text(rightX, ry++, line, colors.dim);
-    }
-
-    ry++;
-    if (lore.facts.length > 0) {
-      scr.text(rightX, ry++, 'HARDWARE', colors.sky, null, true);
-      for (const fact of lore.facts) {
-        scr.text(rightX, ry++, fact.slice(0, maxLineW), colors.dimmer);
-      }
-    }
-
-    // ── Bottom: Credits balance ──
-    const { getBalance, formatBalance } = require('../src/credits');
-    const bal = getBalance();
-    scr.text(x, h - 4, `Credits: ${formatBalance(bal)}`, colors.gold);
-  });
+  const profScreen = new Screen();
+  profScreen.enter();
+  await openProfile(fighter, profScreen, { passive, credits: creditsStr });
+  profScreen.exit();
 }
 
 async function handleDemo(fighter, turnMode) {
-  // Prepare battle data behind a loading screen
-  let opponent, seed, myMoves, oppMoves, events;
-  await withLoadingScreen('Preparing battle', async () => {
-    if (!fighter) {
+  if (!fighter) {
+    await withLoadingScreen('Scanning hardware', async () => {
       const specs = await getSpecs();
       fighter = await buildFighter(specs);
-    }
-    opponent = mockOpponent();
+    });
+  }
+
+  // Opponent selection screen
+  const { selectOpponent } = require('../src/opponentselect');
+  const selectScreen = new Screen();
+  selectScreen.enter();
+  const opponent = await selectOpponent(selectScreen);
+  selectScreen.exit();
+
+  if (!opponent) return; // user pressed ESC
+
+  // Prepare battle data
+  let seed, myMoves, oppMoves, events;
+  await withLoadingScreen('Preparing battle', async () => {
     seed = combinedSeed(fighter.id, opponent.id);
 
     if (turnMode && renderTurnBattle) {
@@ -696,18 +679,9 @@ async function handleDemo(fighter, turnMode) {
     winner = await renderBattle(fighter, opponent, events);
   }
 
-  postBattle(fighter, opponent, winner, turnMode ? 'turns' : 'auto');
-
-  await showInfoScreen('BATTLE COMPLETE', (scr, w, h) => {
-    const cy = Math.floor(h / 2);
-    if (winner === 'a') {
-      scr.centerText(cy - 1, '★ ★ ★  V I C T O R Y  ★ ★ ★', colors.gold, null, true);
-      scr.centerText(cy + 1, 'Your rig destroyed the Chromebook!', colors.cyan);
-    } else {
-      scr.centerText(cy - 1, 'D E F E A T', colors.rose, null, true);
-      scr.centerText(cy + 1, '...the Chromebook won. Somehow.', colors.dim);
-    }
-  });
+  const oppName = opponent.name || 'the opponent';
+  const rewards = postBattle(fighter, opponent, winner, turnMode ? 'turns' : 'auto');
+  await showBattleRewards(winner, rewards, `Your rig destroyed ${oppName}!`, `...${oppName} won.`);
 }
 
 async function handleDash(fighter) {
@@ -725,18 +699,95 @@ async function handleDash(fighter) {
     return;
   }
 
-  const result = await renderDash(fighter);
+  let playAgain = true;
+  while (playAgain) {
+    const result = await renderDash(fighter);
 
-  await showInfoScreen('RUN COMPLETE', (scr, w, h) => {
+    // Award credits based on dash score
+    const { calculateDashCredits, addCredits } = require('../src/credits');
+    const earned = calculateDashCredits(result.score);
+    const newBal = addCredits(earned);
+
+    // Show result screen with retry / quit options
+    const scr = new Screen();
+    scr.enter();
+    const w = scr.width;
+    const h = scr.height;
     const cy = Math.floor(h / 2);
-    scr.centerText(cy - 2, '▸ ▸ ▸  D A S H  M O D E  ◂ ◂ ◂', colors.coral, null, true);
-    scr.centerText(cy, `Final Score: ${result.score}`, colors.gold, null, true);
+
+    scr.centerText(0, '─'.repeat(w), colors.dimmer);
+    scr.centerText(0, ' RUN COMPLETE ', colors.cyan, null, true);
+
+    scr.centerText(cy - 3, '▸ ▸ ▸  D A S H  M O D E  ◂ ◂ ◂', colors.coral, null, true);
+    scr.centerText(cy - 1, `Final Score: ${result.score}`, colors.gold, null, true);
     if (result.reason === 'dead') {
-      scr.centerText(cy + 2, 'Your rig crashed!', colors.rose);
+      scr.centerText(cy + 1, 'Your rig crashed!', colors.rose);
     } else {
-      scr.centerText(cy + 2, 'Run ended.', colors.dim);
+      scr.centerText(cy + 1, 'Run ended.', colors.dim);
     }
-  });
+    scr.centerText(cy + 3, `◆ +${earned} credits  (balance: ${newBal})`, colors.gold);
+
+    scr.hline(2, h - 4, w - 4, '─', colors.ghost);
+    scr.centerText(h - 3, '[R] Retry    [Q] Return to Menu', colors.white);
+    scr.text(w - 14, h - 1, '─ rigémon ─', colors.dimmer);
+    scr.render();
+
+    const key = await waitForKeyReturn();
+    scr.exit();
+
+    playAgain = (key === 'r' || key === 'R');
+  }
+}
+
+async function handleRogue(fighter) {
+  if (!fighter) {
+    await withLoadingScreen('Scanning hardware', async () => {
+      const specs = await getSpecs();
+      fighter = await buildFighter(specs);
+    });
+  }
+
+  if (!renderRogue) {
+    await showInfoScreen('ROGUE MODE', (scr, w, h) => {
+      scr.centerText(Math.floor(h / 2), 'Rogue mode unavailable.', colors.rose);
+    });
+    return;
+  }
+
+  const result = await renderRogue(fighter);
+
+  // Show result screen
+  const scr = new Screen();
+  scr.enter();
+  const w = scr.width;
+  const h = scr.height;
+  const cy = Math.floor(h / 2);
+
+  scr.centerText(0, '─'.repeat(w), colors.dimmer);
+  scr.centerText(0, ' ROGUE COMPLETE ', rgb(75, 150, 90), null, true);
+
+  if (result.reason === 'victory') {
+    scr.centerText(cy - 3, '★ ★ ★  A L L  E N E M I E S  D E F E A T E D  ★ ★ ★', colors.gold, null, true);
+    scr.centerText(cy - 1, `Battles won: ${result.battlesWon}`, colors.cyan);
+
+    // Award bonus credits for rogue completion
+    const { addCredits } = require('../src/credits');
+    const bonus = 500 * result.battlesWon;
+    const newBal = addCredits(bonus);
+    scr.centerText(cy + 1, `◆ +${bonus} bonus credits  (balance: ${newBal})`, colors.gold);
+  } else {
+    scr.centerText(cy - 3, 'R O G U E  M O D E', rgb(75, 150, 90), null, true);
+    scr.centerText(cy - 1, `Battles won: ${result.battlesWon}`, colors.dim);
+    scr.centerText(cy + 1, 'You left the void.', colors.dim);
+  }
+
+  scr.hline(2, h - 4, w - 4, '─', colors.ghost);
+  scr.centerText(h - 3, 'Press any key to continue', colors.dimmer);
+  scr.text(w - 14, h - 1, '─ rigémon ─', colors.dimmer);
+  scr.render();
+
+  await waitForKeyReturn();
+  scr.exit();
 }
 
 async function handleBag() {
@@ -759,9 +810,45 @@ async function handleBag() {
 }
 
 async function handleHistory() {
-  // History still uses console.log (complex formatting) — wrap in clean exit/enter
+  const { getRecords } = require('../src/history');
+  const records = getRecords();
+  const opponents = Object.values(records);
+  opponents.sort((a, b) => new Date(b.lastPlayed) - new Date(a.lastPlayed));
+
+  const { timeAgo } = require('../src/history');
+
   await showInfoScreen('BATTLE LOG', (scr, w, h) => {
-    scr.text(4, 3, 'Loading history...', colors.dim);
+    if (opponents.length === 0) {
+      scr.text(4, 3, 'No match history yet. Go battle someone!', colors.dim);
+      return;
+    }
+
+    const totalW = opponents.reduce((s, o) => s + o.wins, 0);
+    const totalL = opponents.reduce((s, o) => s + o.losses, 0);
+    const totalPct = totalW + totalL > 0 ? Math.round((totalW / (totalW + totalL)) * 100) : 0;
+
+    scr.text(4, 2, `Overall: ${totalW}W - ${totalL}L (${totalPct}%)`, colors.cyan, null, true);
+    scr.hline(4, 3, w - 8, '─', colors.ghost);
+
+    let y = 4;
+    const maxRows = h - 7;
+    for (const opp of opponents) {
+      if (y >= maxRows) { scr.text(4, y, `... and ${opponents.length - opponents.indexOf(opp)} more`, colors.dim); break; }
+      const total = opp.wins + opp.losses;
+      const pct = Math.round((opp.wins / total) * 100);
+      const winColor = opp.wins >= opp.losses ? colors.mint : colors.rose;
+      const last = timeAgo(opp.lastPlayed);
+
+      scr.text(4, y, `vs ${opp.name.slice(0, 28)}`, colors.white, null, true);
+      scr.text(36, y, `${opp.wins}W-${opp.losses}L`, winColor);
+      scr.text(46, y, `${pct}%`, colors.dim);
+      scr.text(52, y, last, colors.ghost);
+      y++;
+      if (opp.gpu) {
+        scr.text(7, y, opp.gpu.slice(0, 40), colors.dim);
+        y++;
+      }
+    }
   });
 }
 
@@ -1207,18 +1294,8 @@ async function handleHost(fighter) {
       winner = await renderBattle(myFighter, opponent, events);
     }
 
-    postBattle(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
-
-    await showInfoScreen('BATTLE COMPLETE', (scr, w, h) => {
-      const cy = Math.floor(h / 2);
-      if (winner === 'a') {
-        scr.centerText(cy - 1, '★ ★ ★  V I C T O R Y  ★ ★ ★', colors.gold, null, true);
-        scr.centerText(cy + 1, 'Your rig wins the online battle!', colors.cyan);
-      } else {
-        scr.centerText(cy - 1, 'D E F E A T', colors.rose, null, true);
-        scr.centerText(cy + 1, 'Opponent\'s rig wins.', colors.dim);
-      }
-    });
+    const rewards = postBattle(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
+    await showBattleRewards(winner, rewards, 'Your rig wins the online battle!', 'Opponent\'s rig wins.');
 
   } catch (err) {
     console.log = origLog;
@@ -1302,18 +1379,8 @@ async function handleJoin(fighter) {
       winner = await renderBattle(myFighter, opponent, swapped);
     }
 
-    postBattle(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
-
-    await showInfoScreen('BATTLE COMPLETE', (scr, w, h) => {
-      const cy = Math.floor(h / 2);
-      if (winner === 'a') {
-        scr.centerText(cy - 1, '★ ★ ★  V I C T O R Y  ★ ★ ★', colors.gold, null, true);
-        scr.centerText(cy + 1, 'Your rig wins!', colors.cyan);
-      } else {
-        scr.centerText(cy - 1, 'D E F E A T', colors.rose, null, true);
-        scr.centerText(cy + 1, 'Opponent\'s rig wins.', colors.dim);
-      }
-    });
+    const rewards = postBattle(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
+    await showBattleRewards(winner, rewards, 'Your rig wins!', 'Opponent\'s rig wins.');
 
   } catch (err) {
     console.log = origLog;
@@ -1393,6 +1460,9 @@ async function run() {
       case 'dash':
         await handleDash(fighter);
         break;
+      case 'rogue':
+        await handleRogue(fighter);
+        break;
       case 'profile':
         await handleProfile(fighter);
         break;
@@ -1435,6 +1505,21 @@ function waitForKey() {
       stdin.setRawMode(false);
       stdin.pause();
       resolve();
+    });
+  });
+}
+
+function waitForKeyReturn() {
+  return new Promise(resolve => {
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    stdin.once('data', (key) => {
+      if (key === '\x03') process.exit(0);
+      stdin.setRawMode(false);
+      stdin.pause();
+      resolve(key);
     });
   });
 }

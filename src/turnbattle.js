@@ -8,6 +8,10 @@
 const { createRNG } = require('./rng');
 const { getCombatModifiers, effectiveStat } = require('./balance');
 
+function cloneStateSlice(value) {
+  return value ? JSON.parse(JSON.stringify(value)) : value;
+}
+
 function createBattleState(fighterA, fighterB, seed) {
   const rng = createRNG(seed);
   return {
@@ -199,4 +203,30 @@ function getWinner(state) {
   return null;
 }
 
-module.exports = { createBattleState, processTurn, isOver, getWinner };
+function serializeBattleState(state) {
+  return {
+    turn: state.turn,
+    rngState: typeof state.rng?.getState === 'function' ? state.rng.getState() : 0,
+    a: cloneStateSlice(state.a),
+    b: cloneStateSlice(state.b),
+  };
+}
+
+function applyBattleStateSnapshot(state, snapshot) {
+  if (!snapshot) return state;
+
+  state.rng = createRNG(snapshot.rngState || 0);
+  state.turn = snapshot.turn || 0;
+  state.a = cloneStateSlice(snapshot.a) || state.a;
+  state.b = cloneStateSlice(snapshot.b) || state.b;
+  return state;
+}
+
+module.exports = {
+  createBattleState,
+  processTurn,
+  isOver,
+  getWinner,
+  serializeBattleState,
+  applyBattleStateSnapshot,
+};

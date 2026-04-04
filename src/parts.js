@@ -497,6 +497,82 @@ function printOwnedParts() {
   console.log(`${cyan}  ╰──────────────────────────────────────────────────╯${RESET}`);
 }
 
+// ─── Seed inventory from hardware scan ───
+// Matches real hardware to the closest catalog part for each slot.
+// Only runs once — sets a flag in build.json so it doesn't duplicate.
+
+function seedPartsFromHardware(specs) {
+  const data = loadBuilds();
+  if (data._seeded) return; // already seeded
+
+  const cpuBrand = (specs.cpu?.brand || '').toLowerCase();
+  const gpuModel = (specs.gpu?.model || '').toLowerCase();
+  const ramGB = specs.ram?.totalGB || 0;
+  const storType = specs.storage?.type || 'SSD';
+
+  const entries = Object.entries(PARTS);
+
+  // Find best CPU match: prefer exact brand substring, else closest cores×speed
+  const cpuParts = entries.filter(([, p]) => p.type === 'cpu');
+  let bestCpu = null;
+  let bestCpuScore = -1;
+  for (const [id, p] of cpuParts) {
+    const name = p.cpu.brand.toLowerCase();
+    // Exact substring match gets huge bonus
+    const nameMatch = cpuBrand.includes(name.split(' ').slice(-1)[0]) ? 100 : 0;
+    const coreDiff = Math.abs((p.cpu.cores || 4) - (specs.cpu?.cores || 4));
+    const speedDiff = Math.abs((p.cpu.speedMax || 3) - (specs.cpu?.speedMax || 3));
+    const score = nameMatch + 50 - coreDiff * 3 - speedDiff * 10;
+    if (score > bestCpuScore) { bestCpuScore = score; bestCpu = id; }
+  }
+
+  // Find best GPU match: prefer vendor + closest VRAM
+  const gpuParts = entries.filter(([, p]) => p.type === 'gpu');
+  let bestGpu = null;
+  let bestGpuScore = -1;
+  for (const [id, p] of gpuParts) {
+    const pModel = p.gpu.model.toLowerCase();
+    const vendorMatch = gpuModel.includes(p.gpu.vendor.toLowerCase()) ? 30 : 0;
+    const nameMatch = gpuModel.includes(pModel.split(' ').slice(-1)[0]) ? 80 : 0;
+    const vramDiff = Math.abs((p.gpu.vramMB || 0) - (specs.gpu?.vramMB || 0));
+    const score = nameMatch + vendorMatch + 50 - (vramDiff / 500);
+    if (score > bestGpuScore) { bestGpuScore = score; bestGpu = id; }
+  }
+
+  // Find best RAM match: closest GB
+  const ramParts = entries.filter(([, p]) => p.type === 'ram');
+  let bestRam = null;
+  let bestRamDiff = Infinity;
+  for (const [id, p] of ramParts) {
+    const diff = Math.abs((p.ram.totalGB || 8) - ramGB);
+    if (diff < bestRamDiff) { bestRamDiff = diff; bestRam = id; }
+  }
+
+  // Find best storage match: type first, then size
+  const storParts = entries.filter(([, p]) => p.type === 'storage');
+  let bestStor = null;
+  let bestStorScore = -1;
+  for (const [id, p] of storParts) {
+    const typeMatch = (p.storage.type || 'SSD') === storType ? 100 : 0;
+    const sizeDiff = Math.abs((p.storage.sizeGB || 500) - (specs.storage?.sizeGB || 500));
+    const score = typeMatch + 50 - (sizeDiff / 100);
+    if (score > bestStorScore) { bestStorScore = score; bestStor = id; }
+  }
+
+  // Add matched parts to inventory, then equip on main rig (build 0)
+  for (const partId of [bestCpu, bestGpu, bestRam, bestStor]) {
+    if (partId) {
+      addPart(partId);
+      equipPartOnBuild(0, partId);
+    }
+  }
+
+  // Reload after equips (equipPartOnBuild writes its own saves), then mark seeded
+  const fresh = loadBuilds();
+  fresh._seeded = true;
+  saveBuilds(fresh);
+}
+
 module.exports = {
   PARTS, RARITY_ORDER, RARITY_COLORS, RARITY_ICONS,
   TYPE_LABELS, TYPE_COLORS,
@@ -508,4 +584,5 @@ module.exports = {
   equipPartOnBuild, unequipPartOnBuild,
   isBuildComplete, applyBuildOverrides, buildSpecsFromParts,
   rollPartDrop, printPartDrop, printOwnedParts,
+  seedPartsFromHardware,
 };

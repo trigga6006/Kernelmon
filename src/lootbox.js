@@ -63,6 +63,16 @@ function buildRewardPool() {
   return pool;
 }
 
+// Type weights — controls how likely each reward type is within a rarity tier
+// Items (bag) most common, RAM/storage mid, CPU/GPU rare
+const TYPE_WEIGHTS = {
+  item: 6,
+  ram: 3,
+  storage: 3,
+  cpu: 1,
+  gpu: 1,
+};
+
 function rollReward(box, rng) {
   const pool = buildRewardPool();
 
@@ -80,12 +90,22 @@ function rollReward(box, rng) {
   // Filter pool by rarity
   const candidates = pool.filter(r => r.rarity === chosenRarity);
   if (candidates.length === 0) {
-    // Fallback to any common
     const fallback = pool.filter(r => r.rarity === 'common');
     return fallback[Math.floor(rng.next() * fallback.length)];
   }
 
-  return candidates[Math.floor(rng.next() * candidates.length)];
+  // Weighted pick by type — items most common, CPU/GPU rarest
+  const weighted = candidates.map(c => ({
+    entry: c,
+    w: TYPE_WEIGHTS[c.partType || c.type] || 1,
+  }));
+  const wTotal = weighted.reduce((s, w) => s + w.w, 0);
+  let wRoll = rng.next() * wTotal;
+  for (const { entry, w } of weighted) {
+    wRoll -= w;
+    if (wRoll <= 0) return entry;
+  }
+  return weighted[weighted.length - 1].entry;
 }
 
 // ─── Animated opening ───

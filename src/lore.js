@@ -19,6 +19,11 @@ function pick(arr, seed) {
 // ─── Origin stories — where this rig came from ───
 
 const ORIGINS = {
+  APEX: [
+    'Assembled in a climate-controlled datacenter by engineers who signed NDAs just to look at it. This is not a computer — it is an institution.',
+    'Born from a requisition form that made accounting cry. Ninety-six cores, a terabyte of RAM, and a GPU that costs more than most cars.',
+    'There was no budget. There was no limit. There was only the question: "What if we built everything at once?" This is the answer.',
+  ],
   TITAN: [
     'Forged in a cleanroom where silicon meets divinity. Every component hand-picked, every benchmark shattered.',
     'Born from a build so excessive the power company called to ask questions. Overkill is a lifestyle.',
@@ -113,6 +118,7 @@ function getTraits(stats, seed) {
 // ─── Battle style — how this rig fights ───
 
 const BATTLE_STYLES = {
+  APEX:      'Transcends mortal combat. Regenerates between strikes, hits with machine precision, and never flinches.',
   TITAN:     'Overwhelms with superior stats across the board. No weakness to exploit.',
   HIVEMIND:  'Floods the field with parallel attacks. Every thread is a weapon.',
   ARCMAGE:   'Channels devastating GPU magic. Weak in melee, terrifying at range.',
@@ -186,7 +192,7 @@ function findArchKey(archetype) {
   if (!archetype) return 'SENTINEL';
   const name = archetype.name || '';
   const MAP = {
-    ROOT_GOD: 'TITAN', FORK_BOMB: 'HIVEMIND', SHADER_WITCH: 'ARCMAGE',
+    KERNEL_GOD: 'APEX', ROOT_GOD: 'TITAN', FORK_BOMB: 'HIVEMIND', SHADER_WITCH: 'ARCMAGE',
     ZERO_DAY: 'BLITZ', MALLOC_WALL: 'FORTRESS', STACK_SMASHER: 'BERSERKER',
     GHOST_PROC: 'PHANTOM', SSH_DRIFTER: 'NOMAD', SEG_FAULT: 'SCRAPPER',
     DAEMON: 'SENTINEL',

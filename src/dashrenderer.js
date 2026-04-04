@@ -19,18 +19,18 @@ const FRAME_MS = 1000 / FPS;
 
 // ─── Physics constants ───
 const GRAVITY = 0.55;          // gravity per frame (terminal rows/frame²)
-const JUMP_VELOCITY = -2.1;    // initial upward velocity on jump
-const DOUBLE_JUMP_VEL = -1.7;  // slightly weaker second jump
-const MAX_FALL_SPEED = 2.8;    // terminal velocity
+const JUMP_VELOCITY = -2.8;    // initial upward velocity on jump
+const DOUBLE_JUMP_VEL = -2.2;  // slightly weaker second jump
+const MAX_FALL_SPEED = 3.2;    // terminal velocity
 
 // ─── World scrolling ───
-const BASE_SCROLL_SPEED = 0.55;  // cols/frame at start
-const MAX_SCROLL_SPEED = 1.5;    // cols/frame cap
-const SPEED_RAMP_FRAMES = 3600;  // frames to reach max speed (~3 min)
+const BASE_SCROLL_SPEED = 4.0;   // cols/frame at start (~7x faster)
+const MAX_SCROLL_SPEED = 10.0;   // cols/frame cap
+const SPEED_RAMP_FRAMES = 2000;  // frames to reach max speed (~100s)
 
-// ─── Obstacle generation ───
-const MIN_GAP_FRAMES = 20;  // minimum frames between obstacles
-const MAX_GAP_FRAMES = 48;  // maximum frames between obstacles
+// ─── Obstacle generation (distance-based) ───
+const MIN_GAP_COLS = 30;  // minimum cols between obstacles
+const MAX_GAP_COLS = 58;  // maximum cols between obstacles
 
 // ─── Obstacle types ───
 const OBSTACLE_DEFS = [
@@ -90,8 +90,8 @@ const OBSTACLE_DEFS = [
       }
       for (let i = 0; i < 9; i++) scr.set(x + i, y + 2, '█', theme.frame);
     }},
-  // Floating block (mid-air obstacle)
-  { name: 'float', w: 4, h: 2, ground: false, floatY: -4,
+  // Floating block (mid-air obstacle — jump over or slide under)
+  { name: 'float', w: 4, h: 2, ground: false, floatY: -6,
     draw: (scr, x, y, theme, frame) => {
       const glow = (frame % 20) < 10;
       const c = glow ? theme.core : theme.coreDk;
@@ -116,15 +116,40 @@ const OBSTACLE_DEFS = [
       scr.set(x + 1, y + 2, '█', theme.frameLt);
       scr.set(x + 2, y + 2, '█', theme.frame);
     }},
+  // Laser beam (slide under or double-jump over)
+  { name: 'laser', w: 14, h: 2, ground: false, floatY: -7,
+    draw: (scr, x, y, theme, frame) => {
+      const pulse = Math.sin(frame * 0.3) > 0;
+      const c1 = pulse ? colors.rose : theme.accent;
+      const c2 = pulse ? theme.accent : colors.rose;
+      for (let i = 1; i < 13; i++) {
+        scr.set(x + i, y,     '═', c1);
+        scr.set(x + i, y + 1, '═', c2);
+      }
+      scr.set(x,      y,     '╠', theme.frameLt);
+      scr.set(x + 13, y,     '╣', theme.frameLt);
+      scr.set(x,      y + 1, '╠', theme.frameDk);
+      scr.set(x + 13, y + 1, '╣', theme.frameDk);
+    }},
+  // Pillar — narrow but tall, needs a well-timed jump
+  { name: 'pillar', w: 2, h: 5, ground: true,
+    draw: (scr, x, y, theme, frame) => {
+      const shimmer = (frame + x) % 10 < 5;
+      for (let r = 0; r < 5; r++) {
+        const c = r === 0 ? theme.frameLt : (shimmer && r === 1 ? theme.core : theme.frame);
+        scr.set(x,     y + r, '█', c);
+        scr.set(x + 1, y + r, '▓', theme.frameDk);
+      }
+    }},
 ];
 
-// Difficulty tiers: which obstacles appear and gap time adjustment
+// Difficulty tiers: which obstacles appear and gap distance adjustment (cols)
 const DIFFICULTY_TIERS = [
-  { minScore:    0, obstacles: ['spike', 'wall_s'],                                          gapBonus: 12 },
-  { minScore:  300, obstacles: ['spike', 'wall_s', 'dspike'],                               gapBonus: 8  },
-  { minScore:  800, obstacles: ['spike', 'wall_s', 'dspike', 'wall_t', 'saw'],              gapBonus: 4  },
-  { minScore: 1500, obstacles: ['spike', 'dspike', 'wall_t', 'tspike', 'saw', 'float'],     gapBonus: 0  },
-  { minScore: 2500, obstacles: ['spike', 'dspike', 'wall_t', 'tspike', 'saw', 'float', 'gap'], gapBonus: -4 },
+  { minScore:    0, obstacles: ['spike', 'wall_s'],                                                              colBonus: 18 },
+  { minScore:  300, obstacles: ['spike', 'wall_s', 'dspike', 'saw'],                                            colBonus: 10 },
+  { minScore:  800, obstacles: ['spike', 'wall_s', 'dspike', 'wall_t', 'saw', 'tspike'],                        colBonus: 0  },
+  { minScore: 1500, obstacles: ['spike', 'dspike', 'wall_t', 'tspike', 'saw', 'float', 'pillar'],               colBonus: -5 },
+  { minScore: 2500, obstacles: ['spike', 'dspike', 'wall_t', 'tspike', 'saw', 'float', 'pillar', 'laser', 'gap'], colBonus: -10 },
 ];
 
 function getDifficulty(score) {
@@ -171,11 +196,18 @@ async function renderDash(fighter) {
   let jumpsLeft = 2;
   let onGround = true;
 
+  // ─── Slide / fast-fall ───
+  let isSliding = false;
+  let slideTimer = 0;
+  let slideCooldown = 0;
+  const SLIDE_DURATION = 10;   // frames of slide
+  const SLIDE_COOLDOWN = 12;   // frames before next slide
+
   // ─── World state ───
   let scrollAccum = 0;          // fractional accumulator for sub-pixel scrolling
   let scrollSpeed = BASE_SCROLL_SPEED;
   let obstacles = [];
-  let nextObstacleIn = 30;      // frames until next obstacle spawn
+  let nextObstacleIn = 20;      // frames until next obstacle spawn
   let score = 0;
   let frameCount = 0;
   let gameState = 'ready';      // 'ready' | 'running' | 'dead' | 'exit'
@@ -235,6 +267,8 @@ async function renderDash(fighter) {
 
     if (gameState === 'running') {
       if (key === ' ' || key === '\x1b[A' || key === 'w') {
+        // Cancel slide on jump
+        if (isSliding) { isSliding = false; slideTimer = 0; }
         if (onGround) {
           velocityY = JUMP_VELOCITY;
           jumpsLeft = 1;
@@ -244,6 +278,16 @@ async function renderDash(fighter) {
           jumpsLeft = 0;
           // Double-jump burst
           glitch.scatter(PLAYER_X + SPRITE_W / 2, playerY + SPRITE_H, 6, 2, 4, 4);
+        }
+      }
+      // Slide (ground) / fast-fall (air)
+      if (key === '\x1b[B' || key === 's') {
+        if (onGround && !isSliding && slideCooldown <= 0) {
+          isSliding = true;
+          slideTimer = SLIDE_DURATION;
+          slideCooldown = SLIDE_COOLDOWN;
+        } else if (!onGround) {
+          velocityY = MAX_FALL_SPEED; // fast-fall
         }
       }
     }
@@ -267,25 +311,25 @@ async function renderDash(fighter) {
 
     obstacles.push({ def, x: worldX, y: obstY, scored: false });
 
-    const gap = rng.int(MIN_GAP_FRAMES, MAX_GAP_FRAMES) + tier.gapBonus;
-    nextObstacleIn = Math.max(14, gap);
+    // Distance-based gaps — scales naturally with speed
+    const gapCols = rng.int(MIN_GAP_COLS, MAX_GAP_COLS) + tier.colBonus;
+    nextObstacleIn = Math.max(4, Math.ceil(Math.max(20, gapCols) / scrollSpeed));
   }
 
-  // ─── Collision detection ───
-  function checkCollision() {
-    // Forgiving hitbox — inset 2 cols from each side, 1 row top/bottom
+  // ─── Collision detection (swept for high-speed tunneling prevention) ───
+  function checkCollision(scrollPx) {
     const px1 = PLAYER_X + 2;
     const px2 = PLAYER_X + SPRITE_W - 2;
-    const py1 = playerY + 1;
+    // Slide halves the hitbox — only bottom half counts
+    const py1 = isSliding ? playerY + Math.floor(SPRITE_H / 2) : playerY + 1;
     const py2 = playerY + SPRITE_H - 1;
 
     for (const obs of obstacles) {
       if (obs.def.isGap) {
         // Gap — die if player is on ground AND overlapping the hole
-        if (onGround && playerY >= groundBaseY) {
+        if (onGround && playerY >= groundBaseY && !isSliding) {
           const gx1 = Math.floor(obs.x);
           const gx2 = gx1 + obs.def.w;
-          // Center of player must be over the gap
           const pCenter = (px1 + px2) / 2;
           if (pCenter > gx1 + 1 && pCenter < gx2 - 1) return true;
         }
@@ -293,7 +337,9 @@ async function renderDash(fighter) {
       }
 
       const ox1 = Math.floor(obs.x);
-      const ox2 = ox1 + obs.def.w;
+      // Swept: extend right edge to cover where obstacle was last frame
+      // Skip sweep for scored (already cleared) obstacles to avoid false positives
+      const ox2 = ox1 + obs.def.w + (obs.scored ? 0 : (scrollPx || 0));
       const oy1 = obs.y;
       const oy2 = obs.y + obs.def.h;
 
@@ -366,10 +412,18 @@ async function renderDash(fighter) {
         onGround = true;
       }
 
-      // Obstacle collision
-      if (checkCollision()) {
+      // Slide timer
+      if (isSliding) {
+        slideTimer--;
+        if (slideTimer <= 0) { isSliding = false; slideTimer = 0; }
+      }
+      if (slideCooldown > 0) slideCooldown--;
+
+      // Obstacle collision (swept to prevent tunneling at high speed)
+      if (checkCollision(scrollPixels)) {
         gameState = 'dead';
         deathFrame = 0;
+        isSliding = false; slideTimer = 0;
         glitch.burst(PLAYER_X + SPRITE_W / 2, playerY + SPRITE_H / 2, 8, 12);
         glitch.screenTear(w, 6);
       }
@@ -411,6 +465,14 @@ async function renderDash(fighter) {
     if (gameState !== 'dead' || deathFrame < 15) {
       if (gameState === 'dead') {
         fighter.sprite.drawFrontHit(screen, PLAYER_X, drawY, frameCount);
+      } else if (isSliding) {
+        // Slide visual — draw sprite shifted down (crouching) with speed lines
+        fighter.sprite.front.draw(screen, PLAYER_X, drawY + 3, null, frameCount);
+        for (let i = 0; i < 4; i++) {
+          const lx = PLAYER_X - 1 - rng.int(0, 5);
+          const ly = drawY + 4 + rng.int(0, 3);
+          if (ly < GROUND_Y && lx >= 0) screen.set(lx, ly, '─', theme.core);
+        }
       } else {
         fighter.sprite.front.draw(screen, PLAYER_X, drawY, null, frameCount);
       }
@@ -435,7 +497,7 @@ async function renderDash(fighter) {
     floats.draw(screen);
 
     // HUD
-    drawHUD(screen, w, h, score, scrollSpeed, gameState, frameCount, readyPulse, jumpsLeft, fighter, theme);
+    drawHUD(screen, w, h, score, scrollSpeed, gameState, frameCount, readyPulse, jumpsLeft, isSliding, slideCooldown, fighter, theme);
 
     // Death overlay
     if (gameState === 'dead') {
@@ -521,7 +583,7 @@ function drawGround(screen, w, h, groundY, floorOffset, theme, obstacles) {
   }
 }
 
-function drawHUD(screen, w, h, score, speed, gameState, frame, readyPulse, jumpsLeft, fighter, theme) {
+function drawHUD(screen, w, h, score, speed, gameState, frame, readyPulse, jumpsLeft, isSliding, slideCooldown, fighter, theme) {
   // Score
   const scoreStr = `SCORE: ${score}`;
   screen.text(2, 0, scoreStr, colors.gold, null, true);
@@ -542,19 +604,26 @@ function drawHUD(screen, w, h, score, speed, gameState, frame, readyPulse, jumps
   // Bottom separator
   screen.hline(0, h - 3, w, '─', colors.ghost);
 
-  // Controls + jump indicator
+  // Controls + jump/slide indicator
   if (gameState === 'ready') {
     const pulse = readyPulse % 30 < 15;
     screen.centerText(h - 2, pulse ? '[ SPACE / ↑  to JUMP ]' : '[ Press any key to START ]', colors.dim);
   } else if (gameState === 'running') {
-    screen.text(2, h - 2, 'SPACE/↑ Jump', colors.ghost);
+    screen.text(2, h - 2, '↑ Jump  ↓ Slide', colors.ghost);
     screen.text(w - 8, h - 2, 'Q Quit', colors.ghost);
 
     // Jump pips — filled = available, empty = used
     const pip1 = jumpsLeft >= 1 ? '◆' : '◇';
     const pip2 = jumpsLeft >= 2 ? '◆' : '◇';
     const pipColor = jumpsLeft > 0 ? theme.core : colors.ghost;
-    screen.text(16, h - 2, pip1 + pip2, pipColor);
+    screen.text(19, h - 2, pip1 + pip2, pipColor);
+
+    // Slide indicator
+    if (isSliding) {
+      screen.text(23, h - 2, '▸SLIDE', colors.gold);
+    } else if (slideCooldown > 0) {
+      screen.text(23, h - 2, '▸ ···', colors.ghost);
+    }
   } else if (gameState === 'dead') {
     screen.centerText(h - 2, '[ Press any key to continue ]', colors.dim);
   }

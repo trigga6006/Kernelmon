@@ -10,6 +10,22 @@
 // Returns: { damageMult, critBonus, dodgeBonus, selfDamage, skipChance, defMult, healBonus }
 
 const PASSIVES = {
+  // APEX — Omniscience: consistent godlike output with passive regen
+  // No weakness, no variance — pure overwhelming superiority
+  KERNEL_GOD: {
+    name: 'Omniscience',
+    desc: 'Operates beyond mortal limits — steady damage, passive regen, unshakeable',
+    apply(ctx) {
+      return {
+        damageMult: 1.18,
+        critBonus: 0.05,
+        defMult: 1.10,
+        healPerTurn: Math.round(ctx.atk.maxHp * 0.015), // 1.5% maxHP regen per turn
+        varianceOverride: [0.9, 1.1], // very consistent output
+      };
+    },
+  },
+
   // TITAN — Overheat: raw power but consecutive attacks risk stalling
   // Burst damage is massive, but sustained fighting gets unreliable
   ROOT_GOD: {
@@ -118,36 +134,36 @@ const PASSIVES = {
     desc: 'Thermal adaptation — gets stronger the longer the fight goes',
     apply(ctx) {
       // Ramp: turn 1-2 slightly weak, then scales up steadily
-      const ramp = Math.min(0.25, Math.max(-0.05, (ctx.turn - 3) * 0.05));
+      const ramp = Math.min(0.20, Math.max(-0.05, (ctx.turn - 3) * 0.04));
       return {
         damageMult: 1 + ramp,
-        dodgeBonus: 0.06,    // mobile platform evasion
-        critBonus: Math.min(0.06, ctx.turn * 0.008), // slow crit build
+        dodgeBonus: 0.04,    // mobile platform evasion (was 0.06)
+        critBonus: Math.min(0.05, ctx.turn * 0.006), // slow crit build
       };
     },
   },
 
-  // SCRAPPER — Survival Instinct: massive comeback when low HP
-  // The ultimate underdog mechanic
+  // SCRAPPER — Survival Instinct: fights harder when low HP
+  // Noticeable comeback, but not enough to overcome a massive stat gap alone
   SEG_FAULT: {
     name: 'Survival Instinct',
     desc: 'Shouldn\'t be running, but fights hardest when near death',
     apply(ctx) {
       const mods = {};
       if (ctx.hpRatio < 0.25) {
-        // Below 25%: full rage — this is where scrappers become terrifying
-        mods.damageMult = 1.70;
-        mods.critBonus = 0.22;
-        mods.dodgeBonus = 0.15;
-        mods.critMult = 2.5;
+        // Below 25%: desperate — strong but not invincible
+        mods.damageMult = 1.35;
+        mods.critBonus = 0.10;
+        mods.dodgeBonus = 0.06;
+        mods.critMult = 2.0;
       } else if (ctx.hpRatio < 0.50) {
         // Below 50%: warming up
-        mods.damageMult = 1.30;
-        mods.critBonus = 0.10;
-        mods.dodgeBonus = 0.08;
+        mods.damageMult = 1.15;
+        mods.critBonus = 0.05;
+        mods.dodgeBonus = 0.03;
       } else {
         // Above 50%: slight baseline toughness
-        mods.dodgeBonus = 0.03;
+        mods.dodgeBonus = 0.02;
       }
       return mods;
     },
@@ -177,18 +193,18 @@ function calcUnderdogBonus(atkStats, defStats) {
   const defAvg = (defStats.str + defStats.mag + defStats.spd + (defStats.def || 0)) / 4;
 
   const gap = defAvg - atkAvg; // positive = attacker is weaker
-  if (gap <= 12) return null;  // no bonus unless meaningfully weaker
+  if (gap <= 15) return null;  // no bonus unless meaningfully weaker
 
-  // Aggressive scaling so underdogs are genuinely dangerous.
+  // Moderate scaling — underdog should be competitive, not favored.
   // Cap at 50 stat gap.
   const scale = Math.min(gap, 50) / 50;
 
   return {
-    damageMult: 1 + scale * 0.40,     // up to +40% damage
-    flatDamage: Math.round(scale * 25),// up to +25 flat damage (bypasses stat floor)
-    critBonus: scale * 0.15,           // up to +15% crit chance
-    dodgeBonus: scale * 0.10,          // up to +10% dodge
-    defMult: 1 + scale * 0.35,        // up to +35% damage reduction
+    damageMult: 1 + scale * 0.22,     // up to +22% damage (was +40%)
+    flatDamage: Math.round(scale * 10),// up to +10 flat damage (was +25)
+    critBonus: scale * 0.06,           // up to +6% crit chance (was +15%)
+    dodgeBonus: scale * 0.04,          // up to +4% dodge (was +10%)
+    defMult: 1 + scale * 0.18,        // up to +18% damage reduction (was +35%)
   };
 }
 
@@ -233,6 +249,7 @@ function getCombatModifiers(ctx) {
     varianceOverride: passiveMods.varianceOverride || null,
     fizzle: passiveMods.fizzle || false,
     healBonus: passiveMods.healBonus || 0,
+    healPerTurn: passiveMods.healPerTurn || 0,
   };
 }
 

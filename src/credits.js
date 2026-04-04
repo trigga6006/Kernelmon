@@ -83,6 +83,15 @@ function calculateBattleCredits(winner, myFighter, opponent, mode) {
   return Math.max(base, 10); // minimum 10 credits
 }
 
+// ─── Dash mode reward calculation ───
+// Score-based: ~1 credit per 8 points, min 10, max 300
+
+function calculateDashCredits(score) {
+  if (score <= 0) return 1;
+  // Gentle curve: single digits for poor/mid, 10-20 for good, up to 100 for exceptional
+  return Math.min(100, Math.floor(Math.sqrt(score) * 0.3));
+}
+
 // ─── Display ───
 
 function printCreditEarned(amount, newBalance) {
@@ -99,5 +108,5 @@ function formatBalance(bal) {
 module.exports = {
   getBalance, getLifetimeEarned,
   addCredits, spendCredits,
-  calculateBattleCredits, printCreditEarned, formatBalance,
+  calculateBattleCredits, calculateDashCredits, printCreditEarned, formatBalance,
 };

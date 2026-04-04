@@ -36,43 +36,86 @@ function httpRequest(url, method, body = null) {
   });
 }
 
-// Submit our move and wait for opponent's move
-async function submitAndWait(relayUrl, roomCode, role, moveName, turnNum, itemId) {
+function extractTurnPayload(result) {
+  return {
+    status: result.status,
+    hostMove: result.hostMove,
+    joinerMove: result.joinerMove,
+    hostItem: result.hostItem,
+    joinerItem: result.joinerItem,
+    resolution: result.resolution || null,
+  };
+}
+
+async function submitTurn(relayUrl, roomCode, role, moveName, turnNum, itemId) {
   const base = relayUrl.replace(/\/$/, '');
   const code = roomCode.toUpperCase().replace(/[\s]/g, '');
 
-  // Submit our move (+ item if used this turn)
-  const submitResult = await httpRequest(`${base}/rooms/${code}/turn`, 'POST', {
+  return httpRequest(`${base}/rooms/${code}/turn`, 'POST', {
     role,
     move: moveName,
     turnNum,
     item: itemId || null,
   });
+}
 
-  // If both moves already in, return immediately
-  if (submitResult.status === 'ready') {
-    return { hostMove: submitResult.hostMove, joinerMove: submitResult.joinerMove, hostItem: submitResult.hostItem, joinerItem: submitResult.joinerItem };
-  }
+async function waitForTurn(relayUrl, roomCode, turnNum, requireResolution = false, timeoutMs = TURN_TIMEOUT) {
+  const base = relayUrl.replace(/\/$/, '');
+  const code = roomCode.toUpperCase().replace(/[\s]/g, '');
 
-  // Poll until opponent submits — pass turn number so we get the right turn's data
   const start = Date.now();
-  while (Date.now() - start < TURN_TIMEOUT) {
+  while (Date.now() - start < timeoutMs) {
     await sleep(POLL_INTERVAL);
     try {
       const result = await httpRequest(`${base}/rooms/${code}/turn?t=${turnNum}`, 'GET');
-      if (result.status === 'ready') {
-        return { hostMove: result.hostMove, joinerMove: result.joinerMove, hostItem: result.hostItem, joinerItem: result.joinerItem };
+      if (result.status === 'ended') {
+        throw new Error('Battle already ended.');
+      }
+      if (result.status === 'resolved') {
+        return extractTurnPayload(result);
+      }
+      if (!requireResolution && result.status === 'ready') {
+        return extractTurnPayload(result);
       }
     } catch (err) {
-      // Rate limited or transient error — back off and retry
       if (err.message.includes('Rate limit') || err.message.includes('429')) {
         await sleep(2000);
+      } else if (err.message.includes('Battle already ended')) {
+        throw err;
       }
-      // Don't crash — keep polling unless truly timed out
     }
   }
 
   throw new Error('Opponent timed out (2 minutes). Battle abandoned.');
+}
+
+// Submit our move and wait for opponent's move
+async function submitAndWait(relayUrl, roomCode, role, moveName, turnNum, itemId) {
+  const submitResult = await submitTurn(relayUrl, roomCode, role, moveName, turnNum, itemId);
+
+  if (submitResult.status === 'ended') {
+    throw new Error('Battle already ended.');
+  }
+
+  if (submitResult.status === 'ready' || submitResult.status === 'resolved') {
+    return extractTurnPayload(submitResult);
+  }
+
+  return waitForTurn(relayUrl, roomCode, turnNum, false, TURN_TIMEOUT);
+}
+
+async function publishTurnResolution(relayUrl, roomCode, turnNum, resolution) {
+  const base = relayUrl.replace(/\/$/, '');
+  const code = roomCode.toUpperCase().replace(/[\s]/g, '');
+  return httpRequest(`${base}/rooms/${code}/turn/resolve`, 'POST', {
+    role: 'host',
+    turnNum,
+    resolution,
+  });
+}
+
+async function waitForTurnResolution(relayUrl, roomCode, turnNum) {
+  return waitForTurn(relayUrl, roomCode, turnNum, true, 5_000);
 }
 
 // Signal battle end
@@ -88,4 +131,9 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-module.exports = { submitAndWait, endBattle };
+module.exports = {
+  submitAndWait,
+  publishTurnResolution,
+  waitForTurnResolution,
+  endBattle,
+};
