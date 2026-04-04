@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-// RIGEMON — CLI entry point
+// KERNELMON — CLI entry point
 // Usage:
-//   rgm host [--online] [--turns]   Host a battle (--turns for turn-based mode)
-//   rgm join <room-code>            Join an online battle
-//   rgm join <ip> [--port 7331]     Join a LAN battle
-//   rgm demo [--turns]              Demo battle (--turns for turn-based)
-//   rgm rogue                       Rogue-like exploration mode
-//   rgm profile                     Show your PC's fighter stats
+//   kmon host [--online] [--turns]   Host a battle (--turns for turn-based mode)
+//   kmon join <room-code>            Join an online battle
+//   kmon join <ip> [--port 7331]     Join a LAN battle
+//   kmon demo [--turns]              Demo battle (--turns for turn-based)
+//   kmon rogue                       Rogue-like exploration mode
+//   kmon profile                     Show your PC's fighter stats
 
 const { getSpecs, buildStats, fighterName, gpuName, classifyArchetype } = require('../src/profiler');
 const { simulate } = require('../src/battle');
@@ -269,9 +269,9 @@ async function main() {
           console.log(`${cyan}  │  ${marker} ${isEquipped ? bright : dim}${m.label.padEnd(22)}${dim}${m.cat.padEnd(10)} ${m.desc.padEnd(16).slice(0,16)}${cyan}│${RESET}`);
         });
         console.log(`${cyan}  ╰──────────────────────────────────────────────────╯${RESET}`);
-        console.log(`${dim}  To change loadout: rgm loadout set <move1> <move2> <move3> <move4>${RESET}`);
+        console.log(`${dim}  To change loadout: kmon loadout set <move1> <move2> <move3> <move4>${RESET}`);
 
-        // Handle "rgm loadout set ..."
+        // Handle "kmon loadout set ..."
         if (args[1] === 'set' && args.length >= 6) {
           const names = args.slice(2, 6).map(n => n.toUpperCase());
           const valid = names.every(n => MOVE_POOL[n] && available.some(m => m.name === n));
@@ -363,8 +363,8 @@ async function main() {
         const target = args[1];
         if (!target) {
           console.error('\x1b[38;2;240;150;170m  ✗ Usage:\x1b[0m');
-          console.error('\x1b[38;2;240;150;170m    rgm join ABCD-1234        (online, room code)\x1b[0m');
-          console.error('\x1b[38;2;240;150;170m    rgm join 192.168.1.5      (LAN, IP address)\x1b[0m');
+          console.error('\x1b[38;2;240;150;170m    kmon join ABCD-1234        (online, room code)\x1b[0m');
+          console.error('\x1b[38;2;240;150;170m    kmon join 192.168.1.5      (LAN, IP address)\x1b[0m');
           process.exit(1);
         }
 

@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const WSO_DIR = path.join(__dirname, '..', '.rigemon');
+const WSO_DIR = path.join(__dirname, '..', '.kernelmon');
 const LOADOUT_FILE = path.join(WSO_DIR, 'loadout.json');
 
 // ─── Full Move Pool (expanded) ───
@@ -115,33 +115,35 @@ function saveLoadout(moveNames) {
   fs.writeFileSync(LOADOUT_FILE, JSON.stringify(moveNames, null, 2));
 }
 
+function resolveMoveNames(moveNames, stats, specs, archetype) {
+  if (!Array.isArray(moveNames) || moveNames.length === 0) return [];
+
+  let sigLookup = {};
+  if (specs && archetype) {
+    const { generateSignatureMoves } = require('./signature');
+    const sig = generateSignatureMoves(stats, specs, archetype);
+    sigLookup = Object.fromEntries(sig.map(m => [m.name, m]));
+  }
+
+  const reqMap = { cpu: 'str', gpu: 'mag', spd: 'spd', vit: 'vit' };
+  return moveNames
+    .map(name => {
+      if (sigLookup[name]) return sigLookup[name];
+      const move = MOVE_POOL[name];
+      if (!move) return null;
+      const reqStat = stats[reqMap[move.req]] || 0;
+      if (reqStat < move.minStat) return null;
+      return { name, ...move };
+    })
+    .filter(Boolean);
+}
+
 // Get equipped moves — either from saved loadout or auto-assigned.
 // Accepts optional specs/archetype to resolve signature moves in saved loadouts.
 function getEquippedMoves(stats, specs, archetype) {
   const saved = loadLoadout();
   if (saved && Array.isArray(saved) && saved.length === 4) {
-    // Build a lookup for signature moves so saved loadouts can reference them
-    let sigLookup = {};
-    if (specs && archetype) {
-      const { generateSignatureMoves } = require('./signature');
-      const sig = generateSignatureMoves(stats, specs, archetype);
-      sigLookup = Object.fromEntries(sig.map(m => [m.name, m]));
-    }
-
-    const reqMap = { cpu: 'str', gpu: 'mag', spd: 'spd', vit: 'vit' };
-    const equipped = saved
-      .map(name => {
-        // Check signature moves first
-        if (sigLookup[name]) return sigLookup[name];
-        // Then regular pool
-        const move = MOVE_POOL[name];
-        if (!move) return null;
-        const reqStat = stats[reqMap[move.req]] || 0;
-        if (reqStat < move.minStat) return null;
-        return { name, ...move };
-      })
-      .filter(Boolean);
-
+    const equipped = resolveMoveNames(saved, stats, specs, archetype);
     if (equipped.length === 4) return equipped;
   }
   // Fallback to auto-assignment
@@ -150,5 +152,5 @@ function getEquippedMoves(stats, specs, archetype) {
 
 module.exports = {
   MOVE_POOL, getAvailableMoves, assignMoveset,
-  loadLoadout, saveLoadout, getEquippedMoves,
+  loadLoadout, saveLoadout, resolveMoveNames, getEquippedMoves,
 };

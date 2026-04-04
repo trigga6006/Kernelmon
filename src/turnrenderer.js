@@ -300,8 +300,10 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
 
   // ─── Pre-battle lobby ───
   try {
-    const finalMoves = await preBattleLobby(fighterA, fighterB, screen);
-    movesetA = finalMoves;
+    const finalMoves = await preBattleLobby(fighterA, fighterB, screen, movesetA);
+    if (Array.isArray(finalMoves) && finalMoves.length === 4) {
+      movesetA = finalMoves;
+    }
   } catch (e) {
     // If pre-battle fails (e.g. non-interactive), keep default moveset
   }
@@ -773,7 +775,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
 
     // Title
     screen.centerText(0, '─'.repeat(w), colors.dimmer);
-    screen.centerText(0, ' R I G E M O N', colors.cyan, null, true);
+    screen.centerText(0, ' K E R N E L M O N', colors.cyan, null, true);
     screen.text(w - 12, 0, `Turn ${turnNum}`, colors.dim);
 
     // Turn timer — prominent countdown + shrinking bar on row 1

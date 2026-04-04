@@ -13,9 +13,16 @@ const { classifyArchetype } = require('./profiler');
 const { simulate } = require('./battle');
 const { renderBattle } = require('./renderer');
 const { combinedSeed } = require('./rng');
+const { getEquippedMoves, assignMoveset } = require('./moveset');
+const { registerSignatureAnims } = require('./effects/projectile');
+
+let renderTurnBattle;
+try { renderTurnBattle = require('./turnrenderer').renderTurnBattle; } catch (e) {}
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
+const PAUSE_OPTIONS = ['RESUME RUN', 'RETURN TO MENU'];
+const HORIZONTAL_STEP = 1.6;
 
 // ─── Colors ───
 const DIM       = rgb(45, 55, 50);
@@ -206,7 +213,10 @@ class GrassField {
 // MAIN ROGUELIKE RENDERER
 // ═══════════════════════════════════════════════════════════════
 
-async function renderRogue(fighter) {
+async function renderRogue(fighter, options = {}) {
+  const battleMode = options.battleMode === 'turn' ? 'turn' : 'auto';
+  const useTurnBattles = battleMode === 'turn' && !!renderTurnBattle;
+
   // Ensure sprite is alive
   if (!fighter.sprite || typeof fighter.sprite.front?.draw !== 'function') {
     fighter.sprite = fighter.specs
@@ -218,6 +228,11 @@ async function renderRogue(fighter) {
   const rng = createRNG(Date.now());
   const sparkle = new CodeSparkle(screen.width, screen.height, rng, 18);
   const grass = new GrassField(rng);
+  const playerTheme = fighter.sprite?.theme || {};
+  const playerCoreColor = playerTheme.core || playerTheme.accent || PLAYER_FG;
+  const playerAccentColor = playerTheme.accent || LABEL;
+  const playerAccentDark = playerTheme.accentDk || HUD_DIM;
+  const playerTrimColor = playerTheme.frameLt || BRIGHT;
 
   const w = screen.width;
   const h = screen.height;
@@ -240,13 +255,14 @@ async function renderRogue(fighter) {
   }));
 
   // ─── Movement tracking ───
-  let moveUp = false, moveDown = false, moveLeft = false, moveRight = false;
-  let moveSpeed = 1;  // cells per move tick
-  let moveCooldown = 0;
-  const MOVE_RATE = 3; // frames between moves (lower = faster)
+  // Each direction stores a timestamp so keys "linger" long enough for diagonals
+  const KEY_LINGER_MS = 160; // how long a key press stays active
+  let keyTimes = { up: 0, down: 0, left: 0, right: 0 };
+  let lastMoveAt = 0;
+  const MOVE_INTERVAL_MS = 70; // slightly faster and consistent across axes
 
   // ─── Game state ───
-  let gameState = 'explore'; // 'explore' | 'battle_intro' | 'battling' | 'victory' | 'done'
+  let gameState = 'explore'; // 'explore' | 'paused' | 'battle_intro' | 'battling' | 'victory' | 'done'
   let battleTarget = null;
   let nearbyEnemy = null;    // enemy within interaction range
   let battlesWon = 0;
@@ -255,6 +271,7 @@ async function renderRogue(fighter) {
   let encounterFlash = 0;
   let statusMessage = '';
   let statusTimer = 0;
+  let pauseSelection = 0;
 
   // HUD exclusion zone (top 2 rows)
   sparkle.exclusionZones = [
@@ -271,46 +288,175 @@ async function renderRogue(fighter) {
   let resolveGame;
   const gamePromise = new Promise(r => { resolveGame = r; });
 
-  function onKey(key) {
-    // Quit
-    if (key === '\x03' || key === 'q') {
-      gameState = 'done';
-      resolveGame({ battlesWon, reason: 'quit' });
-      return;
-    }
-
-    if (gameState === 'victory') {
-      if (victoryFrame > 40) {
-        resolveGame({ battlesWon, reason: 'victory' });
+  function splitInputKeys(input) {
+    const keys = [];
+    for (let i = 0; i < input.length; i++) {
+      if (input[i] === '\x1b' && input[i + 1] === '[' && input[i + 2]) {
+        keys.push(input.slice(i, i + 3));
+        i += 2;
+      } else {
+        keys.push(input[i]);
       }
-      return;
     }
-
-    if (gameState !== 'explore') return;
-
-    // ENTER to engage nearby enemy
-    if ((key === '\r' || key === '\n' || key === ' ') && nearbyEnemy) {
-      battleTarget = nearbyEnemy;
-      gameState = 'battle_intro';
-      battleIntroFrame = 0;
-      return;
-    }
-
-    // WASD + arrow keys
-    if (key === 'w' || key === '\x1b[A') moveUp = true;
-    if (key === 's' || key === '\x1b[B') moveDown = true;
-    if (key === 'a' || key === '\x1b[D') moveLeft = true;
-    if (key === 'd' || key === '\x1b[C') moveRight = true;
+    return keys;
   }
 
-  // Track key releases via raw mode timing
-  // (In raw mode we just get key presses, so we auto-clear each frame)
+  function setMovementKey(key, now) {
+    if (key === 'w' || key === '\x1b[A') keyTimes.up = now;
+    if (key === 's' || key === '\x1b[B') keyTimes.down = now;
+    if (key === 'a' || key === '\x1b[D') keyTimes.left = now;
+    if (key === 'd' || key === '\x1b[C') keyTimes.right = now;
+  }
+
+  function clearMovementBuffer() {
+    keyTimes = { up: 0, down: 0, left: 0, right: 0 };
+  }
+
+  function playerCellX() {
+    return Math.round(px);
+  }
+
+  function playerCellY() {
+    return Math.round(py);
+  }
+
+  function facingFromVector(dx, dy) {
+    if (dx > 0 && dy < 0) return 'up_right';
+    if (dx < 0 && dy < 0) return 'up_left';
+    if (dx > 0 && dy > 0) return 'down_right';
+    if (dx < 0 && dy > 0) return 'down_left';
+    if (dx > 0) return 'right';
+    if (dx < 0) return 'left';
+    if (dy < 0) return 'up';
+    if (dy > 0) return 'down';
+    return facing;
+  }
+
+  function drawPlayer(screen, playerScreenX, playerScreenY) {
+    const facingInfo = {
+      up: [0, -1, '▲'],
+      down: [0, 1, '▼'],
+      left: [-1, 0, '◄'],
+      right: [1, 0, '►'],
+      up_left: [-1, -1, '↖'],
+      up_right: [1, -1, '↗'],
+      down_left: [-1, 1, '↙'],
+      down_right: [1, 1, '↘'],
+    };
+
+    if (playerScreenY < 2 || playerScreenY >= h || playerScreenX < 0 || playerScreenX >= w) return;
+
+    screen.set(playerScreenX, playerScreenY, '◉', playerCoreColor, null, true);
+    if (playerScreenX - 1 >= 0) screen.set(playerScreenX - 1, playerScreenY, '▐', playerAccentDark);
+    if (playerScreenX + 1 < w) screen.set(playerScreenX + 1, playerScreenY, '▌', playerAccentColor);
+    if (playerScreenY + 1 < h) screen.set(playerScreenX, playerScreenY + 1, '╹', playerTrimColor);
+
+    const [fx, fy, fchar] = facingInfo[facing] || facingInfo.down;
+    const markerX = playerScreenX + fx;
+    const markerY = playerScreenY + fy;
+    if (markerY >= 2 && markerY < h && markerX >= 0 && markerX < w) {
+      screen.set(markerX, markerY, fchar, playerAccentColor, null, true);
+    }
+  }
+
+  function drawPauseMenu() {
+    const boxW = 28;
+    const boxH = 8;
+    const boxX = Math.floor((w - boxW) / 2);
+    const boxY = Math.floor((h - boxH) / 2) - 1;
+
+    for (let sy = 2; sy < h; sy++) {
+      for (let sx = 0; sx < w; sx++) {
+        screen.set(sx, sy, ' ', null, bgRgb(5, 7, 12));
+      }
+    }
+
+    screen.box(boxX, boxY, boxW, boxH, playerAccentColor, bgRgb(10, 12, 18));
+    screen.centerText(boxY + 1, 'ROGUE PAUSED', playerAccentColor, null, true);
+    screen.centerText(boxY + 2, 'Esc resumes your run', HUD_DIM);
+
+    for (let i = 0; i < PAUSE_OPTIONS.length; i++) {
+      const selected = i === pauseSelection;
+      const prefix = selected ? '► ' : '  ';
+      const text = `${prefix}${PAUSE_OPTIONS[i]}`;
+      screen.text(boxX + 4, boxY + 4 + i, text.padEnd(boxW - 8), selected ? playerCoreColor : colors.white, null, selected);
+    }
+  }
+
+  function onKey(input) {
+    for (const rawKey of splitInputKeys(input)) {
+      const key = rawKey.length === 1 ? rawKey.toLowerCase() : rawKey;
+
+      // Quit
+      if (key === '\x03' || key === 'q') {
+        gameState = 'done';
+        resolveGame({ battlesWon, reason: 'quit' });
+        return;
+      }
+
+      if (gameState === 'victory') {
+        if (victoryFrame > 40) {
+          resolveGame({ battlesWon, reason: 'victory' });
+        }
+        return;
+      }
+
+      if (gameState === 'paused') {
+        if (key === '\x1b') {
+          clearMovementBuffer();
+          gameState = 'explore';
+          return;
+        }
+        if (key === 'w' || key === 'k' || key === '\x1b[A') {
+          pauseSelection = (pauseSelection - 1 + PAUSE_OPTIONS.length) % PAUSE_OPTIONS.length;
+          return;
+        }
+        if (key === 's' || key === 'j' || key === '\x1b[B') {
+          pauseSelection = (pauseSelection + 1) % PAUSE_OPTIONS.length;
+          return;
+        }
+        if (key === '\r' || key === '\n' || key === ' ') {
+          if (pauseSelection === 0) {
+            clearMovementBuffer();
+            gameState = 'explore';
+          } else {
+            gameState = 'done';
+            resolveGame({ battlesWon, reason: 'paused_exit' });
+          }
+          return;
+        }
+        return;
+      }
+
+      if (gameState !== 'explore') return;
+
+      if (key === '\x1b') {
+        clearMovementBuffer();
+        pauseSelection = 0;
+        gameState = 'paused';
+        return;
+      }
+
+      // ENTER to engage nearby enemy
+      if ((key === '\r' || key === '\n' || key === ' ') && nearbyEnemy) {
+        battleTarget = nearbyEnemy;
+        gameState = 'battle_intro';
+        battleIntroFrame = 0;
+        return;
+      }
+
+      // WASD + arrow keys — stamp the time so nearby presses combine into diagonals
+      setMovementKey(key, Date.now());
+    }
+  }
+
+  // In raw mode we only get keypresses, so directional input expires via linger timing.
 
   stdin.on('data', onKey);
 
   // ─── Camera ───
-  function cameraX() { return px - Math.floor(w / 2); }
-  function cameraY() { return py - Math.floor(h / 2) + 1; } // +1 for HUD
+  function cameraX() { return playerCellX() - Math.floor(w / 2); }
+  function cameraY() { return playerCellY() - Math.floor(h / 2) + 1; } // +1 for HUD
 
   // ─── Draw ground cell ───
   function drawGroundCell(screenX, screenY, worldX, worldY) {
@@ -405,7 +551,7 @@ async function renderRogue(fighter) {
         }
 
         // Auto-engage on direct collision (same cell)
-        if (px === enemy.worldX && py === enemy.worldY) {
+        if (playerCellX() === enemy.worldX && playerCellY() === enemy.worldY) {
           battleTarget = enemy;
           gameState = 'battle_intro';
           battleIntroFrame = 0;
@@ -414,22 +560,10 @@ async function renderRogue(fighter) {
     }
 
     // Draw player character
-    const playerScreenX = px - cx;
-    const playerScreenY = py - cy;
+    const playerScreenX = playerCellX() - cx;
+    const playerScreenY = playerCellY() - cy;
 
-    // Draw a small player marker with facing indicator
-    const facingChars = { up: '▲', down: '▼', left: '◄', right: '►' };
-    if (playerScreenY >= 2 && playerScreenY < h && playerScreenX >= 0 && playerScreenX < w) {
-      screen.set(playerScreenX, playerScreenY, '@', PLAYER_FG, null, true);
-
-      // Facing indicator
-      const fc = facingChars[facing] || '▼';
-      const fy = facing === 'up' ? playerScreenY - 1 : facing === 'down' ? playerScreenY + 1 : playerScreenY;
-      const fx = facing === 'left' ? playerScreenX - 1 : facing === 'right' ? playerScreenX + 1 : playerScreenX;
-      if (fy >= 2 && fy < h && fx >= 0 && fx < w) {
-        screen.set(fx, fy, fc, LABEL);
-      }
-    }
+    drawPlayer(screen, playerScreenX, playerScreenY);
 
     // Encounter flash effect
     if (encounterFlash > 0) {
@@ -489,11 +623,15 @@ async function renderRogue(fighter) {
       }
     }
 
+    if (gameState === 'paused') {
+      drawPauseMenu();
+    }
+
     // ─── HUD ───
     // Top bar
     screen.hline(0, 1, w, '─', HUD_DIM);
-    const posText = `(${px}, ${py})`;
-    const modeText = `ROGUE MODE`;
+    const posText = `(${playerCellX()}, ${playerCellY()})`;
+    const modeText = `ROGUE MODE [${useTurnBattles ? 'TURN' : 'AUTO'}]`;
     const killText = `Defeated: ${battlesWon}/${enemyStates.length}`;
     screen.text(2, 0, modeText, LABEL, null, true);
     screen.text(w - posText.length - 2, 0, posText, HUD_DIM);
@@ -507,7 +645,7 @@ async function renderRogue(fighter) {
 
     // Navigation hint
     if (frame < 100) {
-      const hint = 'WASD / Arrow keys to move';
+      const hint = 'WASD / Arrows to move - combine keys for diagonals - Esc menu';
       screen.centerText(h - 2, hint, HUD_DIM);
     }
 
@@ -547,34 +685,27 @@ async function renderRogue(fighter) {
       frame++;
 
       if (gameState === 'explore') {
-        // Process movement
-        moveCooldown--;
-        if (moveCooldown <= 0) {
-          let dx = 0, dy = 0;
-          if (moveUp) dy = -moveSpeed;
-          if (moveDown) dy = moveSpeed;
-          if (moveLeft) dx = -moveSpeed;
-          if (moveRight) dx = moveSpeed;
+        // Process movement — read active keys within the linger window
+        const now = Date.now();
+        const up    = (now - keyTimes.up)    < KEY_LINGER_MS;
+        const down  = (now - keyTimes.down)  < KEY_LINGER_MS;
+        const left  = (now - keyTimes.left)  < KEY_LINGER_MS;
+        const right = (now - keyTimes.right) < KEY_LINGER_MS;
 
-          if (dx !== 0 || dy !== 0) {
-            px += dx;
-            py += dy;
-            moveDir = { dx, dy };
-            grass.applyMovement(px, py, dx, dy);
+        let dx = 0, dy = 0;
+        if (up) dy -= 1;
+        if (down) dy += 1;
+        if (left) dx -= 1;
+        if (right) dx += 1;
 
-            // Update facing
-            if (Math.abs(dx) > Math.abs(dy)) {
-              facing = dx > 0 ? 'right' : 'left';
-            } else {
-              facing = dy > 0 ? 'down' : 'up';
-            }
-
-            moveCooldown = MOVE_RATE;
-          }
+        if ((dx !== 0 || dy !== 0) && (now - lastMoveAt) >= MOVE_INTERVAL_MS) {
+          px += dx * (dx !== 0 ? HORIZONTAL_STEP : 1);
+          py += dy;
+          moveDir = { dx, dy };
+          facing = facingFromVector(dx, dy);
+          grass.applyMovement(playerCellX(), playerCellY(), dx, dy);
+          lastMoveAt = now;
         }
-
-        // Clear movement (tap-style, not held)
-        moveUp = moveDown = moveLeft = moveRight = false;
       }
 
       if (gameState === 'battle_intro' && battleIntroFrame >= 30) {
@@ -590,8 +721,16 @@ async function renderRogue(fighter) {
 
         // Run the battle
         const seed = combinedSeed(fighter.id, enemy.fighter.id);
-        const events = simulate(fighter, enemy.fighter, seed);
-        const winner = await renderBattle(fighter, enemy.fighter, events);
+        let winner;
+        if (useTurnBattles) {
+          const myMoves = getEquippedMoves(fighter.stats, fighter.specs, fighter.archetype);
+          try { registerSignatureAnims(myMoves.filter(m => m.signature)); } catch {}
+          const oppMoves = assignMoveset(enemy.fighter.stats);
+          winner = await renderTurnBattle(fighter, enemy.fighter, myMoves, oppMoves, { role: 'host', seed });
+        } else {
+          const events = simulate(fighter, enemy.fighter, seed);
+          winner = await renderBattle(fighter, enemy.fighter, events);
+        }
 
         // Battle finished — resume roguelike
         if (winner === 'a') {
@@ -627,8 +766,10 @@ async function renderRogue(fighter) {
       }
 
       // Update effects
-      grass.update();
-      sparkle.update();
+      if (gameState !== 'paused' && gameState !== 'battling') {
+        grass.update();
+        sparkle.update();
+      }
 
       // Render
       if (gameState !== 'battling') {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // ═══════════════════════════════════════════════════════════════
-// RIGEMON — Main Terminal Launcher
+// KERNELMON — Main Terminal Launcher
 // Full-screen interactive menu with animated matrix background
 // ═══════════════════════════════════════════════════════════════
 
@@ -39,23 +39,21 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ─── ASCII Logo ───
 const LOGO = [
-  '                     ╔██╗                                    ',
-  '                     ╚═██╗                                   ',
-  '██████╗ ██╗ ██████╗ ███████╗███╗   ███╗ ██████╗ ███╗   ██╗',
-  '██╔══██╗██║██╔════╝ ██╔════╝████╗ ████║██╔═══██╗████╗  ██║',
-  '██████╔╝██║██║  ███╗█████╗  ██╔████╔██║██║   ██║██╔██╗ ██║',
-  '██╔══██╗██║██║   ██║██╔══╝  ██║╚██╔╝██║██║   ██║██║╚██╗██║',
-  '██║  ██║██║╚██████╔╝███████╗██║ ╚═╝ ██║╚██████╔╝██║ ╚████║',
-  '╚═╝  ╚═╝╚═╝ ╚═════╝ ╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝',
+  '██╗  ██╗███████╗██████╗ ███╗   ██╗███████╗██╗     ███╗   ███╗ ██████╗ ███╗   ██╗',
+  '██║ ██╔╝██╔════╝██╔══██╗████╗  ██║██╔════╝██║     ████╗ ████║██╔═══██╗████╗  ██║',
+  '█████╔╝ █████╗  ██████╔╝██╔██╗ ██║█████╗  ██║     ██╔████╔██║██║   ██║██╔██╗ ██║',
+  '██╔═██╗ ██╔══╝  ██╔══██╗██║╚██╗██║██╔══╝  ██║     ██║╚██╔╝██║██║   ██║██║╚██╗██║',
+  '██║  ██╗███████╗██║  ██║██║ ╚████║███████╗███████╗██║ ╚═╝ ██║╚██████╔╝██║ ╚████║',
+  '╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝',
 ];
 
 const LOGO_SMALL = [
-  '╦═╗╦╔═╗╔═╗╔╦╗╔═╗╔╗╔',
-  '╠╦╝║║ ╦║╣ ║║║║ ║║║║',
-  '╩╚═╩╚═╝╚═╝╩ ╩╚═╝╝╚╝',
+  '╦╔═╔═╗╦═╗╔╗╔╔═╗╦  ╔╦╗╔═╗╔╗╔',
+  '╠╩╗║╣ ╠╦╝║║║║╣ ║  ║║║║ ║║║║',
+  '╩ ╩╚═╝╩╚═╝╚╝╚═╝╩═╝╩ ╩╚═╝╝╚╝',
 ];
 
-const SUBTITLE = '◄ YOUR RIG. YOUR FIGHTER. ►';
+const SUBTITLE = '◄ YOUR KERNEL. YOUR FIGHTER. ►';
 
 const MENU_ITEMS = [
   { key: 'demo',        label: 'QUICK BATTLE',    desc: 'Auto-battle vs Chromebook',  icon: '⚡' },
@@ -88,6 +86,73 @@ const ITEM_COLORS = {
   join:        colors.lilac,
   quit:        colors.rose,
 };
+
+const SECTION_COLORS = {
+  play: colors.coral,
+  customize: colors.lavender,
+  etc: colors.dim,
+};
+
+const MENU_GROUPS = [
+  {
+    type: 'section',
+    key: 'play',
+    label: 'PLAY',
+    desc: 'Modes, multiplayer, and match types',
+    icon: '>',
+    defaultExpanded: true,
+    items: ['demo', 'demo_turns', 'dash', 'rogue', 'host', 'join'],
+  },
+  {
+    type: 'section',
+    key: 'customize',
+    label: 'CUSTOMIZE',
+    desc: 'Profile, moves, and fighter setup',
+    icon: '*',
+    defaultExpanded: false,
+    items: ['profile', 'loadout'],
+  },
+  { type: 'item', key: 'bag' },
+  { type: 'item', key: 'workshop' },
+  {
+    type: 'section',
+    key: 'etc',
+    label: 'ET CETERA',
+    desc: 'Loot, battle log, and future extras',
+    icon: '.',
+    defaultExpanded: false,
+    items: ['lootbox', 'history'],
+  },
+  { type: 'item', key: 'quit' },
+];
+
+const MENU_ITEM_LOOKUP = Object.fromEntries(MENU_ITEMS.map(item => [item.key, item]));
+
+function getVisibleMenuEntries(sectionState) {
+  const entries = [];
+  for (const group of MENU_GROUPS) {
+    if (group.type === 'section') {
+      entries.push({
+        type: 'section',
+        key: group.key,
+        label: group.label,
+        desc: group.desc,
+        icon: group.icon,
+        expanded: !!sectionState[group.key],
+      });
+      if (sectionState[group.key]) {
+        for (const itemKey of group.items) {
+          const item = MENU_ITEM_LOOKUP[itemKey];
+          if (item) entries.push({ type: 'item', parent: group.key, ...item });
+        }
+      }
+    } else {
+      const item = MENU_ITEM_LOOKUP[group.key];
+      if (item) entries.push({ type: 'item', standalone: true, ...item });
+    }
+  }
+  return entries;
+}
 
 // ─── Build fighter helper ───
 async function buildFighter(rawSpecs) {
@@ -202,7 +267,7 @@ async function showBattleRewards(winner, rewards, winMsg, loseMsg) {
 
   scr.hline(2, h - 4, w - 4, '─', colors.ghost);
   scr.centerText(h - 3, 'Press any key to continue', colors.dimmer);
-  scr.text(w - 14, h - 1, '─ rigémon ─', colors.dimmer);
+  scr.text(w - 14, h - 1, '─ kernelmon ─', colors.dimmer);
   scr.render();
 
   await waitForKey();
@@ -225,6 +290,11 @@ async function mainMenu() {
   let scanning = true;
   let myFighter = null;
   let done = false;
+  const sectionState = Object.fromEntries(
+    MENU_GROUPS
+      .filter(group => group.type === 'section')
+      .map(group => [group.key, !!group.defaultExpanded])
+  );
   let focus = 'menu';       // 'menu' or 'card'
   let cardBuildIdx = 0;     // which build is shown on the card
   let cardFighters = {};    // cache: buildIdx → fighter object
@@ -266,6 +336,10 @@ async function mainMenu() {
   let resolveChoice;
   const choicePromise = new Promise(r => { resolveChoice = r; });
 
+  function currentMenuEntries() {
+    return getVisibleMenuEntries(sectionState);
+  }
+
   // Build a fighter for a specific build index (lazy, cached)
   async function ensureCardFighter(idx) {
     if (cardFighters[idx]) return;
@@ -292,16 +366,33 @@ async function mainMenu() {
     if (done) return;
 
     if (focus === 'menu') {
+      const entries = currentMenuEntries();
+      if (!entries.length) return;
       if (key === '\x1b[A' || key === 'k') {
-        cursor = (cursor - 1 + MENU_ITEMS.length) % MENU_ITEMS.length;
+        cursor = (cursor - 1 + entries.length) % entries.length;
       } else if (key === '\x1b[B' || key === 'j') {
-        cursor = (cursor + 1) % MENU_ITEMS.length;
+        cursor = (cursor + 1) % entries.length;
+      } else if (key === '\x1b[D' || key === 'h') {
+        const entry = entries[cursor];
+        if (entry?.type === 'section' && entry.expanded) {
+          sectionState[entry.key] = false;
+        } else if (entry?.type === 'item' && entry.parent) {
+          sectionState[entry.parent] = false;
+          const nextEntries = currentMenuEntries();
+          const parentIndex = nextEntries.findIndex(candidate => candidate.type === 'section' && candidate.key === entry.parent);
+          if (parentIndex >= 0) cursor = parentIndex;
+        }
       } else if (key === '\x1b[C' || key === 'l') {
         // Right arrow → focus on profile card
         if (!scanning) focus = 'card';
       } else if (key === '\r' || key === '\n' || key === ' ') {
-        done = true;
-        resolveChoice(MENU_ITEMS[cursor].key);
+        const entry = entries[cursor];
+        if (entry?.type === 'section') {
+          sectionState[entry.key] = !entry.expanded;
+        } else if (entry?.type === 'item') {
+          done = true;
+          resolveChoice(entry.key);
+        }
       } else if (key === '\x03' || key === 'q') {
         done = true;
         resolveChoice('quit');
@@ -342,7 +433,10 @@ async function mainMenu() {
   const menuX = 4;
   const menuY = logo.length + 5;
   const menuW = Math.min(50, w - 8);
-  const menuH = MENU_ITEMS.length + 2; // borders + items
+  const menuH = MENU_GROUPS.reduce((total, group) => {
+    if (group.type === 'section') return total + 1 + group.items.length;
+    return total + 1;
+  }, 0) + 2; // max border height with every section open
   const menuBottom = menuY + menuH;
 
   const boxW = Math.min(35, w - 8);
@@ -360,7 +454,7 @@ async function mainMenu() {
     matrix.draw(screen);
 
     drawLogo(screen, w, h, frameCount);
-    drawMenu(screen, w, h, frameCount, cursor);
+    drawMenu(screen, w, h, frameCount, currentMenuEntries(), cursor);
     drawProfileCard(screen, w, h, frameCount, scanning);
     drawFooter(screen, w, h);
 
@@ -375,7 +469,7 @@ async function mainMenu() {
   try { stdin.pause(); } catch (e) {}
 
   // Brief transition animation on the menu screen
-  const selectedItem = MENU_ITEMS.find(m => m.key === choice);
+  const selectedItem = MENU_ITEM_LOOKUP[choice];
   const label = selectedItem ? selectedItem.label : '';
   const accent = ITEM_COLORS[choice] || colors.cyan;
 
@@ -406,17 +500,46 @@ async function mainMenu() {
   function drawLogo(screen, w, h, frame) {
     const logoY = 1;
 
+    // Column boundaries for each letter: K E R N E L M O N
+    const bigBounds =  [[0,7],[8,15],[16,23],[24,33],[34,41],[42,49],[50,61],[62,69],[70,85]];
+    const smBounds =   [[0,2],[3,5],[6,8],[9,11],[12,14],[15,17],[18,20],[21,23],[24,29]];
+    const bounds = useSmall ? smBounds : bigBounds;
+
+    // Base color per letter — mixed from the carousel palette
+    const baseRGB = [
+      [130,220,235], // K — cyan
+      [245,180,150], // E — peach
+      [240,160,140], // R — coral
+      [180,160,240], // N — lavender
+      [140,230,180], // E — mint
+      [240,220,140], // L — gold
+      [200,170,240], // M — lilac
+      [240,170, 50], // O — warm orange
+      [240,150,170], // N — rose
+    ];
+
+    // Shimmer: a bright pulse that sweeps across letters
+    const shimmerCycle = 12; // total steps (9 letters + 3 off-screen)
+    const shimmerPos = (frame * 0.12) % shimmerCycle;
+
     for (let i = 0; i < logo.length; i++) {
       const line = logo[i];
       const cx = Math.floor((w - line.length) / 2);
       for (let c = 0; c < line.length; c++) {
         if (line[c] === ' ') continue;
-        const phase = (c / line.length + frame * 0.015) % 1;
-        let color;
-        if (phase < 0.33) color = colors.cyan;
-        else if (phase < 0.66) color = colors.lavender;
-        else color = colors.gold;
-        screen.set(cx + c, logoY + i, line[c], color, null, true);
+        // Determine which letter this column belongs to
+        let li = bounds.length - 1;
+        for (let b = 0; b < bounds.length; b++) {
+          if (c >= bounds[b][0] && c <= bounds[b][1]) { li = b; break; }
+        }
+        const [br, bg, bb] = baseRGB[li];
+        // Shimmer blend — how close is this letter to the sweep?
+        const dist = Math.abs(shimmerPos - li);
+        const glow = dist < 1 ? (1 - dist) * 0.55 : 0;
+        const r = Math.min(255, Math.round(br + (255 - br) * glow));
+        const g = Math.min(255, Math.round(bg + (255 - bg) * glow));
+        const b = Math.min(255, Math.round(bb + (255 - bb) * glow));
+        screen.set(cx + c, logoY + i, line[c], rgb(r, g, b), null, true);
       }
     }
 
@@ -437,43 +560,66 @@ async function mainMenu() {
     }
   }
 
-  function drawMenu(screen, w, h, frame, cursor) {
+  function drawMenu(screen, w, h, frame, entries, cursor) {
     const menuFocused = focus === 'menu';
     const borderCol = menuFocused ? colors.dimmer : colors.ghost;
+    const innerRows = Math.max(entries.length, 1);
 
     // Top border
     screen.text(menuX, menuY - 1, '╔' + '═'.repeat(menuW) + '╗', borderCol);
 
-    for (let i = 0; i < MENU_ITEMS.length; i++) {
-      const item = MENU_ITEMS[i];
+    for (let i = 0; i < innerRows; i++) {
+      const item = entries[i];
       const y = menuY + i;
       const selected = i === cursor;
-      const accent = ITEM_COLORS[item.key] || colors.dim;
 
       screen.text(menuX, y, '║', borderCol);
+      screen.text(menuX + 1, y, ' '.repeat(menuW), colors.dim);
       screen.text(menuX + menuW + 1, y, '║', borderCol);
+      if (!item) continue;
+
+      if (item.type === 'section') {
+        const accent = SECTION_COLORS[item.key] || colors.dim;
+        const pulse = frame % 10 < 5;
+        const pointer = selected && menuFocused ? (pulse ? '>' : '*') : ' ';
+        const marker = item.expanded ? '-' : '+';
+        const labelColor = selected ? colors.white : (menuFocused ? colors.dim : colors.ghost);
+        const descColor = selected ? accent : colors.ghost;
+
+        screen.text(menuX + 2, y, pointer, selected ? colors.white : colors.dimmer, null, selected && menuFocused);
+        screen.text(menuX + 4, y, marker, accent, null, true);
+        screen.text(menuX + 6, y, item.label.padEnd(14), labelColor, null, selected);
+        screen.text(menuX + 21, y, item.desc.slice(0, Math.max(0, menuW - 21)), descColor);
+        continue;
+      }
+
+      const accent = ITEM_COLORS[item.key] || colors.dim;
+      const iconX = item.standalone ? menuX + 4 : menuX + 6;
+      const labelX = item.standalone ? menuX + 6 : menuX + 8;
+      const descX = item.standalone ? menuX + 23 : menuX + 25;
+      const descWidth = Math.max(0, menuW - (descX - menuX));
 
       if (selected && menuFocused) {
         const pulse = frame % 10 < 5;
-        screen.text(menuX + 1, y, pulse ? ' ▸' : ' ►', colors.white, null, true);
-        screen.text(menuX + 4, y, item.icon, accent, null, true);
-        screen.text(menuX + 6, y, item.label.padEnd(16), colors.white, null, true);
-        screen.text(menuX + 23, y, item.desc.slice(0, menuW - 23), accent);
+        screen.text(menuX + 2, y, pulse ? '>' : '*', colors.white, null, true);
+        screen.text(iconX, y, item.icon, accent, null, true);
+        screen.text(labelX, y, item.label.padEnd(16), colors.white, null, true);
+        screen.text(descX, y, item.desc.slice(0, descWidth), accent);
       } else if (selected && !menuFocused) {
         // Still highlighted but dimmed when card is focused
-        screen.text(menuX + 3, y, '▸', colors.dimmer);
-        screen.text(menuX + 4, y, item.icon, colors.dim);
-        screen.text(menuX + 6, y, item.label.padEnd(16), colors.dim);
-        screen.text(menuX + 23, y, item.desc.slice(0, menuW - 23), colors.ghost);
+        screen.text(menuX + 2, y, '>', colors.dimmer);
+        screen.text(iconX, y, item.icon, colors.dim);
+        screen.text(labelX, y, item.label.padEnd(16), colors.dim);
+        screen.text(descX, y, item.desc.slice(0, descWidth), colors.ghost);
       } else {
-        screen.text(menuX + 4, y, item.icon, colors.dimmer);
-        screen.text(menuX + 6, y, item.label.padEnd(16), menuFocused ? colors.dim : colors.ghost);
-        screen.text(menuX + 23, y, item.desc.slice(0, menuW - 23), colors.ghost);
+        screen.text(iconX, y, item.icon, colors.dimmer);
+        screen.text(labelX, y, item.label.padEnd(16), menuFocused ? colors.dim : colors.ghost);
+        screen.text(descX, y, item.desc.slice(0, descWidth), colors.ghost);
       }
     }
 
     // Bottom border
-    screen.text(menuX, menuY + MENU_ITEMS.length, '╚' + '═'.repeat(menuW) + '╝', borderCol);
+    screen.text(menuX, menuY + innerRows, '╚' + '═'.repeat(menuW) + '╝', borderCol);
   }
 
   function drawProfileCard(screen, w, h, frame, scanning) {
@@ -576,15 +722,16 @@ async function mainMenu() {
     screen.hline(2, footY, w - 4, '─', colors.ghost);
     if (focus === 'menu') {
       screen.text(4, footY, ' ↑↓ navigate ', colors.dim);
-      screen.text(19, footY, ' ENTER select ', colors.dim);
-      screen.text(35, footY, ' → profile ', colors.dim);
-      screen.text(48, footY, ' Q quit ', colors.dim);
+      screen.text(20, footY, ' ENTER expand/select ', colors.dim);
+      screen.text(44, footY, ' ← collapse ', colors.dim);
+      screen.text(58, footY, ' → profile ', colors.dim);
+      screen.text(71, footY, ' Q quit ', colors.dim);
     } else {
       screen.text(4, footY, ' ↑↓ switch build ', colors.dim);
       screen.text(23, footY, ' ENTER activate ', colors.dim);
       screen.text(41, footY, ' ← menu ', colors.dim);
     }
-    screen.text(w - 14, h - 1, '─ rigémon ─', colors.dimmer);
+    screen.text(w - 14, h - 1, '─ kernelmon ─', colors.dimmer);
   }
 }
 
@@ -610,7 +757,7 @@ async function showInfoScreen(title, renderFn) {
   // Footer
   infoScreen.hline(2, h - 2, w - 4, '─', colors.ghost);
   infoScreen.text(4, h - 2, ' Press any key to return ', colors.dim);
-  infoScreen.text(w - 14, h - 1, '─ rigémon ─', colors.dimmer);
+  infoScreen.text(w - 14, h - 1, '─ kernelmon ─', colors.dimmer);
 
   infoScreen.render();
 
@@ -729,7 +876,7 @@ async function handleDash(fighter) {
 
     scr.hline(2, h - 4, w - 4, '─', colors.ghost);
     scr.centerText(h - 3, '[R] Retry    [Q] Return to Menu', colors.white);
-    scr.text(w - 14, h - 1, '─ rigémon ─', colors.dimmer);
+    scr.text(w - 14, h - 1, '─ kernelmon ─', colors.dimmer);
     scr.render();
 
     const key = await waitForKeyReturn();
@@ -754,7 +901,16 @@ async function handleRogue(fighter) {
     return;
   }
 
-  const result = await renderRogue(fighter);
+  const rogueBattleMode = renderTurnBattle
+    ? await pickOption('ROGUE BATTLE STYLE', [
+        { key: 'turn', label: 'TURN-BASED ENCOUNTERS', desc: 'Every Rogue fight uses the turn battle screen.' },
+        { key: 'auto', label: 'AUTO BATTLES', desc: 'Keep Rogue mode fast with automatic battle resolution.' },
+      ])
+    : 'auto';
+
+  if (!rogueBattleMode) return;
+
+  const result = await renderRogue(fighter, { battleMode: rogueBattleMode });
 
   // Show result screen
   const scr = new Screen();
@@ -783,7 +939,7 @@ async function handleRogue(fighter) {
 
   scr.hline(2, h - 4, w - 4, '─', colors.ghost);
   scr.centerText(h - 3, 'Press any key to continue', colors.dimmer);
-  scr.text(w - 14, h - 1, '─ rigémon ─', colors.dimmer);
+  scr.text(w - 14, h - 1, '─ kernelmon ─', colors.dimmer);
   scr.render();
 
   await waitForKeyReturn();

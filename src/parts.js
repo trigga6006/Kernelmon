@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { RESET } = require('./palette');
 
-const WSO_DIR = path.join(__dirname, '..', '.rigemon');
+const WSO_DIR = path.join(__dirname, '..', '.kernelmon');
 const PARTS_FILE = path.join(WSO_DIR, 'parts.json');
 const BUILD_FILE = path.join(WSO_DIR, 'build.json');
 

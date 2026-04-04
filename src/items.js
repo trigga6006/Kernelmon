@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { RESET } = require('./palette');
 
-const WSO_DIR = path.join(__dirname, '..', '.rigemon');
+const WSO_DIR = path.join(__dirname, '..', '.kernelmon');
 const INVENTORY_FILE = path.join(WSO_DIR, 'inventory.json');
 
 // ─── Item Catalog ───

@@ -1,7 +1,7 @@
 {
-  "name": "rigemon-relay",
+  "name": "kernelmon-relay",
   "version": "1.0.0",
-  "description": "Matchmaking relay for Rigemon battles",
+  "description": "Matchmaking relay for Kernelmon battles",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

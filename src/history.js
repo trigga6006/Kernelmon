@@ -1,13 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
 // MATCH HISTORY — Local W/L tracking per opponent
-// Stored in {project-root}/.rigemon/history.json
+// Stored in {project-root}/.kernelmon/history.json
 // ═══════════════════════════════════════════════════════════════
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { RESET } = require('./palette');
 
-const WSO_DIR = path.join(__dirname, '..', '.rigemon');
+const WSO_DIR = path.join(__dirname, '..', '.kernelmon');
 const HISTORY_FILE = path.join(WSO_DIR, 'history.json');
 
 function ensureDir() {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ═══════════════════════════════════════════════════
-// Rigemon Relay — matchmaking server
+// Kernelmon Relay — matchmaking server
 // Zero dependencies. Brokers fighter JSON exchange
 // between two players, then gets out of the way.
 // ═══════════════════════════════════════════════════
@@ -340,6 +340,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Rigémon Relay listening on port ${PORT}`);
+  console.log(`Kernelmon Relay listening on port ${PORT}`);
   console.log(`Max rooms: ${ROOM_LIMIT} | TTL: ${ROOM_TTL / 1000}s | Rate: ${RATE_LIMIT}/min`);
 });

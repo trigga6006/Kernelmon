@@ -5,7 +5,7 @@
 
 const { colors, RESET, rgb } = require('./palette');
 const { getOwnedItems, RARITY_COLORS } = require('./items');
-const { getAvailableMoves, getEquippedMoves, saveLoadout, MOVE_POOL } = require('./moveset');
+const { getAvailableMoves, getEquippedMoves, saveLoadout, resolveMoveNames } = require('./moveset');
 const { SIGNATURE_COLOR, SIGNATURE_ACCENT, SIGNATURE_ICON } = require('./signature');
 const { registerSignatureAnims } = require('./effects/projectile');
 
@@ -18,8 +18,17 @@ const CAT_COLORS = {
 
 // ─── Main pre-battle menu ───
 // Returns the final equipped moves array (always 4)
-async function preBattleLobby(myFighter, opponent, screen) {
-  let equippedMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
+function normalizeEquippedMoves(fighter, movesOrNames) {
+  const names = Array.isArray(movesOrNames)
+    ? movesOrNames.map(move => typeof move === 'string' ? move : move?.name).filter(Boolean)
+    : [];
+  const resolved = resolveMoveNames(names, fighter.stats, fighter.specs, fighter.archetype);
+  if (resolved.length === 4) return resolved;
+  return getEquippedMoves(fighter.stats, fighter.specs, fighter.archetype);
+}
+
+async function preBattleLobby(myFighter, opponent, screen, initialMoves) {
+  let equippedMoves = normalizeEquippedMoves(myFighter, initialMoves);
   // Register signature move animations if any are equipped
   registerSignatureAnims(equippedMoves.filter(m => m.signature));
 
@@ -119,7 +128,7 @@ function mainMenu(myFighter, opponent, equippedMoves, screen) {
           resolve(equippedMoves);
         } else if (choice === 'LOADOUT') {
           cleanup();
-          pickLoadout(myFighter, screen).then((newMoves) => {
+          pickLoadout(myFighter, screen, equippedMoves).then((newMoves) => {
             equippedMoves = newMoves;
             // Register anims if sig moves were equipped
             registerSignatureAnims(equippedMoves.filter(m => m.signature));
@@ -157,17 +166,11 @@ function mainMenu(myFighter, opponent, equippedMoves, screen) {
 
 // ─── Loadout picker — toggle moves on/off, exactly 4 ───
 // Includes signature moves at the top of the pool with special styling
-function pickLoadout(fighter, screen) {
+function pickLoadout(fighter, screen, currentEquipped) {
   return new Promise((resolve) => {
     // Full pool: signature moves first, then regular moves
     const available = getAvailableMoves(fighter.stats, fighter.specs, fighter.archetype);
-    const currentEquipped = getEquippedMoves(fighter.stats, fighter.specs, fighter.archetype);
     const selected = new Set(currentEquipped.map(m => m.name));
-    // Build a lookup for signature moves so we can resolve them on confirm
-    const sigLookup = {};
-    for (const m of available) {
-      if (m.signature) sigLookup[m.name] = m;
-    }
     let cursor = 0;
     const pageSize = screen.height - 8;
 
@@ -260,18 +263,14 @@ function pickLoadout(fighter, screen) {
           const names = [...selected];
           saveLoadout(names);
           cleanup();
-          // Resolve moves — check signature lookup first, then regular pool
-          const moves = names.map(n => {
-            if (sigLookup[n]) return sigLookup[n];
-            return { name: n, ...MOVE_POOL[n] };
-          });
+          const moves = normalizeEquippedMoves(fighter, names);
           resolve(moves);
         }
         // If not 4 selected, do nothing (can't confirm)
       } else if (key === '\x1b' || key === 'q') {
         // Cancel — return current equipped unchanged
         cleanup();
-        resolve(getEquippedMoves(fighter.stats, fighter.specs, fighter.archetype));
+        resolve(currentEquipped);
       } else if (key === '\x03') {
         cleanup();
         process.exit(0);

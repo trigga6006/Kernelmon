@@ -341,7 +341,7 @@ async function renderBattle(fighterA, fighterB, events) {
 
   function drawUI(screen, elapsed) {
     // Title
-    const title = ' R I G E M O N';
+    const title = ' K E R N E L M O N';
     screen.centerText(0, '─'.repeat(w), colors.dimmer);
     screen.centerText(0, title, colors.cyan, null, true);
 
@@ -385,7 +385,7 @@ async function renderBattle(fighterA, fighterB, events) {
     // Log box at bottom
     screen.hline(1, logY - 1, w - 2, '─', colors.dimmer);
     screen.text(3, logY - 1, ' BATTLE LOG ', colors.dim);
-    screen.text(w - 22, h - 1, '─ rigémon ─', colors.dimmer);
+    screen.text(w - 22, h - 1, '─ kernelmon ─', colors.dimmer);
 
     for (let i = 0; i < battleLog.length && i < logHeight; i++) {
       const entry = battleLog[i];
@@ -409,7 +409,7 @@ async function renderBattle(fighterA, fighterB, events) {
     }
 
     // Title always visible
-    const title = ' R I G E M O N';
+    const title = ' K E R N E L M O N';
     screen.centerText(0, '─'.repeat(w), colors.dimmer);
     screen.centerText(0, title, colors.cyan, null, true);
 

@@ -75,12 +75,12 @@ async function hostOnline(myFighter, relayUrl = DEFAULT_RELAY_URL) {
 
   console.log('');
   console.log('\x1b[38;2;130;220;235m  ╭─────────────────────────────────────╮\x1b[0m');
-  console.log('\x1b[38;2;130;220;235m  │   RIGÉMON — Online Battle           │\x1b[0m');
+  console.log('\x1b[38;2;130;220;235m  │   KERNELMON — Online Battle           │\x1b[0m');
   console.log('\x1b[38;2;130;220;235m  │                                     │\x1b[0m');
   console.log(`\x1b[38;2;130;220;235m  │   Room: \x1b[1m${code}\x1b[22m                     │\x1b[0m`);
   console.log('\x1b[38;2;130;220;235m  │                                     │\x1b[0m');
   console.log('\x1b[38;2;100;100;130m  │   Share this code with opponent:     │\x1b[0m');
-  console.log(`\x1b[38;2;100;100;130m  │   rgm join ${code}                │\x1b[0m`);
+  console.log(`\x1b[38;2;100;100;130m  │   kmon join ${code}                │\x1b[0m`);
   console.log('\x1b[38;2;130;220;235m  ╰─────────────────────────────────────╯\x1b[0m');
   console.log('');
   console.log('\x1b[38;2;100;100;130m  Waiting for opponent...\x1b[0m');
