@@ -142,48 +142,48 @@ const ITEMS = {
   },
 
   // ── Special Attacks ──
-  sinkhole: {
-    name: 'Sinkhole',
-    desc: 'DNS void — 25% HP + stun + DEF down',
+  darknet_collapse: {
+    name: 'Darknet Collapse',
+    desc: 'Implosion — 25% HP + stun + DEF down',
     icon: '●',
     rarity: 'epic',
-    effect: 'special_sinkhole',
+    effect: 'special_darknet_collapse',
     value: 0.25,
     dropRate: 0.03,
   },
-  fork_bomb: {
-    name: 'Fork Bomb',
-    desc: 'Process storm — 35% HP + STR/SPD down',
+  botnet_typhoon: {
+    name: 'Botnet Typhoon',
+    desc: 'Swarm storm — 35% HP + STR/SPD down',
     icon: '◎',
     rarity: 'legendary',
-    effect: 'special_fork_bomb',
+    effect: 'special_botnet_typhoon',
     value: 0.35,
     dropRate: 0.01,
   },
-  kill_signal: {
-    name: 'Kill Signal',
-    desc: 'kill -9 — 20% HP + stun',
+  skyfall_payload: {
+    name: 'Skyfall Payload',
+    desc: 'Orbital strike — 20% HP + stun',
     icon: '▼',
     rarity: 'rare',
-    effect: 'special_kill_signal',
+    effect: 'special_skyfall_payload',
     value: 0.20,
     dropRate: 0.06,
   },
-  kernel_panic: {
-    name: 'Kernel Panic',
-    desc: 'System crash — 22% HP + MAG down',
+  phantom_protocol: {
+    name: 'Phantom Protocol',
+    desc: 'Ghost crash — 22% HP + MAG down',
     icon: '◈',
     rarity: 'epic',
-    effect: 'special_kernel_panic',
+    effect: 'special_phantom_protocol',
     value: 0.22,
     dropRate: 0.03,
   },
-  meltdown: {
-    name: 'Meltdown',
-    desc: 'Thermal runaway — 40% HP + all stats down',
+  reactor_overflow: {
+    name: 'Reactor Overflow',
+    desc: 'Core breach — 40% HP + all stats down',
     icon: '✹',
     rarity: 'legendary',
-    effect: 'special_meltdown',
+    effect: 'special_reactor_overflow',
     value: 0.40,
     dropRate: 0.008,
   },

@@ -278,7 +278,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         glitch.scatter(w / 2, h / 2, w, h, 20, 8);
         break;
       }
-      case 'special_sinkhole': {
+      case 'special_darknet_collapse': {
         const dmg = Math.round(opponent.maxHp * item.value);
         opponent.hp = Math.max(0, opponent.hp - dmg);
         opponent.stunned = true;
@@ -289,14 +289,14 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         opponent._boosts.push({ stat: 'def', amount: -defLoss, turns: 3 });
         if (dOpp === 'a') targetHpA = opponent.hp;
         else targetHpB = opponent.hp;
-        addLog(`  ● SINKHOLE opened!`, rgb(200, 120, 255));
+        addLog(`  ● DARKNET COLLAPSE!`, rgb(200, 120, 255));
         addLog(`  ${dmg} damage + stun + DEF -${defLoss}`, rgb(180, 100, 240));
         floats.add(oppCX, oppCY - 4, `${dmg}`, colors.damage, 20);
-        floats.add(oppCX - 3, oppCY - 2, 'SINKHOLE', rgb(200, 120, 255), 25);
+        floats.add(oppCX - 3, oppCY - 2, 'COLLAPSE', rgb(200, 120, 255), 25);
         specialEffect = new BlackHoleEffect(oppCX, oppCY, w, h, frameCount);
         break;
       }
-      case 'special_fork_bomb': {
+      case 'special_botnet_typhoon': {
         const dmg = Math.round(opponent.maxHp * item.value);
         opponent.hp = Math.max(0, opponent.hp - dmg);
         // STR down 25% for 3 turns
@@ -310,27 +310,27 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         opponent._boosts.push({ stat: 'spd', amount: -spdLoss, turns: 3 });
         if (dOpp === 'a') targetHpA = opponent.hp;
         else targetHpB = opponent.hp;
-        addLog(`  ◎ FORK BOMB deployed!`, rgb(100, 240, 255));
+        addLog(`  ◎ BOTNET TYPHOON unleashed!`, rgb(100, 240, 255));
         addLog(`  ${dmg} dmg + STR -${strLoss} + SPD -${spdLoss}`, rgb(140, 220, 255));
         floats.add(oppCX, oppCY - 4, `${dmg}`, colors.damage, 20);
-        floats.add(oppCX - 3, oppCY - 2, 'FORK BOMB', rgb(100, 240, 255), 25);
+        floats.add(oppCX - 3, oppCY - 2, 'TYPHOON', rgb(100, 240, 255), 25);
         specialEffect = new MaelstromEffect(oppCX, oppCY, w, h, frameCount);
         break;
       }
-      case 'special_kill_signal': {
+      case 'special_skyfall_payload': {
         const dmg = Math.round(opponent.maxHp * item.value);
         opponent.hp = Math.max(0, opponent.hp - dmg);
         opponent.stunned = true;
         if (dOpp === 'a') targetHpA = opponent.hp;
         else targetHpB = opponent.hp;
-        addLog(`  ▼ KILL -9 sent!`, rgb(120, 180, 255));
+        addLog(`  ▼ SKYFALL PAYLOAD inbound!`, rgb(120, 180, 255));
         addLog(`  ${dmg} damage + stun`, rgb(200, 230, 255));
         floats.add(oppCX, oppCY - 4, `${dmg}`, colors.damage, 20);
-        floats.add(oppCX - 3, oppCY - 2, 'KILL -9', rgb(180, 220, 255), 25);
+        floats.add(oppCX - 3, oppCY - 2, 'SKYFALL', rgb(180, 220, 255), 25);
         specialEffect = new IonCannonEffect(oppCX, oppCY, w, h, frameCount);
         break;
       }
-      case 'special_kernel_panic': {
+      case 'special_phantom_protocol': {
         const dmg = Math.round(opponent.maxHp * item.value);
         opponent.hp = Math.max(0, opponent.hp - dmg);
         // MAG down 25% for 3 turns
@@ -340,14 +340,14 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         opponent._boosts.push({ stat: 'mag', amount: -magLoss, turns: 3 });
         if (dOpp === 'a') targetHpA = opponent.hp;
         else targetHpB = opponent.hp;
-        addLog(`  ◈ KERNEL PANIC triggered!`, rgb(255, 100, 255));
+        addLog(`  ◈ PHANTOM PROTOCOL engaged!`, rgb(255, 100, 255));
         addLog(`  ${dmg} damage + MAG -${magLoss}`, rgb(200, 150, 255));
         floats.add(oppCX, oppCY - 4, `${dmg}`, colors.damage, 20);
-        floats.add(oppCX - 3, oppCY - 2, 'PANIC', rgb(255, 100, 255), 25);
+        floats.add(oppCX - 3, oppCY - 2, 'PHANTOM', rgb(255, 100, 255), 25);
         specialEffect = new QuantumRiftEffect(oppCX, oppCY, w, h, frameCount);
         break;
       }
-      case 'special_meltdown': {
+      case 'special_reactor_overflow': {
         const dmg = Math.round(opponent.maxHp * item.value);
         opponent.hp = Math.max(0, opponent.hp - dmg);
         // All stats down 15% for 2 turns
@@ -359,10 +359,10 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         }
         if (dOpp === 'a') targetHpA = opponent.hp;
         else targetHpB = opponent.hp;
-        addLog(`  ✹ MELTDOWN initiated!`, rgb(255, 240, 120));
+        addLog(`  ✹ REACTOR OVERFLOW!`, rgb(255, 240, 120));
         addLog(`  ${dmg} dmg + all stats -15%`, rgb(255, 200, 80));
         floats.add(oppCX, oppCY - 4, `${dmg}`, colors.damage, 25);
-        floats.add(oppCX - 3, oppCY - 2, 'MELTDOWN', rgb(255, 240, 120), 30);
+        floats.add(oppCX - 3, oppCY - 2, 'OVERFLOW', rgb(255, 240, 120), 30);
         specialEffect = new SupernovaEffect(oppCX, oppCY, w, h, frameCount);
         break;
       }
@@ -461,12 +461,18 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     { name: 'CRIT HACK', stat: 'crit', amount: 1, turns: 1, color: colors.gold,
       msg: 'Next attack is a GUARANTEED CRIT!' },
   ];
-  const QTE_CHANCE = 0.08;   // 8% per turn
+  const QTE_CHANCE = 0.35;   // 35% per turn — ~every 3 turns
   const QTE_TIME_MS = 4000;  // 4 seconds to type
+  const EVOLVE_STREAK = 3;   // consecutive QTE successes to evolve
+  const EVOLVE_BOOST = 0.18; // +18% all stats on evolution
   let qteCommand = '';
   let qteInput = '';
   let qteStartTime = 0;
   let qteResolve = null;
+  let hackStreak = 0;        // consecutive QTE successes (player)
+  let evolved = false;        // true once player evolves this match
+  let oppHackStreak = 0;     // consecutive QTE successes (opponent, online)
+  let oppEvolved = false;     // true once opponent evolves this match
 
   function getQuickHackPlan(turnNumber, qteRole = 'solo') {
     if (turnNumber <= 1) return null;
@@ -519,6 +525,33 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     fighter[bonus.stat] += boost;
     fighter._boosts = fighter._boosts || [];
     fighter._boosts.push({ stat: bonus.stat, amount: boost, turns: bonus.turns });
+  }
+
+  // ─── Evolution: apply permanent stat boost for rest of match ───
+  function applyEvolution(state, who) {
+    const fighter = state[who];
+    const dWho = toDisplay(who);
+    const cx = dWho === 'a' ? plyCenterX : oppCenterX;
+    const cy = dWho === 'a' ? plyCenterY : oppCenterY;
+
+    // Boost all combat stats permanently (no turns limit = rest of match)
+    for (const stat of ['str', 'mag', 'spd', 'def']) {
+      const boost = Math.max(1, Math.round(fighter[stat] * EVOLVE_BOOST));
+      fighter[stat] += boost;
+    }
+    // HP boost — increase max and heal the bonus amount
+    const hpBoost = Math.round(fighter.maxHp * EVOLVE_BOOST);
+    fighter.maxHp += hpBoost;
+    fighter.hp = Math.min(fighter.maxHp, fighter.hp + hpBoost);
+    if (dWho === 'a') { targetHpA = fighter.hp; }
+    else { targetHpB = fighter.hp; }
+
+    // Big visual burst
+    floats.add(cx, cy - 5, '◆ E V O L V E D ◆', colors.gold, 40);
+    floats.add(cx, cy - 3, 'ALL STATS +18%', colors.cyan, 30);
+    glitch.screenTear(w, 8);
+    glitch.scatter(cx, cy, w, h, 20, 10);
+    itemRing = { cx, cy, startFrame: frameCount, duration: 24 };
   }
 
   let lastTickTime = Date.now();
@@ -714,21 +747,38 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       turnNum++;
       addLog(`═══ Turn ${turnNum} ═══`, colors.gold);
 
-      const myQuickHackPlan = getQuickHackPlan(turnNum, isOnline ? role : 'solo');
+      const myQuickHackPlan = !evolved ? getQuickHackPlan(turnNum, isOnline ? role : 'solo') : null;
       let myQuickHackSuccess = false;
 
       if (myQuickHackPlan) {
-        addLog(`⚡ QUICK HACK — type the command!`, colors.gold);
+        const streakLabel = hackStreak > 0 ? ` (streak: ${hackStreak}/${EVOLVE_STREAK})` : '';
+        addLog(`⚡ QUICK HACK${streakLabel} — type the command!`, colors.gold);
         const success = await runQuickTime(myQuickHackPlan.command);
 
         if (success) {
           const bonus = myQuickHackPlan.bonus;
           myQuickHackSuccess = true;
-          addLog(`✓ ${bonus.name}: ${bonus.msg}`, bonus.color);
-          applyQuickHackBonus(battleState, meSlot, bonus);
-          await animateIdle(800);
+          hackStreak++;
+
+          if (hackStreak >= EVOLVE_STREAK) {
+            // ── EVOLUTION TRIGGERED ──
+            evolved = true;
+            addLog(``, null);
+            addLog(`◆◆◆ E V O L V E D ◆◆◆`, colors.gold);
+            addLog(`3 consecutive hacks — all stats +18%!`, colors.cyan);
+            applyEvolution(battleState, meSlot);
+            await animateIdle(2200);
+          } else {
+            addLog(`✓ ${bonus.name}: ${bonus.msg}`, bonus.color);
+            addLog(`  Hack streak: ${hackStreak}/${EVOLVE_STREAK}`, colors.gold);
+            applyQuickHackBonus(battleState, meSlot, bonus);
+            await animateIdle(800);
+          }
         } else {
+          const hadStreak = hackStreak > 0;
+          hackStreak = 0;
           addLog(`✗ Too slow — hack failed!`, colors.rose);
+          if (hadStreak) addLog(`  Streak reset!`, colors.rose);
           floats.add(plyCenterX, plyCenterY - 3, 'MISS', colors.rose, 12);
           await animateIdle(600);
         }
@@ -802,10 +852,22 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         const opponentQuickHackSuccess = role === 'host' ? joinerQteSuccess : hostQteSuccess;
         const opponentSlot = role === 'host' ? 'b' : 'a';
 
-        if (opponentQuickHackSuccess && opponentQuickHackPlan) {
-          addLog(`Opponent hack: ${opponentQuickHackPlan.bonus.name}`, opponentQuickHackPlan.bonus.color);
-          applyQuickHackBonus(battleState, opponentSlot, opponentQuickHackPlan.bonus);
-          await animateIdle(700);
+        if (opponentQuickHackPlan && !oppEvolved) {
+          if (opponentQuickHackSuccess) {
+            oppHackStreak++;
+            if (oppHackStreak >= EVOLVE_STREAK) {
+              oppEvolved = true;
+              addLog(`⚠ Opponent EVOLVED! All stats +18%`, colors.rose);
+              applyEvolution(battleState, opponentSlot);
+              await animateIdle(1500);
+            } else {
+              addLog(`Opponent hack: ${opponentQuickHackPlan.bonus.name}`, opponentQuickHackPlan.bonus.color);
+              applyQuickHackBonus(battleState, opponentSlot, opponentQuickHackPlan.bonus);
+              await animateIdle(700);
+            }
+          } else {
+            oppHackStreak = 0;
+          }
         }
       }
 
@@ -1009,7 +1071,12 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     // Opponent info
     const oppArch = fighterB.archetype?.name || '';
     screen.text(oppBarX, 2, nameB, colors.p2, null, true);
-    if (oppArch) screen.text(oppBarX + nameB.length + 1, 2, oppArch, colors.dimmer);
+    if (oppEvolved) {
+      const pulse = frameCount % 12 < 6;
+      screen.text(oppBarX + nameB.length + 1, 2, '◆EVOLVED◆', pulse ? colors.rose : rgb(180, 60, 60), null, true);
+    } else if (oppArch) {
+      screen.text(oppBarX + nameB.length + 1, 2, oppArch, colors.dimmer);
+    }
     const clampedHpB = Math.max(0, Math.min(hpB, fighterB.stats.maxHp));
     const ratioB = clampedHpB / fighterB.stats.maxHp;
     screen.bar(oppBarX, 3, barW, ratioB, hpColor(ratioB), colors.dimmer);
@@ -1018,7 +1085,17 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     // Player info
     const plyArch = fighterA.archetype?.name || '';
     screen.text(plyBarX, plyBarY, nameA, colors.p1, null, true);
-    if (plyArch) screen.text(plyBarX + nameA.length + 1, plyBarY, plyArch, colors.dimmer);
+    if (evolved) {
+      // Pulsing EVOLVED tag
+      const pulse = frameCount % 12 < 6;
+      screen.text(plyBarX + nameA.length + 1, plyBarY, '◆EVOLVED◆', pulse ? colors.gold : rgb(180, 150, 60), null, true);
+    } else if (hackStreak > 0) {
+      // Show streak progress
+      const streakDots = '◆'.repeat(hackStreak) + '◇'.repeat(EVOLVE_STREAK - hackStreak);
+      screen.text(plyBarX + nameA.length + 1, plyBarY, streakDots, colors.gold);
+    } else if (plyArch) {
+      screen.text(plyBarX + nameA.length + 1, plyBarY, plyArch, colors.dimmer);
+    }
     const clampedHpA = Math.max(0, Math.min(hpA, fighterA.stats.maxHp));
     const ratioA = clampedHpA / fighterA.stats.maxHp;
     screen.bar(plyBarX, plyBarY + 1, barW, ratioA, hpColor(ratioA), colors.dimmer);
@@ -1151,8 +1228,13 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       screen.set(logX + 3 + qteInput.length, logY + 3, '▎', colors.cyan);
     }
 
-    // Hint
-    screen.text(logX + 1, logY + 5, 'Type the command + ENTER', colors.dimmer);
+    // Streak indicator + hint
+    const streakDots = '◆'.repeat(hackStreak) + '◇'.repeat(EVOLVE_STREAK - hackStreak);
+    const streakHint = hackStreak === EVOLVE_STREAK - 1
+      ? `${streakDots}  NEXT = EVOLVE!`
+      : `${streakDots}  ${hackStreak}/${EVOLVE_STREAK} to evolve`;
+    const streakColor = hackStreak === EVOLVE_STREAK - 1 ? colors.gold : colors.dim;
+    screen.text(logX + 1, logY + 5, `Type + ENTER  ${streakHint}`, streakColor);
   }
 
   function drawWaitingUI() {
