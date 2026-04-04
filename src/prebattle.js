@@ -8,6 +8,7 @@ const { getOwnedItems, RARITY_COLORS } = require('./items');
 const { getAvailableMoves, getEquippedMoves, saveLoadout, resolveMoveNames } = require('./moveset');
 const { SIGNATURE_COLOR, SIGNATURE_ACCENT, SIGNATURE_ICON } = require('./signature');
 const { registerSignatureAnims } = require('./effects/projectile');
+const { getBenchmarkSummaryLines } = require('./benchmark');
 
 const CAT_COLORS = {
   physical: colors.peach,
@@ -92,6 +93,11 @@ function mainMenu(myFighter, opponent, equippedMoves, screen) {
       // Bag count
       const bagCount = getOwnedItems().reduce((s, i) => s + i.count, 0);
       screen.text(rightX, cardY + 6, `BAG: ${bagCount} items`, colors.dim);
+      screen.text(rightX, cardY + 7, 'LIVE CONDITIONS:', colors.dim);
+      const benchLines = getBenchmarkSummaryLines(myFighter.benchmark, 3);
+      benchLines.forEach((line, index) => {
+        screen.text(rightX, cardY + 8 + index, line.text.slice(0, 32), line.color);
+      });
 
       // Menu options
       const menuY = cardY + 12;

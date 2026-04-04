@@ -3,6 +3,8 @@ const si = require('systeminformation');
 const nodeos = require('node:os');
 const { execSync } = require('node:child_process');
 
+let cachedSpecsPromise = null;
+
 // Fallback: query GPU via PowerShell/WMIC on Windows
 function fallbackGPU() {
   try {
@@ -29,12 +31,58 @@ function fallbackGPU() {
   return null;
 }
 
-// Fallback: get CPU info from Node's os.cpus()
+function cleanCpuBrand(brand) {
+  return String(brand || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cpuBrandScore(brand) {
+  const text = cleanCpuBrand(brand).toLowerCase();
+  if (!text || text === 'unknown cpu' || text === 'unknown') return 0;
+
+  let score = 1;
+  if (/\d/.test(text)) score += 2;
+  if (text.includes('intel') || text.includes('amd') || text.includes('ryzen') || text.includes('xeon') || text.includes('core')) score += 2;
+  if (text.includes('family') || text.includes('stepping') || text.includes('authenticamd') || text.includes('genuineintel')) score -= 3;
+  if (text.length >= 12) score += 1;
+  return score;
+}
+
+// Fallback: prefer Windows CIM CPU info, then Node's os.cpus()
 function fallbackCPU() {
+  try {
+    if (process.platform === 'win32') {
+      const raw = execSync(
+        'powershell -NoProfile -Command "Get-CimInstance Win32_Processor | Select-Object Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, CurrentClockSpeed | ConvertTo-Json"',
+        { timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+      ).toString().trim();
+      let cpus = JSON.parse(raw);
+      if (!Array.isArray(cpus)) cpus = [cpus];
+      cpus = cpus.filter(Boolean);
+      cpus.sort((a, b) =>
+        (b.NumberOfLogicalProcessors || 0) - (a.NumberOfLogicalProcessors || 0) ||
+        (b.NumberOfCores || 0) - (a.NumberOfCores || 0) ||
+        (b.MaxClockSpeed || 0) - (a.MaxClockSpeed || 0)
+      );
+      const best = cpus[0];
+      if (best && best.Name) {
+        return {
+          brand: cleanCpuBrand(best.Name) || 'Unknown CPU',
+          manufacturer: cleanCpuBrand(best.Manufacturer),
+          cores: best.NumberOfCores || 0,
+          threads: best.NumberOfLogicalProcessors || best.NumberOfCores || 0,
+          speed: (best.CurrentClockSpeed || best.MaxClockSpeed || 0) / 1000,
+          speedMax: (best.MaxClockSpeed || best.CurrentClockSpeed || 0) / 1000,
+        };
+      }
+    }
+  } catch {}
+
   const cpus = nodeos.cpus();
   if (!cpus.length) return null;
   return {
-    brand: cpus[0].model || 'Unknown CPU',
+    brand: cleanCpuBrand(cpus[0].model) || 'Unknown CPU',
     manufacturer: cpus[0].model.includes('Intel') ? 'Intel' :
                    cpus[0].model.includes('AMD') ? 'AMD' : '',
     cores: cpus.length,        // logical cores
@@ -44,7 +92,7 @@ function fallbackCPU() {
   };
 }
 
-async function getSpecs() {
+async function scanSpecsUncached() {
   const [cpu, mem, graphics, disks, os, uuid, chassis] = await Promise.all([
     si.cpu().catch(() => ({})),
     si.mem().catch(() => ({ total: 8 * 1024 ** 3 })),
@@ -57,25 +105,24 @@ async function getSpecs() {
 
   // ── CPU: use systeminformation, fallback to os.cpus() ──
   let cpuInfo = {
-    brand: cpu.brand || '',
-    manufacturer: cpu.manufacturer || '',
+    brand: cleanCpuBrand(cpu.brand),
+    manufacturer: cleanCpuBrand(cpu.manufacturer),
     cores: cpu.physicalCores || cpu.cores || 0,
     threads: cpu.cores || 0,
     speed: cpu.speed || 0,
     speedMax: cpu.speedMax || cpu.speed || 0,
   };
-  if (!cpuInfo.brand || cpuInfo.brand === 'Unknown' || cpuInfo.cores === 0) {
-    const fb = fallbackCPU();
-    if (fb) {
-      cpuInfo = {
-        brand: cpuInfo.brand && cpuInfo.brand !== 'Unknown' ? cpuInfo.brand : fb.brand,
-        manufacturer: cpuInfo.manufacturer || fb.manufacturer,
-        cores: cpuInfo.cores || fb.cores,
-        threads: cpuInfo.threads || fb.threads,
-        speed: cpuInfo.speed || fb.speed,
-        speedMax: cpuInfo.speedMax || fb.speedMax,
-      };
+  const fb = fallbackCPU();
+  const cpuLooksWrong = !cpuInfo.brand || cpuInfo.brand === 'Unknown' || cpuInfo.cores === 0;
+  if (fb) {
+    if (cpuLooksWrong || cpuBrandScore(fb.brand) > cpuBrandScore(cpuInfo.brand)) {
+      cpuInfo.brand = fb.brand || cpuInfo.brand;
+      cpuInfo.manufacturer = fb.manufacturer || cpuInfo.manufacturer;
     }
+    cpuInfo.cores = cpuInfo.cores || fb.cores;
+    cpuInfo.threads = cpuInfo.threads || fb.threads;
+    cpuInfo.speed = cpuInfo.speed || fb.speed;
+    cpuInfo.speedMax = cpuInfo.speedMax || fb.speedMax;
   }
   if (!cpuInfo.brand) cpuInfo.brand = 'Unknown CPU';
   if (!cpuInfo.cores) cpuInfo.cores = 1;
@@ -126,6 +173,20 @@ async function getSpecs() {
     isLaptop: chassisType.includes('notebook') || chassisType.includes('laptop')
               || chassisType.includes('portable') || chassisType.includes('sub notebook'),
   };
+}
+
+async function getSpecs(options = {}) {
+  const { refresh = false } = options;
+
+  if (refresh || !cachedSpecsPromise) {
+    cachedSpecsPromise = scanSpecsUncached().catch((err) => {
+      cachedSpecsPromise = null;
+      throw err;
+    });
+  }
+
+  const specs = await cachedSpecsPromise;
+  return JSON.parse(JSON.stringify(specs));
 }
 
 function guessDiskType(disk) {

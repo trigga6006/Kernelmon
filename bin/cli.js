@@ -23,6 +23,7 @@ const { registerSignatureAnims } = require('../src/effects/projectile');
 const { renderTurnBattle } = require('../src/turnrenderer');
 const { saveMatch, printHistory } = require('../src/history');
 const { rollRewards, addItem, printInventory, printRewards } = require('../src/items');
+const { runBenchToBattleTransition } = require('../src/benchmark');
 
 const args = process.argv.slice(2);
 const command = args[0] || 'demo';
@@ -50,6 +51,14 @@ async function buildFighter(rawSpecs) {
     sprite,
     archetype,
   };
+}
+
+async function prepareBenchToBattle(fighter, opponent = null) {
+  try {
+    const profile = await runBenchToBattleTransition(fighter, opponent);
+    if (profile) fighter.benchmark = profile;
+  } catch {}
+  return fighter;
 }
 
 // Post-battle: save match + award loot if won
@@ -307,7 +316,7 @@ async function main() {
 
         console.log('\n\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m');
         const specs = await getSpecs();
-        const myFighter = await buildFighter(specs);
+        const myFighter = await prepareBenchToBattle(await buildFighter(specs));
         printFighter(myFighter, '\x1b[38;2;130;220;235m');
 
         let opponent, matchSeed = 0, roomCode;
@@ -374,7 +383,7 @@ async function main() {
 
         console.log('\n\x1b[38;2;180;160;240m  ◆ Scanning hardware...\x1b[0m');
         const specs = await getSpecs();
-        const myFighter = await buildFighter(specs);
+        const myFighter = await prepareBenchToBattle(await buildFighter(specs));
         printFighter(myFighter, '\x1b[38;2;180;160;240m');
 
         const turnMode = args.includes('--turns');
@@ -466,7 +475,7 @@ async function main() {
         console.log(`\n\x1b[38;2;75;150;90m  ▸ ROGUE MODE — Explore the void\x1b[0m`);
         console.log('\x1b[38;2;75;150;90m  ▸ Scanning hardware...\x1b[0m\n');
         const rogueSpecs = await getSpecs();
-        const rogueFighter = await buildFighter(rogueSpecs);
+        const rogueFighter = await prepareBenchToBattle(await buildFighter(rogueSpecs));
         printFighter(rogueFighter, '\x1b[38;2;75;150;90m', true);
         console.log('\x1b[38;2;240;220;140m  ▸ Entering in 2 seconds...\x1b[0m\n');
         await sleep(2000);
@@ -505,6 +514,7 @@ async function main() {
         selectScreen.exit();
 
         if (!opponent) break; // user pressed ESC
+        await prepareBenchToBattle(myFighter, opponent);
 
         const oppName = opponent.name || 'the opponent';
 

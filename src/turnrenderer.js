@@ -26,6 +26,7 @@ const {
 } = require('./turnrelay');
 const { useItem, getOwnedItems, ITEMS, RARITY_COLORS } = require('./items');
 const { preBattleLobby } = require('./prebattle');
+const { getBenchmarkLogEntries } = require('./benchmark');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -316,6 +317,8 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   screen.resetDiff();
   // Pre-draw one full battle frame so sprites appear instantly and fully formed
   battleStartTime = Date.now();
+  for (const entry of getBenchmarkLogEntries(fighterA)) addLog(entry.text, entry.color);
+  for (const entry of getBenchmarkLogEntries(fighterB)) addLog(entry.text, entry.color);
 
   // ═══════════════════════════════════════════════════════════════
   // SINGLE RENDER LOOP + PERSISTENT STDIN
@@ -373,6 +376,59 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   let qteInput = '';
   let qteStartTime = 0;
   let qteResolve = null;
+
+  function getQuickHackPlan(turnNumber, qteRole = 'solo') {
+    if (turnNumber <= 1) return null;
+
+    const roleSalt = qteRole === 'host'
+      ? 0x517cc1b7
+      : qteRole === 'joiner'
+        ? 0x2f6e2b1d
+        : 0x13579bdf;
+    const turnSeed = (((seed || 42) >>> 0) ^ roleSalt ^ Math.imul(turnNumber, 0x45d9f3b)) >>> 0;
+    const qteRng = createRNG(turnSeed);
+
+    if (!qteRng.chance(QTE_CHANCE)) return null;
+
+    return {
+      command: QTE_COMMANDS[qteRng.int(0, QTE_COMMANDS.length - 1)],
+      bonus: QTE_BONUSES[qteRng.int(0, QTE_BONUSES.length - 1)],
+    };
+  }
+
+  function applyQuickHackBonus(state, who, bonus) {
+    if (!bonus) return;
+
+    const fighter = state[who];
+    const dWho = toDisplay(who);
+    const cx = dWho === 'a' ? plyCenterX : oppCenterX;
+    const cy = dWho === 'a' ? plyCenterY : oppCenterY;
+
+    floats.add(cx, cy - 4, bonus.name, bonus.color, 20);
+    glitch.burst(cx, cy, 5, 5);
+
+    if (bonus.stat === 'heal') {
+      const healAmt = Math.round(fighter.maxHp * bonus.amount);
+      fighter.hp = Math.min(fighter.maxHp, fighter.hp + healAmt);
+      if (dWho === 'a') targetHpA = fighter.hp;
+      else targetHpB = fighter.hp;
+      itemRing = { cx, cy, startFrame: frameCount, duration: 16 };
+      return;
+    }
+
+    if (bonus.stat === 'crit') {
+      const boost = 500; // guarantees crit via spd/1000 formula
+      fighter.spd += boost;
+      fighter._boosts = fighter._boosts || [];
+      fighter._boosts.push({ stat: 'spd', amount: boost, turns: 1 });
+      return;
+    }
+
+    const boost = Math.max(1, Math.round(fighter[bonus.stat] * bonus.amount));
+    fighter[bonus.stat] += boost;
+    fighter._boosts = fighter._boosts || [];
+    fighter._boosts.push({ stat: bonus.stat, amount: boost, turns: bonus.turns });
+  }
 
   let lastTickTime = Date.now();
 
@@ -544,9 +600,9 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   }
 
   // Returns true if player succeeded, false if failed/timeout
-  function runQuickTime() {
+  function runQuickTime(command) {
     return new Promise(resolve => {
-      qteCommand = QTE_COMMANDS[battleState.rng.int(0, QTE_COMMANDS.length - 1)];
+      qteCommand = command;
       qteInput = '';
       qteStartTime = Date.now();
       phase = 'quicktime';
@@ -567,42 +623,18 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       turnNum++;
       addLog(`═══ Turn ${turnNum} ═══`, colors.gold);
 
-      // Quick-time event — 8% chance per turn (skip turn 1)
-      if (!isOnline && turnNum > 1 && battleState.rng.chance(QTE_CHANCE)) {
+      const myQuickHackPlan = getQuickHackPlan(turnNum, isOnline ? role : 'solo');
+      let myQuickHackSuccess = false;
+
+      if (myQuickHackPlan) {
         addLog(`⚡ QUICK HACK — type the command!`, colors.gold);
-        const success = await runQuickTime();
+        const success = await runQuickTime(myQuickHackPlan.command);
 
         if (success) {
-          // Pick a random bonus
-          const bonus = QTE_BONUSES[battleState.rng.int(0, QTE_BONUSES.length - 1)];
+          const bonus = myQuickHackPlan.bonus;
+          myQuickHackSuccess = true;
           addLog(`✓ ${bonus.name}: ${bonus.msg}`, bonus.color);
-          floats.add(plyCenterX, plyCenterY - 4, bonus.name, bonus.color, 20);
-          glitch.burst(plyCenterX, plyCenterY, 5, 5);
-
-          // Apply bonus
-          const me = battleState[meSlot];
-          if (bonus.stat === 'heal') {
-            const healAmt = Math.round(me.maxHp * bonus.amount);
-            me.hp = Math.min(me.maxHp, me.hp + healAmt);
-            if (meSlot === 'a') targetHpA = isHost ? me.hp : targetHpA;
-            else targetHpB = isHost ? targetHpB : me.hp;
-            // Fix: update the correct display HP
-            if (isHost) targetHpA = me.hp;
-            else targetHpB = me.hp;
-            // Green ring for heal
-            itemRing = { cx: plyCenterX, cy: plyCenterY, startFrame: frameCount, duration: 16 };
-          } else if (bonus.stat === 'crit') {
-            // Boost SPD massively for 1 turn — crit scales with SPD
-            const boost = 500; // guarantees crit via spd/1000 formula
-            me.spd += boost;
-            me._boosts = me._boosts || [];
-            me._boosts.push({ stat: 'spd', amount: boost, turns: 1 });
-          } else {
-            const boost = Math.round(me[bonus.stat] * bonus.amount);
-            me[bonus.stat] += boost;
-            me._boosts = me._boosts || [];
-            me._boosts.push({ stat: bonus.stat, amount: boost, turns: bonus.turns });
-          }
+          applyQuickHackBonus(battleState, meSlot, bonus);
           await animateIdle(800);
         } else {
           addLog(`✗ Too slow — hack failed!`, colors.rose);
@@ -641,19 +673,23 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       let joinerMove = null;
       let oppItem = null;
       let opponentForfeited = false;
+      let hostQteSuccess = false;
+      let joinerQteSuccess = false;
       const relayTurnNum = turnNum - 1;
       if (isOnline) {
         addLog('Waiting for opponent...', colors.dim);
         phase = 'waiting';
 
         const moveName = forfeited ? '__FORFEIT__' : myMove.name;
-        const result = await submitAndWait(relayUrl, roomCode, role, moveName, relayTurnNum, myItem?.id);
+        const result = await submitAndWait(relayUrl, roomCode, role, moveName, relayTurnNum, myItem?.id, myQuickHackSuccess);
         hostMove = resolveSubmittedMove('host', result.hostMove);
         joinerMove = resolveSubmittedMove('joiner', result.joinerMove);
         opponentMove = role === 'host' ? joinerMove : hostMove;
         opponentForfeited = role === 'host'
           ? result.joinerMove === '__FORFEIT__'
           : result.hostMove === '__FORFEIT__';
+        hostQteSuccess = !!result.hostQteSuccess;
+        joinerQteSuccess = !!result.joinerQteSuccess;
 
         const oppItemId = role === 'host' ? result.joinerItem : result.hostItem;
         if (oppItemId) oppItem = ITEMS[oppItemId] || null;
@@ -661,10 +697,26 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         opponentMove = movesetB[battleState.rng.int(0, movesetB.length - 1)];
         hostMove = isHost ? (forfeited ? null : myMove) : opponentMove;
         joinerMove = isHost ? opponentMove : (forfeited ? null : myMove);
+        hostQteSuccess = !!myQuickHackSuccess;
       }
 
       if (opponentForfeited) addLog('Opponent forfeited turn', colors.rose);
       else addLog(`Opponent chose: ${opponentMove.label}`, colors.p2);
+
+      const hostQuickHackPlan = isOnline ? getQuickHackPlan(turnNum, 'host') : (isHost ? myQuickHackPlan : null);
+      const joinerQuickHackPlan = isOnline ? getQuickHackPlan(turnNum, 'joiner') : (!isHost ? myQuickHackPlan : null);
+
+      if (isOnline) {
+        const opponentQuickHackPlan = role === 'host' ? joinerQuickHackPlan : hostQuickHackPlan;
+        const opponentQuickHackSuccess = role === 'host' ? joinerQteSuccess : hostQteSuccess;
+        const opponentSlot = role === 'host' ? 'b' : 'a';
+
+        if (opponentQuickHackSuccess && opponentQuickHackPlan) {
+          addLog(`Opponent hack: ${opponentQuickHackPlan.bonus.name}`, opponentQuickHackPlan.bonus.color);
+          applyQuickHackBonus(battleState, opponentSlot, opponentQuickHackPlan.bonus);
+          await animateIdle(700);
+        }
+      }
 
       // Apply items in deterministic order: host first, then joiner
       const hostItem = isHost ? myItem : oppItem;
@@ -1073,6 +1125,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       logLine += ` [${event.damage}]`;
       addLog(logLine, event.isCrit ? colors.crit : (isMe ? colors.p1 : colors.p2));
       addLog(`  ${event.flavor}`, colors.dimmer);
+      if (event.resisted) addLog('  Thermal guard resisted the debuff', colors.mint);
 
     } else if (event.type === 'dodge') {
       const dWho = toDisplay(event.who);

@@ -10,6 +10,7 @@ const { GlitchEffect, FloatingText } = require('./effects/glitch');
 const { ProjectileManager } = require('./effects/projectile');
 const { createRNG } = require('./rng');
 const { getSprite } = require('./sprites');
+const { toneColor } = require('./benchmark');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -220,6 +221,11 @@ async function renderBattle(fighterA, fighterB, events) {
       logLine += ` [${event.damage}]`;
       addLog(logLine, event.isCrit ? colors.crit : (isAAttacking ? colors.p1 : colors.p2));
       addLog(`  ${event.flavor}`, colors.dimmer);
+      if (event.resisted) addLog('  Thermal guard resisted the debuff', colors.mint);
+
+    } else if (event.type === 'condition') {
+      const whoLabel = event.who === 'a' ? fighterA.name : fighterB.name;
+      addLog(`${whoLabel.slice(0, 14)} ${event.label}: ${event.desc}`, toneColor(event.tone));
 
     } else if (event.type === 'dodge') {
       const whoLabel = event.who === 'a' ? fighterA.name : fighterB.name;

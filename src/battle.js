@@ -4,6 +4,7 @@
 
 const { createRNG } = require('./rng');
 const { getCombatModifiers, effectiveStat } = require('./balance');
+const { getBenchmarkConditionEvents, normalizeBenchmarkProfile } = require('./benchmark');
 
 // Attack move pools — names reference actual hardware
 const MOVES = {
@@ -46,17 +47,21 @@ function simulate(fighterA, fighterB, seed) {
       ...fighterA.stats, hp: fighterA.stats.hp, maxHp: fighterA.stats.maxHp,
       stunned: false, debuffed: false,
       archetype: fighterA.archetype?.name || 'DAEMON',
+      benchmark: normalizeBenchmarkProfile(fighterA.benchmark),
       consecutiveAttacks: 0,
     },
     b: {
       ...fighterB.stats, hp: fighterB.stats.hp, maxHp: fighterB.stats.maxHp,
       stunned: false, debuffed: false,
       archetype: fighterB.archetype?.name || 'DAEMON',
+      benchmark: normalizeBenchmarkProfile(fighterB.benchmark),
       consecutiveAttacks: 0,
     },
   };
 
   events.push({ tick: tick++, type: 'intro', a: fighterA, b: fighterB });
+  for (const event of getBenchmarkConditionEvents(fighterA, 'a')) events.push({ tick: tick++, ...event });
+  for (const event of getBenchmarkConditionEvents(fighterB, 'b')) events.push({ tick: tick++, ...event });
 
   // Battle rounds — typically 12-22 rounds
   let round = 0;
@@ -94,8 +99,8 @@ function simulate(fighterA, fighterB, seed) {
     }
 
     // Determine attack order by SPD (with archetype penalties)
-    const spdA = state.a.spd - (modsA.spdPenalty || 0) + rng.int(-5, 5);
-    const spdB = state.b.spd - (modsB.spdPenalty || 0) + rng.int(-5, 5);
+    const spdA = state.a.spd + (modsA.initiativeBonus || 0) - (modsA.spdPenalty || 0) + rng.int(-5, 5);
+    const spdB = state.b.spd + (modsB.initiativeBonus || 0) - (modsB.spdPenalty || 0) + rng.int(-5, 5);
     const order = spdA >= spdB ? ['a', 'b'] : ['b', 'a'];
 
     for (const attacker of order) {
@@ -170,6 +175,7 @@ function simulate(fighterA, fighterB, seed) {
 
       // Handle special effects
       let specialEffect = null;
+      let resisted = false;
       if (move.special === 'heal') {
         const healAmt = Math.round(baseStat * move.mult * rng.float(0.8, 1.2));
         atk.hp = Math.min(atk.maxHp, atk.hp + healAmt);
@@ -208,8 +214,13 @@ function simulate(fighterA, fighterB, seed) {
         def.stunned = true;
         specialEffect = 'stun';
       } else if (move.special === 'debuff') {
-        def.debuffed = true;
-        specialEffect = 'debuff';
+        const applyChance = Math.max(0.18, 1 - (defMods.statusResist || 0));
+        if (rng.chance(applyChance)) {
+          def.debuffed = true;
+          specialEffect = 'debuff';
+        } else {
+          resisted = true;
+        }
       } else if (move.special === 'pierce') {
         specialEffect = 'pierce';
       }
@@ -222,6 +233,7 @@ function simulate(fighterA, fighterB, seed) {
         maxHpA: state.a.maxHp, maxHpB: state.b.maxHp,
       };
       if (mods.fizzle) attackEvent.fizzle = true;
+      if (resisted) attackEvent.resisted = true;
       if (selfDmg > 0) attackEvent.selfDamage = selfDmg;
 
       events.push(attackEvent);

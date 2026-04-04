@@ -217,14 +217,24 @@ const server = http.createServer(async (req, res) => {
 
       // Store move for the requested turn
       const tn = turnNum !== undefined ? turnNum : room.turnNum;
-      if (!room.turns[tn]) room.turns[tn] = { hostMove: null, joinerMove: null, hostItem: null, joinerItem: null, resolution: null };
+      if (!room.turns[tn]) room.turns[tn] = {
+        hostMove: null,
+        joinerMove: null,
+        hostItem: null,
+        joinerItem: null,
+        hostQteSuccess: false,
+        joinerQteSuccess: false,
+        resolution: null,
+      };
 
       if (role === 'host') {
         room.turns[tn].hostMove = move;
         room.turns[tn].hostItem = body.item || null;
+        room.turns[tn].hostQteSuccess = !!body.qteSuccess;
       } else {
         room.turns[tn].joinerMove = move;
         room.turns[tn].joinerItem = body.item || null;
+        room.turns[tn].joinerQteSuccess = !!body.qteSuccess;
       }
 
       // Track latest turn number
@@ -240,11 +250,22 @@ const server = http.createServer(async (req, res) => {
             joinerMove: turn.joinerMove,
             hostItem: turn.hostItem,
             joinerItem: turn.joinerItem,
+            hostQteSuccess: !!turn.hostQteSuccess,
+            joinerQteSuccess: !!turn.joinerQteSuccess,
             resolution: turn.resolution,
             turnNum: tn,
           });
         }
-        return json(res, 200, { status: 'ready', hostMove: turn.hostMove, joinerMove: turn.joinerMove, hostItem: turn.hostItem, joinerItem: turn.joinerItem, turnNum: tn });
+        return json(res, 200, {
+          status: 'ready',
+          hostMove: turn.hostMove,
+          joinerMove: turn.joinerMove,
+          hostItem: turn.hostItem,
+          joinerItem: turn.joinerItem,
+          hostQteSuccess: !!turn.hostQteSuccess,
+          joinerQteSuccess: !!turn.joinerQteSuccess,
+          turnNum: tn,
+        });
       }
       return json(res, 200, { status: 'waiting', turnNum: tn });
     }
@@ -264,7 +285,15 @@ const server = http.createServer(async (req, res) => {
 
       const tn = body.turnNum !== undefined ? body.turnNum : room.turnNum;
       if (!room.turns) room.turns = {};
-      if (!room.turns[tn]) room.turns[tn] = { hostMove: null, joinerMove: null, hostItem: null, joinerItem: null, resolution: null };
+      if (!room.turns[tn]) room.turns[tn] = {
+        hostMove: null,
+        joinerMove: null,
+        hostItem: null,
+        joinerItem: null,
+        hostQteSuccess: false,
+        joinerQteSuccess: false,
+        resolution: null,
+      };
 
       const turn = room.turns[tn];
       if (!turn.hostMove || !turn.joinerMove) {
@@ -278,6 +307,8 @@ const server = http.createServer(async (req, res) => {
         joinerMove: turn.joinerMove,
         hostItem: turn.hostItem,
         joinerItem: turn.joinerItem,
+        hostQteSuccess: !!turn.hostQteSuccess,
+        joinerQteSuccess: !!turn.joinerQteSuccess,
         resolution: turn.resolution,
         turnNum: tn,
       });
@@ -309,11 +340,22 @@ const server = http.createServer(async (req, res) => {
             joinerMove: turn.joinerMove,
             hostItem: turn.hostItem,
             joinerItem: turn.joinerItem,
+            hostQteSuccess: !!turn.hostQteSuccess,
+            joinerQteSuccess: !!turn.joinerQteSuccess,
             resolution: turn.resolution,
             turnNum: tn,
           });
         }
-        return json(res, 200, { status: 'ready', hostMove: turn.hostMove, joinerMove: turn.joinerMove, hostItem: turn.hostItem, joinerItem: turn.joinerItem, turnNum: tn });
+        return json(res, 200, {
+          status: 'ready',
+          hostMove: turn.hostMove,
+          joinerMove: turn.joinerMove,
+          hostItem: turn.hostItem,
+          joinerItem: turn.joinerItem,
+          hostQteSuccess: !!turn.hostQteSuccess,
+          joinerQteSuccess: !!turn.joinerQteSuccess,
+          turnNum: tn,
+        });
       }
       return json(res, 200, { status: 'waiting', turnNum: tn });
     }

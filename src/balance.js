@@ -9,6 +9,8 @@
 // ctx = { atk, def, rng, turn, consecutiveAttacks, hpRatio, move }
 // Returns: { damageMult, critBonus, dodgeBonus, selfDamage, skipChance, defMult, healBonus }
 
+const { getBenchmarkCombatModifiers } = require('./benchmark');
+
 const PASSIVES = {
   // APEX — Omniscience: consistent godlike output with passive regen
   // No weakness, no variance — pure overwhelming superiority
@@ -231,19 +233,22 @@ function getCombatModifiers(ctx) {
     ? passive.apply({ atk, def, rng, turn, consecutiveAttacks, hpRatio, move })
     : {};
 
-  // Get underdog bonus
+  // Get underdog bonus + live benchmark layer
   const underdogMods = calcUnderdogBonus(atk, def) || {};
+  const benchmarkMods = getBenchmarkCombatModifiers(atk.benchmark, turn, move) || {};
 
   // Combine multiplicatively for damage/def, additively for crit/dodge
   return {
-    damageMult: (passiveMods.damageMult || 1) * (underdogMods.damageMult || 1),
+    damageMult: (passiveMods.damageMult || 1) * (underdogMods.damageMult || 1) * (benchmarkMods.damageMult || 1),
     flatDamage: (passiveMods.flatDamage || 0) + (underdogMods.flatDamage || 0),
     defMult: (passiveMods.defMult || 1) * (underdogMods.defMult || 1),
-    critBonus: (passiveMods.critBonus || 0) + (underdogMods.critBonus || 0),
+    critBonus: (passiveMods.critBonus || 0) + (underdogMods.critBonus || 0) + (benchmarkMods.critBonus || 0),
     critMult: passiveMods.critMult || null,  // override crit multiplier if set
-    dodgeBonus: (passiveMods.dodgeBonus || 0) + (underdogMods.dodgeBonus || 0),
-    skipChance: passiveMods.skipChance || 0,
+    dodgeBonus: (passiveMods.dodgeBonus || 0) + (underdogMods.dodgeBonus || 0) + (benchmarkMods.dodgeBonus || 0),
+    skipChance: Math.max(0, (passiveMods.skipChance || 0) * (benchmarkMods.skipChanceMult || 1)),
     spdPenalty: passiveMods.spdPenalty || 0,
+    initiativeBonus: benchmarkMods.initiativeBonus || 0,
+    statusResist: benchmarkMods.statusResist || 0,
     selfDamageOnCrit: passiveMods.selfDamageOnCrit || 0,
     selfDamageAmount: passiveMods.selfDamageAmount || 0,
     varianceOverride: passiveMods.varianceOverride || null,

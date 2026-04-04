@@ -43,11 +43,13 @@ function extractTurnPayload(result) {
     joinerMove: result.joinerMove,
     hostItem: result.hostItem,
     joinerItem: result.joinerItem,
+    hostQteSuccess: !!result.hostQteSuccess,
+    joinerQteSuccess: !!result.joinerQteSuccess,
     resolution: result.resolution || null,
   };
 }
 
-async function submitTurn(relayUrl, roomCode, role, moveName, turnNum, itemId) {
+async function submitTurn(relayUrl, roomCode, role, moveName, turnNum, itemId, qteSuccess) {
   const base = relayUrl.replace(/\/$/, '');
   const code = roomCode.toUpperCase().replace(/[\s]/g, '');
 
@@ -56,6 +58,7 @@ async function submitTurn(relayUrl, roomCode, role, moveName, turnNum, itemId) {
     move: moveName,
     turnNum,
     item: itemId || null,
+    qteSuccess: !!qteSuccess,
   });
 }
 
@@ -90,8 +93,8 @@ async function waitForTurn(relayUrl, roomCode, turnNum, requireResolution = fals
 }
 
 // Submit our move and wait for opponent's move
-async function submitAndWait(relayUrl, roomCode, role, moveName, turnNum, itemId) {
-  const submitResult = await submitTurn(relayUrl, roomCode, role, moveName, turnNum, itemId);
+async function submitAndWait(relayUrl, roomCode, role, moveName, turnNum, itemId, qteSuccess) {
+  const submitResult = await submitTurn(relayUrl, roomCode, role, moveName, turnNum, itemId, qteSuccess);
 
   if (submitResult.status === 'ended') {
     throw new Error('Battle already ended.');

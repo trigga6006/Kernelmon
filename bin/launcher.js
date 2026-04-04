@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const { Screen } = require('../src/screen');
-const { colors, hpColor, rgb, RESET, BOLD } = require('../src/palette');
+const { ESC, colors, hpColor, rgb, RESET, BOLD } = require('../src/palette');
 const { MatrixRain } = require('../src/effects/matrix');
 const { createRNG } = require('../src/rng');
 const { getSpecs, buildStats, fighterName, gpuName, classifyArchetype } = require('../src/profiler');
@@ -19,6 +19,7 @@ const { printHistory } = require('../src/history');
 const { simulate } = require('../src/battle');
 const { renderBattle } = require('../src/renderer');
 const { combinedSeed } = require('../src/rng');
+const { runBenchToBattleTransition } = require('../src/benchmark');
 
 let renderTurnBattle;
 try { renderTurnBattle = require('../src/turnrenderer').renderTurnBattle; } catch (e) {}
@@ -34,8 +35,31 @@ const { rollRewards, addItem, printRewards } = require('../src/items');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
+const MOUSE_INPUT_ON = `${ESC}?1000h${ESC}?1006h`;
+const MOUSE_INPUT_OFF = `${ESC}?1000l${ESC}?1006l`;
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function enableMouseInput() {
+  if (process.stdout.isTTY) process.stdout.write(MOUSE_INPUT_ON);
+}
+
+function disableMouseInput() {
+  if (process.stdout.isTTY) process.stdout.write(MOUSE_INPUT_OFF);
+}
+
+function getMouseWheelDirection(input) {
+  const match = /^\x1b\[<(\d+);(\d+);(\d+)([mM])$/.exec(input);
+  if (!match) return null;
+
+  const code = Number(match[1]);
+  if ((code & 64) === 0) return null;
+
+  const wheelAxis = code & 3;
+  if (wheelAxis === 0) return 'up';
+  if (wheelAxis === 1) return 'down';
+  return null;
+}
 
 // ─── ASCII Logo ───
 const LOGO = [
@@ -166,6 +190,36 @@ async function buildFighter(rawSpecs) {
   return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype };
 }
 
+async function ensureSessionSpecs(sessionState, loadingLabel = 'Scanning hardware') {
+  if (sessionState.rawSpecs) {
+    return JSON.parse(JSON.stringify(sessionState.rawSpecs));
+  }
+
+  await withLoadingScreen(loadingLabel, async () => {
+    if (!sessionState.scanPromise) {
+      sessionState.scanPromise = getSpecs()
+        .then((specs) => {
+          sessionState.rawSpecs = JSON.parse(JSON.stringify(specs));
+          return sessionState.rawSpecs;
+        })
+        .catch((err) => {
+          sessionState.scanPromise = null;
+          throw err;
+        });
+    }
+
+    await sessionState.scanPromise;
+  });
+
+  return JSON.parse(JSON.stringify(sessionState.rawSpecs));
+}
+
+async function ensureSessionFighter(sessionState, fighter, loadingLabel = 'Scanning hardware') {
+  if (fighter) return fighter;
+  const rawSpecs = await ensureSessionSpecs(sessionState, loadingLabel);
+  return buildFighter(rawSpecs);
+}
+
 function mockOpponent() {
   const mockSpecs = {
     cpu: { brand: 'Intel Celeron N4020', cores: 2, threads: 2, speed: 1.1, speedMax: 2.8 },
@@ -179,6 +233,14 @@ function mockOpponent() {
     stats: mockStats, specs: mockSpecs, sprite: getSprite(mockSpecs),
     archetype: classifyArchetype(mockStats, mockSpecs),
   };
+}
+
+async function prepareBenchToBattle(fighter, opponent = null) {
+  try {
+    const profile = await runBenchToBattleTransition(fighter, opponent);
+    if (profile) fighter.benchmark = profile;
+  } catch {}
+  return fighter;
 }
 
 function postBattle(myFighter, opponent, winner, mode) {
@@ -278,7 +340,7 @@ async function showBattleRewards(winner, rewards, winMsg, loseMsg) {
 // MAIN MENU RENDERER — single setInterval, diff-based rendering
 // ═══════════════════════════════════════════════════════════════
 
-async function mainMenu() {
+async function mainMenu(sessionState = {}) {
   const screen = new Screen();
   const rng = createRNG(42);
   const matrix = new MatrixRain(screen.width, screen.height, rng);
@@ -287,7 +349,7 @@ async function mainMenu() {
 
   let cursor = 0;
   let frameCount = 0;
-  let scanning = true;
+  let scanning = !sessionState.rawSpecs;
   let myFighter = null;
   let done = false;
   const sectionState = Object.fromEntries(
@@ -315,18 +377,36 @@ async function mainMenu() {
     matrix.columns[x].active = true;
   }
 
-  // Scan hardware in background while menu renders
-  let rawSpecs = null;
-  getSpecs().then(async specs => {
-    rawSpecs = specs;
-    myFighter = await buildFighter(specs);
-    cardFighters[0] = myFighter; // main build is always index 0 default
-    // Pre-build the active build's fighter
+  // Scan hardware once per app launch; reuse the same raw scan on subsequent menu returns.
+  let rawSpecs = sessionState.rawSpecs ? JSON.parse(JSON.stringify(sessionState.rawSpecs)) : null;
+  if (rawSpecs) {
+    myFighter = await buildFighter(rawSpecs);
+    cardFighters[0] = await buildFighter(rawSpecs);
     cardFighters[getActiveBuildIndex()] = myFighter;
     scanning = false;
-  }).catch(() => { scanning = false; });
+  } else {
+    if (!sessionState.scanPromise) {
+      sessionState.scanPromise = getSpecs()
+        .then((specs) => {
+          sessionState.rawSpecs = JSON.parse(JSON.stringify(specs));
+          return sessionState.rawSpecs;
+        })
+        .catch((err) => {
+          sessionState.scanPromise = null;
+          throw err;
+        });
+    }
+    sessionState.scanPromise.then(async specs => {
+      rawSpecs = specs;
+      myFighter = await buildFighter(specs);
+      cardFighters[0] = await buildFighter(specs);
+      cardFighters[getActiveBuildIndex()] = myFighter;
+      scanning = false;
+    }).catch(() => { scanning = false; });
+  }
 
   screen.enter();
+  enableMouseInput();
 
   const stdin = process.stdin;
   stdin.setRawMode(true);
@@ -365,14 +445,33 @@ async function mainMenu() {
   function onKey(key) {
     if (done) return;
 
+    const wheel = getMouseWheelDirection(key);
+    if (wheel) {
+      if (focus === 'menu') {
+        const entries = currentMenuEntries();
+        if (!entries.length) return;
+        cursor = wheel === 'up'
+          ? (cursor - 1 + entries.length) % entries.length
+          : (cursor + 1) % entries.length;
+      } else if (focus === 'card') {
+        const builds = getAllBuilds();
+        if (!builds.length) return;
+        cardBuildIdx = wheel === 'up'
+          ? (cardBuildIdx - 1 + builds.length) % builds.length
+          : (cardBuildIdx + 1) % builds.length;
+        ensureCardFighter(cardBuildIdx);
+      }
+      return;
+    }
+
     if (focus === 'menu') {
       const entries = currentMenuEntries();
       if (!entries.length) return;
-      if (key === '\x1b[A' || key === 'k') {
+      if (key === '\x1b[A' || key === 'k' || key === 'w' || key === 'W') {
         cursor = (cursor - 1 + entries.length) % entries.length;
-      } else if (key === '\x1b[B' || key === 'j') {
+      } else if (key === '\x1b[B' || key === 'j' || key === 's' || key === 'S') {
         cursor = (cursor + 1) % entries.length;
-      } else if (key === '\x1b[D' || key === 'h') {
+      } else if (key === '\x1b[D' || key === 'h' || key === 'a' || key === 'A') {
         const entry = entries[cursor];
         if (entry?.type === 'section' && entry.expanded) {
           sectionState[entry.key] = false;
@@ -382,7 +481,7 @@ async function mainMenu() {
           const parentIndex = nextEntries.findIndex(candidate => candidate.type === 'section' && candidate.key === entry.parent);
           if (parentIndex >= 0) cursor = parentIndex;
         }
-      } else if (key === '\x1b[C' || key === 'l') {
+      } else if (key === '\x1b[C' || key === 'l' || key === 'd' || key === 'D') {
         // Right arrow → focus on profile card
         if (!scanning) focus = 'card';
       } else if (key === '\r' || key === '\n' || key === ' ') {
@@ -399,14 +498,14 @@ async function mainMenu() {
       }
     } else if (focus === 'card') {
       const builds = getAllBuilds();
-      if (key === '\x1b[D' || key === 'h') {
+      if (key === '\x1b[D' || key === 'h' || key === 'a' || key === 'A') {
         // Left arrow → back to menu
         focus = 'menu';
-      } else if (key === '\x1b[A' || key === 'k') {
+      } else if (key === '\x1b[A' || key === 'k' || key === 'w' || key === 'W') {
         // Cycle builds up
         cardBuildIdx = (cardBuildIdx - 1 + builds.length) % builds.length;
         ensureCardFighter(cardBuildIdx);
-      } else if (key === '\x1b[B' || key === 'j') {
+      } else if (key === '\x1b[B' || key === 'j' || key === 's' || key === 'S') {
         // Cycle builds down
         cardBuildIdx = (cardBuildIdx + 1) % builds.length;
         ensureCardFighter(cardBuildIdx);
@@ -465,6 +564,7 @@ async function mainMenu() {
 
   clearInterval(renderLoop);
   stdin.removeListener('data', onKey);
+  disableMouseInput();
   try { stdin.setRawMode(false); } catch (e) {}
   try { stdin.pause(); } catch (e) {}
 
@@ -721,15 +821,15 @@ async function mainMenu() {
     const footY = h - 2;
     screen.hline(2, footY, w - 4, '─', colors.ghost);
     if (focus === 'menu') {
-      screen.text(4, footY, ' ↑↓ navigate ', colors.dim);
-      screen.text(20, footY, ' ENTER expand/select ', colors.dim);
-      screen.text(44, footY, ' ← collapse ', colors.dim);
-      screen.text(58, footY, ' → profile ', colors.dim);
-      screen.text(71, footY, ' Q quit ', colors.dim);
+      screen.text(4, footY, ' Wheel/W/S navigate ', colors.dim);
+      screen.text(25, footY, ' ENTER expand/select ', colors.dim);
+      screen.text(49, footY, ' A/← collapse ', colors.dim);
+      screen.text(65, footY, ' D/→ profile ', colors.dim);
+      screen.text(81, footY, ' Q quit ', colors.dim);
     } else {
-      screen.text(4, footY, ' ↑↓ switch build ', colors.dim);
-      screen.text(23, footY, ' ENTER activate ', colors.dim);
-      screen.text(41, footY, ' ← menu ', colors.dim);
+      screen.text(4, footY, ' Wheel/W/S switch build ', colors.dim);
+      screen.text(31, footY, ' ENTER activate ', colors.dim);
+      screen.text(49, footY, ' A/← menu ', colors.dim);
     }
     screen.text(w - 14, h - 1, '─ kernelmon ─', colors.dimmer);
   }
@@ -766,13 +866,8 @@ async function showInfoScreen(title, renderFn) {
   infoScreen.exit();
 }
 
-async function handleProfile(fighter) {
-  if (!fighter) {
-    await withLoadingScreen('Scanning hardware', async () => {
-      const specs = await getSpecs();
-      fighter = await buildFighter(specs);
-    });
-  }
+async function handleProfile(fighter, sessionState) {
+  fighter = await ensureSessionFighter(sessionState, fighter);
   const { openProfile } = require('../src/profilescreen');
   const { getPassiveInfo } = require('../src/balance');
   const { getBalance, formatBalance } = require('../src/credits');
@@ -787,13 +882,8 @@ async function handleProfile(fighter) {
   profScreen.exit();
 }
 
-async function handleDemo(fighter, turnMode) {
-  if (!fighter) {
-    await withLoadingScreen('Scanning hardware', async () => {
-      const specs = await getSpecs();
-      fighter = await buildFighter(specs);
-    });
-  }
+async function handleDemo(fighter, turnMode, sessionState) {
+  fighter = await ensureSessionFighter(sessionState, fighter);
 
   // Opponent selection screen
   const { selectOpponent } = require('../src/opponentselect');
@@ -803,6 +893,7 @@ async function handleDemo(fighter, turnMode) {
   selectScreen.exit();
 
   if (!opponent) return; // user pressed ESC
+  await prepareBenchToBattle(fighter, opponent);
 
   // Prepare battle data
   let seed, myMoves, oppMoves, events;
@@ -831,13 +922,8 @@ async function handleDemo(fighter, turnMode) {
   await showBattleRewards(winner, rewards, `Your rig destroyed ${oppName}!`, `...${oppName} won.`);
 }
 
-async function handleDash(fighter) {
-  if (!fighter) {
-    await withLoadingScreen('Scanning hardware', async () => {
-      const specs = await getSpecs();
-      fighter = await buildFighter(specs);
-    });
-  }
+async function handleDash(fighter, sessionState) {
+  fighter = await ensureSessionFighter(sessionState, fighter);
 
   if (!renderDash) {
     await showInfoScreen('DASH MODE', (scr, w, h) => {
@@ -886,13 +972,8 @@ async function handleDash(fighter) {
   }
 }
 
-async function handleRogue(fighter) {
-  if (!fighter) {
-    await withLoadingScreen('Scanning hardware', async () => {
-      const specs = await getSpecs();
-      fighter = await buildFighter(specs);
-    });
-  }
+async function handleRogue(fighter, sessionState) {
+  fighter = await ensureSessionFighter(sessionState, fighter);
 
   if (!renderRogue) {
     await showInfoScreen('ROGUE MODE', (scr, w, h) => {
@@ -1008,13 +1089,8 @@ async function handleHistory() {
   });
 }
 
-async function handleLoadout(fighter) {
-  if (!fighter) {
-    await withLoadingScreen('Scanning hardware', async () => {
-      const specs = await getSpecs();
-      fighter = await buildFighter(specs);
-    });
-  }
+async function handleLoadout(fighter, sessionState) {
+  fighter = await ensureSessionFighter(sessionState, fighter);
   const { getAvailableMoves, getEquippedMoves: getEq } = require('../src/moveset');
   const available = getAvailableMoves(fighter.stats);
   const equipped = getEq(fighter.stats);
@@ -1050,11 +1126,8 @@ async function handleLoadout(fighter) {
   });
 }
 
-async function handleWorkshop(fighter) {
-  let specs;
-  await withLoadingScreen('Loading workshop', async () => {
-    specs = await getSpecs();
-  });
+async function handleWorkshop(fighter, sessionState) {
+  const specs = await ensureSessionSpecs(sessionState, 'Loading workshop');
 
   try {
     const { openWorkshop } = require('../src/workshop');
@@ -1093,6 +1166,7 @@ function pickOption(title, options) {
   return new Promise((resolve) => {
     const scr = new Screen();
     scr.enter();
+    enableMouseInput();
     const w = scr.width;
     const h = scr.height;
     let cursor = 0;
@@ -1121,15 +1195,21 @@ function pickOption(title, options) {
       }
 
       scr.hline(2, h - 2, w - 4, '─', colors.ghost);
-      scr.text(4, h - 2, ' ↑↓ choose  ENTER select  Esc back ', colors.dim);
+      scr.text(4, h - 2, ' Wheel/W/S choose  ENTER select  Esc back ', colors.dim);
       scr.render();
     }
 
     function onKey(key) {
-      if (key === '\x1b[A' || key === 'k') {
+      const wheel = getMouseWheelDirection(key);
+      if (wheel) {
+        cursor = wheel === 'up'
+          ? (cursor - 1 + options.length) % options.length
+          : (cursor + 1) % options.length;
+        render();
+      } else if (key === '\x1b[A' || key === 'k' || key === 'w' || key === 'W') {
         cursor = (cursor - 1 + options.length) % options.length;
         render();
-      } else if (key === '\x1b[B' || key === 'j') {
+      } else if (key === '\x1b[B' || key === 'j' || key === 's' || key === 'S') {
         cursor = (cursor + 1) % options.length;
         render();
       } else if (key === '\r' || key === '\n' || key === ' ') {
@@ -1149,6 +1229,7 @@ function pickOption(title, options) {
 
     function cleanup() {
       stdin.removeListener('data', onKey);
+      disableMouseInput();
       stdin.setRawMode(false);
       stdin.pause();
     }
@@ -1223,7 +1304,7 @@ function textInput(title, prompt) {
   });
 }
 
-async function handleHost(fighter) {
+async function handleHost(fighter, sessionState) {
   // Step 1: Pick battle mode
   const mode = await pickOption('HOST GAME', [
     { key: 'turns', label: 'TURN-BASED', desc: 'Take turns choosing moves' },
@@ -1256,12 +1337,7 @@ async function handleHost(fighter) {
       // Host online — show waiting screen with room code
       const { hostOnline, DEFAULT_RELAY_URL } = require('../src/relay');
 
-      await withLoadingScreen('Scanning hardware', async () => {
-        if (!myFighter) {
-          const specs = await getSpecs();
-          myFighter = await buildFighter(specs);
-        }
-      });
+      myFighter = await ensureSessionFighter(sessionState, myFighter);
 
       // Create room (briefly suppress logs)
       let createResult;
@@ -1416,12 +1492,7 @@ async function handleHost(fighter) {
       // Host LAN
       const { host: hostLAN, PORT } = require('../src/network');
 
-      await withLoadingScreen('Scanning hardware', async () => {
-        if (!myFighter) {
-          const specs = await getSpecs();
-          myFighter = await buildFighter(specs);
-        }
-      });
+      myFighter = await ensureSessionFighter(sessionState, myFighter);
 
       // Start server and wait
       const result = await hostLAN(myFighter);
@@ -1430,6 +1501,7 @@ async function handleHost(fighter) {
 
     // Rebuild opponent sprite
     if (opponent.specs) opponent.sprite = getSprite(opponent.specs);
+    await prepareBenchToBattle(myFighter, opponent);
 
     console.log = origLog;
 
@@ -1464,7 +1536,7 @@ async function handleHost(fighter) {
   }
 }
 
-async function handleJoin(fighter) {
+async function handleJoin(fighter, sessionState) {
   // Step 1: Get room code / IP
   const code = await textInput('JOIN BATTLE', 'Enter room code or IP address:');
   if (!code) return;
@@ -1481,12 +1553,7 @@ async function handleJoin(fighter) {
     let myFighter = fighter;
     let opponent, matchSeed = 0, roomCode;
 
-    await withLoadingScreen('Scanning hardware', async () => {
-      if (!myFighter) {
-        const specs = await getSpecs();
-        myFighter = await buildFighter(specs);
-      }
-    });
+    myFighter = await ensureSessionFighter(sessionState, myFighter);
 
     await withLoadingScreen(isRoomCode ? `Joining room ${code.toUpperCase()}` : `Connecting to ${code}`, async () => {
       if (isRoomCode) {
@@ -1501,6 +1568,7 @@ async function handleJoin(fighter) {
     });
 
     if (opponent.specs) opponent.sprite = getSprite(opponent.specs);
+    await prepareBenchToBattle(myFighter, opponent);
 
     console.log = origLog;
 
@@ -1603,33 +1671,34 @@ async function withLoadingScreen(label, asyncFn) {
 // ═══════════════════════════════════════════════════════════════
 
 async function run() {
+  const sessionState = {};
   while (true) {
-    const { choice, fighter } = await mainMenu();
+    const { choice, fighter } = await mainMenu(sessionState);
 
     switch (choice) {
       case 'demo':
-        await handleDemo(fighter, false);
+        await handleDemo(fighter, false, sessionState);
         break;
       case 'demo_turns':
-        await handleDemo(fighter, true);
+        await handleDemo(fighter, true, sessionState);
         break;
       case 'dash':
-        await handleDash(fighter);
+        await handleDash(fighter, sessionState);
         break;
       case 'rogue':
-        await handleRogue(fighter);
+        await handleRogue(fighter, sessionState);
         break;
       case 'profile':
-        await handleProfile(fighter);
+        await handleProfile(fighter, sessionState);
         break;
       case 'loadout':
-        await handleLoadout(fighter);
+        await handleLoadout(fighter, sessionState);
         break;
       case 'bag':
         await handleBag();
         break;
       case 'workshop':
-        await handleWorkshop(fighter);
+        await handleWorkshop(fighter, sessionState);
         break;
       case 'lootbox':
         await handleLootBox();
@@ -1638,10 +1707,10 @@ async function run() {
         await handleHistory();
         break;
       case 'host':
-        await handleHost(fighter);
+        await handleHost(fighter, sessionState);
         break;
       case 'join':
-        await handleJoin(fighter);
+        await handleJoin(fighter, sessionState);
         break;
       case 'quit':
         process.exit(0);

@@ -7,6 +7,7 @@
 
 const { createRNG } = require('./rng');
 const { getCombatModifiers, effectiveStat } = require('./balance');
+const { normalizeBenchmarkProfile } = require('./benchmark');
 
 function cloneStateSlice(value) {
   return value ? JSON.parse(JSON.stringify(value)) : value;
@@ -20,12 +21,14 @@ function createBattleState(fighterA, fighterB, seed) {
       ...fighterA.stats, hp: fighterA.stats.hp, maxHp: fighterA.stats.maxHp,
       stunned: false, debuffed: false,
       archetype: fighterA.archetype?.name || 'DAEMON',
+      benchmark: normalizeBenchmarkProfile(fighterA.benchmark),
       consecutiveAttacks: 0,
     },
     b: {
       ...fighterB.stats, hp: fighterB.stats.hp, maxHp: fighterB.stats.maxHp,
       stunned: false, debuffed: false,
       archetype: fighterB.archetype?.name || 'DAEMON',
+      benchmark: normalizeBenchmarkProfile(fighterB.benchmark),
       consecutiveAttacks: 0,
     },
     turn: 0,
@@ -50,8 +53,8 @@ function processTurn(state, moveA, moveB) {
     consecutiveAttacks: state.b.consecutiveAttacks, move: moveB,
   });
 
-  const spdA = state.a.spd - (modsA.spdPenalty || 0) + rng.int(-5, 5);
-  const spdB = state.b.spd - (modsB.spdPenalty || 0) + rng.int(-5, 5);
+  const spdA = state.a.spd + (modsA.initiativeBonus || 0) - (modsA.spdPenalty || 0) + rng.int(-5, 5);
+  const spdB = state.b.spd + (modsB.initiativeBonus || 0) - (modsB.spdPenalty || 0) + rng.int(-5, 5);
   const order = spdA >= spdB
     ? [{ who: 'a', move: moveA, atk: state.a, def: state.b, mods: modsA, defMods: modsB }]
     : [{ who: 'b', move: moveB, atk: state.b, def: state.a, mods: modsB, defMods: modsA }];
@@ -157,12 +160,18 @@ function processTurn(state, moveA, moveB) {
 
     // Special effects
     let specialEffect = null;
+    let resisted = false;
     if (move.special === 'stun' && rng.chance(0.6)) {
       def.stunned = true;
       specialEffect = 'stun';
     } else if (move.special === 'debuff') {
-      def.debuffed = true;
-      specialEffect = 'debuff';
+      const applyChance = Math.max(0.18, 1 - (defMods.statusResist || 0));
+      if (rng.chance(applyChance)) {
+        def.debuffed = true;
+        specialEffect = 'debuff';
+      } else {
+        resisted = true;
+      }
     } else if (move.special === 'pierce') {
       specialEffect = 'pierce';
     }
@@ -175,6 +184,7 @@ function processTurn(state, moveA, moveB) {
       maxHpA: state.a.maxHp, maxHpB: state.b.maxHp,
     };
     if (mods.fizzle) attackEvent.fizzle = true;
+    if (resisted) attackEvent.resisted = true;
     if (selfDmg > 0) attackEvent.selfDamage = selfDmg;
 
     events.push(attackEvent);
