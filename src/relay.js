@@ -4,8 +4,7 @@
 const http = require('node:http');
 const https = require('node:https');
 
-// Self-host-first default: local relay unless the player explicitly points at a hosted one.
-const DEFAULT_RELAY_URL = process.env.KERNELMON_RELAY_URL || 'http://127.0.0.1:8080';
+const DEFAULT_RELAY_URL = process.env.KERNELMON_RELAY_URL || 'https://kernelmon-relay.fly.dev';
 
 const REQUEST_TIMEOUT = 10_000;
 const POLL_INTERVAL = 500;
