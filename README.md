@@ -11,119 +11,55 @@ Kernelmon is a terminal creature battler where your real hardware becomes the fi
 - Node.js 20+
 - npm
 - A terminal with ANSI color support (Windows Terminal + PowerShell recommended)
-- A free [Fly.io](https://fly.io) account (for hosting the relay)
 
 ---
 
 ## ⚔ ╸ 1. CLONE AND INSTALL ╺
 
-Grab the repo and install everything — game and relay — in one shot:
+Grab the repo and install everything in one shot:
 
 ```bash
 git clone https://github.com/trigga6006/Kernelmon.git
-cd kernelmon
+cd Kernelmon
 npm install
-cd relay && npm install && cd ..
 ```
 
 ---
 
-## ◆ ╸ 2. DEPLOY THE RELAY ╺
-
-The relay is the lightweight server that connects players. Only one person in your group needs to deploy it.
-
-Install the Fly CLI and log in:
+## » ╸ 2. PLAY ╺
 
 ```bash
-fly auth signup    # first time
-fly auth login     # returning
+npm run play
 ```
 
-Launch and deploy from the relay folder:
-
-```bash
-cd relay
-fly launch         # pick a name like yourname-kernelmon-relay
-fly deploy
-```
-
-Once deployed, your relay URL is:
-
-```
-https://YOUR_APP_NAME.fly.dev
-```
-
-Confirm it's live:
-
-```
-https://YOUR_APP_NAME.fly.dev/health
-# should return: {"status":"ok","rooms":0}
-```
+That's it. The full game launches — solo modes, AI battles, rogue mode, and more. No server needed for solo play.
 
 ---
 
-## » ╸ 3. SET YOUR RELAY AND LAUNCH ╺
+## ★ ╸ 3. PLAY WITH FRIENDS ╺
 
-Point the game at your deployed relay, then start it:
+Multiplayer works out of the box. The game connects to a shared relay server automatically.
 
-**PowerShell**
-```powershell
-$env:KERNELMON_RELAY_URL="https://YOUR_APP_NAME.fly.dev"
-npm run play
-```
+**Host a match:**
 
-**Bash / macOS / Linux**
-```bash
-export KERNELMON_RELAY_URL="https://YOUR_APP_NAME.fly.dev"
-npm run play
-```
+1. Run `npm run play`
+2. Choose **HOST GAME** → **ONLINE**
+3. Send the room code to your friend
 
-**CMD**
-```cmd
-set KERNELMON_RELAY_URL=https://YOUR_APP_NAME.fly.dev
-npm run play
-```
+**Your friend joins:**
 
----
+1. Run `npm run play`
+2. Choose **JOIN BATTLE**
+3. Enter the room code
+4. Fight.
 
-## ★ ╸ 4. HOST A MATCH ╺
-
-1. In the menu, choose **HOST GAME** → **ONLINE**
-2. You'll get a room code — send it to your friend
-
----
-
-## ★ ╸ 5. YOUR FRIEND JOINS ╺
-
-Your friend does the same clone + install, sets the same relay URL, then:
-
-**PowerShell**
-```powershell
-$env:KERNELMON_RELAY_URL="https://YOUR_APP_NAME.fly.dev"
-npm run play
-```
-
-**Bash / macOS / Linux**
-```bash
-export KERNELMON_RELAY_URL="https://YOUR_APP_NAME.fly.dev"
-npm run play
-```
-
-**CMD**
-```cmd
-set KERNELMON_RELAY_URL=https://YOUR_APP_NAME.fly.dev
-npm run play
-```
-
-1. Choose **JOIN BATTLE**
-2. Enter the room code from the host
-3. Fight.
+Both players need an internet connection. That's the only requirement.
 
 ---
 
 ## » ╸ SOLO PLAY ╺
 
-Don't need multiplayer? Skip the relay entirely:
+Don't need multiplayer? These work offline:
 
 ```bash
 npm run play      # full game menu
@@ -138,14 +74,53 @@ Progression is stored locally in `.kernelmon/` — credits, inventory, parts, bu
 
 ---
 
+## ◆ ╸ SELF-HOSTING THE RELAY (OPTIONAL) ╺
+
+Want to run your own relay instead of using the default? The relay is a zero-dependency Node server that brokers room codes and turn exchange between two players.
+
+**Run it locally:**
+
+```bash
+cd relay
+npm install
+npm start
+```
+
+**Point the game at it:**
+
+```powershell
+# PowerShell
+$env:KERNELMON_RELAY_URL="http://127.0.0.1:8080"
+npm run play
+```
+
+```bash
+# Bash / macOS / Linux
+export KERNELMON_RELAY_URL="http://127.0.0.1:8080"
+npm run play
+```
+
+**Deploy to Fly.io:**
+
+```bash
+cd relay
+fly auth login
+fly launch         # pick a name like yourname-kernelmon-relay
+fly deploy
+```
+
+Your relay URL will be `https://YOUR_APP_NAME.fly.dev`. Set `KERNELMON_RELAY_URL` to that URL on every player's machine.
+
+---
+
 ## ◆ ╸ TROUBLESHOOTING ╺
 
 **Match won't connect?**
 
-- Both players must use the exact same relay URL
-- Check `https://YOUR_APP_NAME.fly.dev/health` returns OK
-- Run `fly logs` to see relay-side errors
-- Make sure `KERNELMON_RELAY_URL` is set before launching the game
+- Make sure both players have an internet connection
+- If self-hosting: both players must use the exact same relay URL
+- If self-hosting: check `https://YOUR_APP_NAME.fly.dev/health` returns OK
+- Make sure `KERNELMON_RELAY_URL` is set *before* launching the game
 
 ---
 

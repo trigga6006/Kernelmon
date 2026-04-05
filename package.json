@@ -2,7 +2,7 @@
   "name": "kernelmon",
   "version": "1.0.0",
   "description": "Your rig is your fighter — scan your PC specs and battle other rigs in the terminal",
-  "main": "src/index.js",
+  "main": "bin/launcher.js",
   "bin": {
     "kernelmon": "./bin/cli.js",
     "kmon": "./bin/cli.js"
