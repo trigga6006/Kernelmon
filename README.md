@@ -2,278 +2,321 @@
 
 Your PC is the party member.
 
-Kernelmon is a terminal-based creature battler where your real hardware becomes a fighter. The game scans your machine, turns your CPU, GPU, RAM, storage, and chassis into stats, archetypes, visuals, and move flavor, then throws that rig into flashy ASCII battles against AI opponents or other players.
+Kernelmon is a terminal creature battler where your real hardware becomes the fighter. The game scans your CPU, GPU, RAM, storage, and chassis, turns that into stats and archetypes, and throws your machine into loud ASCII battles against AI opponents or your friends.
 
-It sits somewhere between a retro terminal toy, a hardware roast, and a multiplayer monster battler.
+This repo is set up for a self-hosted multiplayer model:
 
-Older parts of the repo may still mention `PCArena` or `Workstation Off`. The current game name and launcher branding are `Kernelmon`.
+- each player runs the game locally on their own machine
+- one person in the group runs the lightweight relay server
+- the relay can be hosted locally for testing or deployed to Fly.io for internet play
 
-## What Kind of Game Is This?
+If you are releasing this for others to play, assume they should bring their own relay instead of depending on a shared public server.
 
-Think:
+## How Multiplayer Works
 
-- Pokemon-inspired battles, but your computer is the monster
-- animated terminal visuals instead of a browser UI
-- real hardware profiling feeding directly into combat stats
-- local progression with loot, builds, history, and unlock-style systems
-- online room-code multiplayer through a lightweight relay
+Kernelmon multiplayer has two pieces:
 
-The tone is intentionally over the top: hacker callsigns, benchmark flavor text, big attack animations, loot drops, and dramatic boss-fight energy for regular desktop hardware.
+1. The game client
+   This lives in the repo root and runs with `npm run play`.
+2. The relay server
+   This lives in [`relay/server.js`](./relay/server.js) and handles room codes plus turn exchange between two players.
 
-## Highlights
+The relay does not render the game and does not store player accounts. It is just the small matchmaking / battle bridge that lets two local clients find each other.
 
-- Your real machine becomes a fighter with stats derived from hardware
-- Full-screen terminal launcher with animated menu, profile card, and game modes
-- Turn-based battles with move selection, bag items, timers, and quick-hack typing events
-- Auto-battle mode for fast matches and showpiece fight animations
-- Online multiplayer with host/join room codes
-- Workshop system that lets you override your scanned rig with collected parts
-- Loot boxes, battle rewards, inventory, credits, and persistent progression
-- Benchmark-to-battle transition that adds live machine-condition flavor and combat modifiers
-- Extra modes like Dash Mode and Rogue Mode
-- Keyboard and mouse-friendly launcher controls
+## Requirements
 
-## Main Features
+- Node.js 20 or newer
+- npm
+- a modern terminal with ANSI color support
+- Windows Terminal + PowerShell is the most tested setup
+- a Fly.io account only if you want to host the relay on the public internet
 
-### Hardware Becomes Combat
+## 1. Clone The Repo
 
-On launch, the game profiles your system and maps it into:
+```bash
+git clone https://github.com/YOUR_USERNAME/kernelmon.git
+cd kernelmon
+```
 
-- `STR` from CPU power
-- `MAG` from GPU power
-- `SPD` from storage and clock speed
-- `VIT` and `HP` from memory
-- `DEF` from derived survivability
+Replace the GitHub URL with your actual repo URL.
 
-It also classifies your rig into an archetype such as offensive bruisers, balanced daemons, glass-cannon speedsters, workstation monsters, or laptop nomads.
+## 2. Install Dependencies
 
-The launcher keeps a single hardware snapshot for the entire app session, so your profile stays stable while you browse menus or enter different modes.
-
-### Full Terminal Launcher
-
-The recommended way to play is the full launcher:
-
-- animated title screen
-- main mode selection
-- profile card and active build display
-- bag, workshop, loot box, and battle log access
-- host/join multiplayer flow
-
-Controls supported in the launcher:
-
-- Arrow keys
-- `W`, `A`, `S`, `D`
-- `H`, `J`, `K`, `L`
-- `Enter` and `Space`
-- mouse wheel on menu screens
-
-### Turn-Based Battles
-
-Turn battles are the most feature-rich mode in the project.
-
-They include:
-
-- move selection UI
-- item usage from the bag during battle
-- turn timers
-- attack order based on speed and combat modifiers
-- archetype passives and balance hooks
-- online turn syncing with authoritative resolution
-- quick-hack typing prompts that can grant a temporary buff on success
-
-The quick-hack system flashes a command in the lower UI, gives the player a short timer to type it, and awards a small temporary bonus if completed correctly. It works in both local and online turn battles.
-
-### Quick Battle / Auto Battle
-
-If you want the spectacle without the input overhead, quick battle simulates the fight and focuses on the presentation:
-
-- big projectile animations
-- hit effects and KO moments
-- personality from your hardware class and move pool
-- fast back-to-back fights for testing builds and earning rewards
-
-### Multiplayer
-
-Online multiplayer is built around simple room codes.
-
-- Host a room and share the code
-- Join from another machine using the code
-- Fight using the same hardware-derived fighter system as local play
-- Turn-based online battles are relay-backed and host-authoritative to avoid desync
-
-There is also support for direct local and LAN style CLI flows in the classic interface.
-
-### Progression and Collection
-
-Wins feed persistent progression stored locally.
-
-You can earn:
-
-- credits
-- consumable battle items
-- collectible hardware parts
-- match history
-
-You can then use those systems through:
-
-- `BAG` for consumables
-- `WORKSHOP` for parts and alternate builds
-- `LOOT BOX` for credit sinks and progression loops
-- `BATTLE LOG` for match history
-
-### Workshop and Builds
-
-The Workshop lets you go beyond your real machine.
-
-You can collect replacement parts for:
-
-- CPU
-- GPU
-- RAM
-- storage
-
-Those parts can be assembled into alternate builds, effectively creating custom fighters that override your live hardware scan for gameplay purposes.
-
-### Benchmark Flavor Layer
-
-Before battle, the game can run a benchmark-flavored transition that measures aspects of the machine and converts them into extra flavor and combat condition modifiers.
-
-This gives fights a little more personality than a static scan:
-
-- launch momentum
-- thermal behavior
-- focus and crit flavor
-- memory and throughput vibes
-
-It is meant to make each machine feel less like a stat block and more like a temperamental combatant.
-
-### Extra Modes
-
-The project also includes side modes beyond standard battles:
-
-- `Dash Mode`: a side-scrolling obstacle runner in the terminal
-- `Rogue Mode`: a lightweight run-based combat exploration mode
-
-## Getting Started
-
-### Requirements
-
-- a recent version of Node.js
-- a terminal with ANSI color support
-- Windows Terminal, PowerShell, or another modern terminal is recommended
-
-### Install
+Install the main game dependencies from the repo root:
 
 ```bash
 npm install
 ```
 
-### Launch the Full App
+Install the relay dependencies too:
+
+```bash
+cd relay
+npm install
+cd ..
+```
+
+## 3. Run The Game Locally
+
+From the repo root:
 
 ```bash
 npm run play
 ```
 
-This starts the full-screen launcher and is the best entry point for most players.
+That launches the full-screen Kernelmon app.
 
-### Other Scripts
+Useful scripts:
 
 ```bash
+npm run play
 npm start
-npm run demo
 npm run host
 npm run join
+npm run demo
 ```
 
-These are the classic CLI entry points. They still work, but `npm run play` is the modern "full app" experience.
+`npm run play` is the recommended entry point. The other scripts are the older CLI flows.
 
-## Multiplayer
+## 4. Run The Relay Locally First
 
-### Play Online Through the Main App
+Before dealing with Fly.io, it is easiest to prove the multiplayer path locally.
 
-1. Launch with `npm run play`
-2. Choose `HOST GAME` or `JOIN BATTLE`
-3. Share or enter a room code
-4. Fight
-
-### Relay Server
-
-The repo also includes the small matchmaking and battle relay used for online rooms in `relay/server.js`.
-
-To run it locally:
+In one terminal:
 
 ```bash
 cd relay
-npm install
 npm start
 ```
 
-By default, the game is configured to use a Fly.io relay URL from the client code.
+The relay listens on `http://127.0.0.1:8080` by default.
 
-## Controls
+You can confirm it is alive by opening:
 
-### Launcher
+```text
+http://127.0.0.1:8080/health
+```
 
-- `W/S`, arrow keys, or mouse wheel: move selection
-- `A/D` or left/right: collapse sections or move focus
-- `Enter` or `Space`: select
-- `Q` or `Esc`: back or quit depending on screen
+You should get a small JSON response like:
 
-### Turn Battles
+```json
+{"status":"ok","rooms":0}
+```
 
-- arrow keys or `J/K`-style navigation in battle menus
-- `Enter` or `Space` to confirm moves
-- `Esc` or `Q` to back out of bag screens where supported
-- type the shown command during quick-hack prompts
+Important:
+
+- the game now defaults to `http://127.0.0.1:8080` if you do not set a relay URL
+- that makes local testing easy
+- for remote play, everyone must point at the same hosted relay
+
+## 5. Point The Game At A Relay
+
+Kernelmon reads the relay URL from `KERNELMON_RELAY_URL`.
+
+If you do nothing, the game uses:
+
+```text
+http://127.0.0.1:8080
+```
+
+That is perfect for local relay testing on the same machine.
+
+### PowerShell
+
+```powershell
+$env:KERNELMON_RELAY_URL="https://your-kernelmon-relay.fly.dev"
+npm run play
+```
+
+### macOS / Linux
+
+```bash
+export KERNELMON_RELAY_URL="https://your-kernelmon-relay.fly.dev"
+npm run play
+```
+
+All players in the same match need to use the same relay URL.
+
+The classic CLI also supports an explicit flag:
+
+```bash
+npm run host -- --online --turns --relay https://your-kernelmon-relay.fly.dev
+npm run join -- ABCD-EFGH --turns --relay https://your-kernelmon-relay.fly.dev
+```
+
+## 6. Deploy The Relay To Fly.io
+
+Only one person in your friend group needs to do this.
+
+### 6.1 Create A Fly.io Account
+
+Install `flyctl` using the current official instructions:
+
+- [Install flyctl](https://fly.io/docs/flyctl/install/)
+- [Sign up](https://fly.io/docs/flyctl/auth-signup/)
+- [Log in](https://fly.io/docs/flyctl/auth-login/)
+
+Then authenticate in your terminal:
+
+```bash
+fly auth signup
+```
+
+If you already have an account:
+
+```bash
+fly auth login
+```
+
+### 6.2 Create The Fly App For The Relay
+
+From the relay folder:
+
+```bash
+cd relay
+fly launch
+```
+
+Recommended answers when Fly prompts you:
+
+- choose a unique app name like `yourname-kernelmon-relay`
+- keep the Dockerfile deployment flow
+- choose the region closest to where you and your friends play
+- do not attach Postgres, Redis, or volumes
+
+This repo already includes a Fly config in [`relay/fly.toml`](./relay/fly.toml), so Fly should pick up the relay app shape from there.
+
+### 6.3 Deploy
+
+Still inside `relay/`:
+
+```bash
+fly deploy
+```
+
+After deploy, your relay URL will be:
+
+```text
+https://YOUR_FLY_APP_NAME.fly.dev
+```
+
+You can verify it with:
+
+```bash
+fly status
+fly logs
+```
+
+And by opening:
+
+```text
+https://YOUR_FLY_APP_NAME.fly.dev/health
+```
+
+If that health endpoint returns JSON, your relay is up.
+
+## 7. Launch And Play With Friends
+
+Once the relay is running, every player does this from the repo root:
+
+### Host
+
+1. Set `KERNELMON_RELAY_URL` to the shared relay URL.
+2. Run `npm run play`.
+3. Choose `HOST GAME`.
+4. Choose `ONLINE`.
+5. Share the generated room code with your friend.
+
+### Join
+
+1. Set `KERNELMON_RELAY_URL` to the same shared relay URL.
+2. Run `npm run play`.
+3. Choose `JOIN BATTLE`.
+4. Enter the room code from the host.
+
+If both players are pointed at the same relay, the match should connect and start normally.
+
+## 8. LAN / Private Network Option
+
+If you do not want to deploy to Fly.io, you can still host the relay yourself on one machine and let other players point at it directly.
+
+Example:
+
+1. On the host machine, run the relay:
+
+```bash
+cd relay
+npm start
+```
+
+2. Find that machine's LAN IP address, such as `192.168.1.50`.
+3. On every player machine, set:
+
+```powershell
+$env:KERNELMON_RELAY_URL="http://192.168.1.50:8080"
+```
+
+4. Make sure port `8080` is reachable through the local firewall/router.
+5. Launch the game and use `HOST GAME` / `JOIN BATTLE` normally.
 
 ## Persistence
 
-The game stores local progression data inside the repo's `.kernelmon` folder, including things like:
+Kernelmon stores local progression in the repo's `.kernelmon` folder, including things like:
 
+- credits
 - inventory
 - parts
 - builds
-- credits
-- history
+- battle history
 
-That means the project behaves like a local game profile, not just a stateless demo.
+That means each player keeps their own local save data on their own machine.
 
-## Why It Feels Different
+## Project Layout
 
-A lot of "your PC as a character" projects stop at a joke stat card.
+- [`bin/launcher.js`](./bin/launcher.js): full-screen launcher
+- [`bin/cli.js`](./bin/cli.js): classic CLI entry point
+- [`src/profiler.js`](./src/profiler.js): hardware scanning
+- [`src/relay.js`](./src/relay.js): relay client and room-code connection flow
+- [`src/turnbattle.js`](./src/turnbattle.js): turn battle engine
+- [`src/turnrenderer.js`](./src/turnrenderer.js): turn battle renderer
+- [`relay/server.js`](./relay/server.js): multiplayer relay server
+- [`relay/fly.toml`](./relay/fly.toml): Fly.io deployment config
 
-Kernelmon goes further:
+## Troubleshooting
 
-- your machine has a class fantasy
-- its hardware affects visuals and moves
-- the game supports progression and buildcraft
-- the UI is built like a terminal-native game, not just command output
-- online play lets two very different rigs collide in the same system
+### I can launch the game, but online play fails immediately
 
-It is meant to feel like your workstation has a battle form.
+Make sure:
 
-## Project Status
+- the relay is actually running
+- `KERNELMON_RELAY_URL` points at the correct relay
+- both players are using the same relay URL
+- the relay health endpoint responds
 
-This is an actively evolving game prototype and playground. Features are already broad, but the project still has a "living game" feel:
+### The host created a room, but the joiner cannot connect
 
-- some branches may contain newer menu or combat work than others
-- older naming may still appear in some files
-- balancing and hardware heuristics are still being tuned
+Usually that means one of these is true:
 
-The best branch for the full launcher experience is the one that includes `bin/launcher.js` and the `npm run play` script.
+- the host and joiner are pointed at different relays
+- the relay URL is correct but the server is down
+- a LAN relay is being blocked by firewall rules
 
-## Development Notes
+### Fly deploy worked, but matches still do not connect
 
-- Main launcher: `bin/launcher.js`
-- Classic CLI: `bin/cli.js`
-- Hardware profiling: `src/profiler.js`
-- Turn battle renderer: `src/turnrenderer.js`
-- Turn battle engine: `src/turnbattle.js`
-- Items and progression: `src/items.js`
-- Parts and workshop builds: `src/parts.js`
-- Online relay client: `src/relay.js`
-- Relay server: `relay/server.js`
+Check:
+
+```bash
+fly logs
+```
+
+Then test:
+
+```text
+https://YOUR_FLY_APP_NAME.fly.dev/health
+```
+
+If health works but matchmaking does not, double-check the exact value of `KERNELMON_RELAY_URL` on both machines.
 
 ## Short Pitch
 
-If Steam had a weird little terminal battler where your GPU was a spell school, your NVMe drive affected initiative, your laptop chassis changed your class fantasy, and your friend's PC could challenge yours online, this would be that game.
+If your CPU was a bruiser, your GPU was a spell school, your NVMe drive affected initiative, and your friend's workstation could challenge yours in a dramatic terminal boss fight, this is that game.

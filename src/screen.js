@@ -9,6 +9,11 @@ const CURSOR_HIDE = `${ESC}?25l`;
 const CURSOR_SHOW = `${ESC}?25h`;
 const CLEAR_SCREEN = `${ESC}2J`;
 
+// Safety net: always restore terminal on exit, no matter how the process dies
+process.on('exit', () => {
+  try { process.stdout.write(CURSOR_SHOW + ALT_SCREEN_OFF + RESET); } catch {}
+});
+
 class Screen {
   constructor() {
     this.width = Math.min(process.stdout.columns || 120, 200);

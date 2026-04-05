@@ -14,9 +14,20 @@
     "join": "node bin/cli.js join",
     "demo": "node bin/cli.js demo"
   },
-  "keywords": ["cli", "terminal", "battle", "pc-specs", "ascii-art", "game"],
+  "keywords": [
+    "cli",
+    "terminal",
+    "battle",
+    "pc-specs",
+    "ascii-art",
+    "game"
+  ],
   "license": "MIT",
   "dependencies": {
     "systeminformation": "^5.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "typescript": "^6.0.2"
   }
 }

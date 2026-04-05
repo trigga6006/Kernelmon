@@ -513,17 +513,19 @@ async function renderRogue(fighter, options = {}) {
           screen.set(sx, sy, gnd.char, gnd.fg);
         }
 
-        // Grass with bend overlay
-        const bend = bends.getBend(wx, wy);
-        if (bend) {
-          const biome = world.getBiome(wx, wy);
-          const bc = bend.intensity > 0.6 ? biome.grassLit
-            : bend.intensity > 0.3 ? biome.grassColors[Math.min(3, biome.grassColors.length - 1)]
-            : biome.grassColors[Math.min(2, biome.grassColors.length - 1)];
-          screen.set(sx, sy, bend.char, bc);
-        } else {
-          const g = world.getGrass(wx, wy);
-          if (g) screen.set(sx, sy, g.char, g.color);
+        // Grass with bend overlay (only on grass tiles, not roads/paths)
+        const g = world.getGrass(wx, wy);
+        if (g) {
+          const bend = bends.getBend(wx, wy);
+          if (bend) {
+            const biome = world.getBiome(wx, wy);
+            const bc = bend.intensity > 0.6 ? biome.grassLit
+              : bend.intensity > 0.3 ? biome.grassColors[Math.min(3, biome.grassColors.length - 1)]
+              : biome.grassColors[Math.min(2, biome.grassColors.length - 1)];
+            screen.set(sx, sy, bend.char, bc);
+          } else {
+            screen.set(sx, sy, g.char, g.color);
+          }
         }
       }
     }

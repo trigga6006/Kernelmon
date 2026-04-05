@@ -4,7 +4,8 @@
 const http = require('node:http');
 const https = require('node:https');
 
-const DEFAULT_RELAY_URL = 'https://wso-relay.fly.dev';
+// Self-host-first default: local relay unless the player explicitly points at a hosted one.
+const DEFAULT_RELAY_URL = process.env.KERNELMON_RELAY_URL || 'http://127.0.0.1:8080';
 
 const REQUEST_TIMEOUT = 10_000;
 const POLL_INTERVAL = 500;
@@ -104,7 +105,7 @@ async function hostOnline(myFighter, relayUrl = DEFAULT_RELAY_URL) {
     }
   }
 
-  throw new Error('Timed out waiting for opponent (5 minutes). Room expired.');
+  throw new Error('Timed out waiting for opponent (15 minutes). Room expired.');
 }
 
 // ─── Join: connect to existing room ───

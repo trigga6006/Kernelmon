@@ -746,6 +746,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     stdin.removeListener('data', onKey);
     try { stdin.setRawMode(false); } catch (e) {}
     try { stdin.pause(); } catch (e) {}
+    screen.exit();
   }
 
   // ─── Main battle loop ───

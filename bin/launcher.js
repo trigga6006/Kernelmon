@@ -84,7 +84,7 @@ const MENU_ITEMS = [
   { key: 'demo',        label: 'QUICK BATTLE',    desc: 'Auto-battle vs Chromebook',  icon: '⚡' },
   { key: 'demo_turns',  label: 'TURN BATTLE',     desc: 'Turn-based vs Chromebook',   icon: '◆' },
   { key: 'dash',        label: 'DASH MODE',       desc: 'Side-scroll obstacle runner', icon: '▸' },
-  { key: 'rogue',       label: 'ROGUE MODE',      desc: 'Explore the void, find battles', icon: '◉' },
+  { key: 'rogue',       label: 'SOLO MODE',       desc: 'Explore the void, find battles', icon: '◉' },
   { key: 'profile',     label: 'MY PROFILE',      desc: 'View your fighter stats',    icon: '◈' },
   { key: 'loadout',     label: 'LOADOUT',          desc: 'Configure equipped moves',   icon: '⚔' },
   { key: 'bag',         label: 'BAG',              desc: 'View collected items',       icon: '◰' },
@@ -130,7 +130,7 @@ const MENU_GROUPS = [
     desc: 'Modes, multiplayer, and match types',
     icon: '>',
     defaultExpanded: true,
-    items: ['demo', 'demo_turns', 'dash', 'rogue', 'host', 'join'],
+    items: ['rogue', 'host', 'join', 'dash'],
   },
   {
     type: 'section',
@@ -150,7 +150,7 @@ const MENU_GROUPS = [
     desc: 'Loot, battle log, and future extras',
     icon: '.',
     defaultExpanded: false,
-    items: ['lootbox', 'market', 'history'],
+    items: ['demo', 'demo_turns', 'lootbox', 'market', 'history'],
   },
   { type: 'item', key: 'quit' },
 ];
@@ -1777,9 +1777,9 @@ function waitForKey() {
     stdin.resume();
     stdin.setEncoding('utf8');
     stdin.once('data', (key) => {
-      if (key === '\x03') process.exit(0);
       stdin.setRawMode(false);
       stdin.pause();
+      if (key === '\x03') process.exit(0);
       resolve();
     });
   });
@@ -1792,9 +1792,9 @@ function waitForKeyReturn() {
     stdin.resume();
     stdin.setEncoding('utf8');
     stdin.once('data', (key) => {
-      if (key === '\x03') process.exit(0);
       stdin.setRawMode(false);
       stdin.pause();
+      if (key === '\x03') process.exit(0);
       resolve(key);
     });
   });
