@@ -16,6 +16,7 @@ const { generateSignatureMoves, SIGNATURE_ICON } = require('../src/signature');
 const { registerSignatureAnims } = require('../src/effects/projectile');
 const { getOwnedItems, RARITY_COLORS } = require('../src/items');
 const { getEquippedSkinId, applySkinOverride } = require('../src/skins');
+const { getEquippedTitleId } = require('../src/titles');
 const { printHistory } = require('../src/history');
 const { simulate } = require('../src/battle');
 const { renderBattle } = require('../src/renderer');
@@ -235,7 +236,10 @@ async function buildFighter(rawSpecs) {
     } catch {}
   }
 
-  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId, equippedParts };
+  // Apply equipped title
+  const titleId = getEquippedTitleId(buildIdx);
+
+  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId, equippedParts, titleId };
 }
 
 async function ensureSessionSpecs(sessionState, loadingLabel = 'Scanning hardware') {

@@ -30,6 +30,7 @@ const { preBattleLobby } = require('./prebattle');
 const { getBenchmarkLogEntries } = require('./benchmark');
 const { getCategoryMultiplier } = require('./balance');
 const { SIGNATURE_COLOR, SIGNATURE_ACCENT, SIGNATURE_ICON } = require('./signature');
+const { drawTitle, getTitleText } = require('./titles');
 const { drawCard: drawFullCard, drawCollapsedCard, drawCardHand, CARD_W, CARD_H, COLLAPSED_W } = require('./cardart');
 const { CARD_RARITY_COLORS_RGB, CARD_RARITY_ICONS, CARD_TYPE_LABELS, CARD_TYPE_COLORS_RGB } = require('./cards');
 
@@ -1505,6 +1506,9 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
 
     // Opponent info
     const oppArch = fighterB.archetype?.name || '';
+    if (fighterB.titleId) {
+      drawTitle(screen, oppBarX, 1, fighterB.titleId, frameCount);
+    }
     screen.text(oppBarX, 2, nameB, colors.p2, null, true);
     if (oppEvolved) {
       const remaining = Math.max(0, EVOLVE_DURATION - (turnNum - oppEvolvedTurn));
@@ -1520,6 +1524,9 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
 
     // Player info
     const plyArch = fighterA.archetype?.name || '';
+    if (fighterA.titleId) {
+      drawTitle(screen, plyBarX, plyBarY - 1, fighterA.titleId, frameCount);
+    }
     screen.text(plyBarX, plyBarY, nameA, colors.p1, null, true);
     if (evolved) {
       // Pulsing EVOLVED tag with remaining turns
@@ -1995,6 +2002,9 @@ async function battleIntro(screen, matrix, nameA, nameB, fighterA, fighterB, w, 
     screen.text(cx - 2, cy, ' VS ', vsGlow, null, true);
 
     const slideA = Math.min(i * 3, cx - 14);
+    if (fighterA.titleId && i > 3) {
+      drawTitle(screen, Math.max(2, slideA), cy - 3, fighterA.titleId, i);
+    }
     screen.text(Math.max(2, slideA), cy - 2, nameA, colors.p1, null, true);
     if (i > 6) {
       screen.text(Math.max(2, slideA), cy - 1, fighterA.gpu?.slice(0, 28) || '', colors.dim);
@@ -2002,6 +2012,9 @@ async function battleIntro(screen, matrix, nameA, nameB, fighterA, fighterB, w, 
 
     const slideB = Math.min(i * 3, cx - 14);
     const bx = Math.max(cx + 2, w - 2 - slideB - nameB.length);
+    if (fighterB.titleId && i > 3) {
+      drawTitle(screen, bx, cy + 1, fighterB.titleId, i);
+    }
     screen.text(bx, cy + 2, nameB, colors.p2, null, true);
     if (i > 6) {
       screen.text(bx, cy + 3, fighterB.gpu?.slice(0, 28) || '', colors.dim);
