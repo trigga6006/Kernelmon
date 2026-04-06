@@ -27,6 +27,8 @@ const CODES = {
   BETA22: { type: 'credits', amount: 1000, desc: '1,000 Credits' },
   GODMOD: { type: 'lootbox', box: 'transcendent', desc: 'Transcendent Crate' },
   HACKER: { type: 'credits', amount: 250,  desc: '250 Credits' },
+  TRNSC1: { type: 'lootbox', box: 'transcendent', desc: 'Transcendent Crate' },
+  TRNSC2: { type: 'lootbox', box: 'transcendent', desc: 'Transcendent Crate' },
 };
 
 // ─── Redemption tracking ───
@@ -220,6 +222,18 @@ async function openRedeemScreen() {
           const lootScreen = new Screen();
           lootScreen.enter();
           await openLootBoxAnimated(box, lootScreen);
+
+          // Wait for keypress so the player can see their reward
+          await new Promise(waitResolve => {
+            stdin.setRawMode(true);
+            stdin.resume();
+            stdin.setEncoding('utf8');
+            stdin.once('data', () => {
+              try { stdin.setRawMode(false); } catch {}
+              try { stdin.pause(); } catch {}
+              waitResolve();
+            });
+          });
           lootScreen.exit();
 
           cleanup();
