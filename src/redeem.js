@@ -33,6 +33,7 @@ const CODES = {
   RICH5K: { type: 'credits', amount: 5000, desc: '5,000 Credits' },
   SKIN01: { type: 'lootbox', box: 'skin_crate', desc: 'Transcendent Skin Crate' },
   SKIN02: { type: 'lootbox', box: 'skin_crate', desc: 'Transcendent Skin Crate' },
+  BONUS5: { type: 'credits', amount: 5000, desc: '5,000 Credits' },
 };
 
 // ─── Redemption tracking ───
