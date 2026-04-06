@@ -193,7 +193,7 @@ function getVisibleMenuEntries(sectionState) {
 
 // ─── Build fighter helper ───
 async function buildFighter(rawSpecs) {
-  const { applyBuildOverrides, getActiveBuildIndex } = require('../src/parts');
+  const { applyBuildOverrides, getActiveBuildIndex, getBuild } = require('../src/parts');
   const specs = applyBuildOverrides(rawSpecs);
   const stats = buildStats(specs);
   const name = fighterName(specs);
@@ -206,7 +206,17 @@ async function buildFighter(rawSpecs) {
   const skinId = getEquippedSkinId(buildIdx);
   if (skinId) sprite = applySkinOverride(sprite, skinId);
 
-  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId };
+  // Apply Transcendent part visual effects (only if no skin equipped)
+  const build = getBuild(buildIdx);
+  const equippedParts = build?.parts || {};
+  if (!skinId) {
+    try {
+      const { applyTranscendentPartEffects } = require('../src/transcendentparts');
+      sprite = applyTranscendentPartEffects(sprite, equippedParts);
+    } catch {}
+  }
+
+  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId, equippedParts };
 }
 
 async function ensureSessionSpecs(sessionState, loadingLabel = 'Scanning hardware') {
@@ -397,7 +407,7 @@ async function mainMenu(sessionState = {}) {
   let cardFighters = {};    // cache: buildIdx → fighter object
 
   // Load builds info
-  const { getAllBuilds, getActiveBuildIndex, setActiveBuild, getBuild, applyBuildOverrides: applyOverrides, buildSpecsFromParts, isBuildComplete } = require('../src/parts');
+  const { PARTS, getAllBuilds, getActiveBuildIndex, setActiveBuild, getBuild, applyBuildOverrides: applyOverrides, buildSpecsFromParts, isBuildComplete } = require('../src/parts');
   cardBuildIdx = getActiveBuildIndex();
 
   // Sparse rain for menu — evenly spaced columns with slight jitter for organic feel
@@ -463,8 +473,20 @@ async function mainMenu(sessionState = {}) {
     const build = builds[idx];
     if (!build) return;
     if (build.main) {
-      // Main build uses real specs + overrides (already built as myFighter if idx 0)
-      cardFighters[idx] = myFighter;
+      // Main build — use real hardware specs with any part overrides applied
+      const mainSpecs = JSON.parse(JSON.stringify(rawSpecs));
+      const parts = build.parts || {};
+      if (parts.cpu && PARTS[parts.cpu]) Object.assign(mainSpecs.cpu, PARTS[parts.cpu].cpu);
+      if (parts.gpu && PARTS[parts.gpu]) Object.assign(mainSpecs.gpu, PARTS[parts.gpu].gpu);
+      if (parts.ram && PARTS[parts.ram]) Object.assign(mainSpecs.ram, PARTS[parts.ram].ram);
+      if (parts.storage && PARTS[parts.storage]) Object.assign(mainSpecs.storage, PARTS[parts.storage].storage);
+      if (Object.keys(parts).length > 0) mainSpecs.isLaptop = false;
+      const mStats = buildStats(mainSpecs);
+      const mName = fighterName(mainSpecs);
+      const mGpu = gpuName(mainSpecs);
+      const mSprite = getSprite(mainSpecs);
+      const mArch = classifyArchetype(mStats, mainSpecs);
+      cardFighters[idx] = { id: rawSpecs.id, name: mName, gpu: mGpu, stats: mStats, specs: mainSpecs, sprite: mSprite, archetype: mArch };
     } else {
       // Custom build — construct specs from parts
       const customSpecs = buildSpecsFromParts(build.parts, rawSpecs.id);
@@ -548,8 +570,15 @@ async function mainMenu(sessionState = {}) {
         // Set this build as active
         if (builds[cardBuildIdx]?.main || isBuildComplete(cardBuildIdx)) {
           setActiveBuild(cardBuildIdx);
-          // Update myFighter to match the newly active build
-          if (cardFighters[cardBuildIdx]) myFighter = cardFighters[cardBuildIdx];
+          // Rebuild fighter from the newly active build's hardware
+          if (rawSpecs) {
+            buildFighter(rawSpecs).then(f => {
+              myFighter = f;
+              cardFighters[cardBuildIdx] = f;
+            });
+          } else if (cardFighters[cardBuildIdx]) {
+            myFighter = cardFighters[cardBuildIdx];
+          }
         }
       } else if (key === '\x1b' || key === 'q') {
         focus = 'menu';

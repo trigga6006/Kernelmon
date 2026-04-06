@@ -69,6 +69,11 @@ const PARTS = {
   tr_7995wx:     { type: 'cpu', rarity: 'mythic',    name: 'Threadripper PRO 7995WX',    icon: '▣', cpu: { brand: 'AMD Threadripper PRO 7995WX',  manufacturer: 'AMD',   cores: 96, threads: 192, speedMax: 5.1 }, dropWeight: 0.1 },
   w9_3595x:      { type: 'cpu', rarity: 'mythic',    name: 'Intel Xeon w9-3595X',        icon: '▣', cpu: { brand: 'Intel Xeon w9-3595X',         manufacturer: 'Intel', cores: 60, threads: 120, speedMax: 4.8 }, dropWeight: 0.1 },
 
+  // ✧ Transcendent
+  epyc_9965:     { type: 'cpu', rarity: 'transcendent', name: 'AMD EPYC 9965 Turin',      icon: '✧', cpu: { brand: 'AMD EPYC 9965 Turin',         manufacturer: 'AMD',   cores: 192, threads: 384, speedMax: 5.4 }, dropWeight: 0.008 },
+  cerebras_wse3: { type: 'cpu', rarity: 'transcendent', name: 'Cerebras WSE-3',            icon: '✧', cpu: { brand: 'Cerebras WSE-3 Wafer Engine',  manufacturer: 'Cerebras', cores: 900000, threads: 900000, speedMax: 3.0 }, dropWeight: 0.005 },
+  m4_ultra_max:  { type: 'cpu', rarity: 'transcendent', name: 'Apple M4 Ultra Max',        icon: '✧', cpu: { brand: 'Apple M4 Ultra Max',          manufacturer: 'Apple', cores: 40, threads: 40, speedMax: 4.5 }, dropWeight: 0.008 },
+
   // ══════════════════════════════════════
   // GPUs — affects MAG
   // ══════════════════════════════════════
@@ -103,6 +108,12 @@ const PARTS = {
   h100:          { type: 'gpu', rarity: 'mythic',    name: 'NVIDIA H100 80GB',           icon: '◈', gpu: { model: 'NVIDIA H100',                vramMB: 81920, vendor: 'NVIDIA' }, dropWeight: 0.05 },
   mi300x:        { type: 'gpu', rarity: 'mythic',    name: 'AMD Instinct MI300X',        icon: '◈', gpu: { model: 'AMD Instinct MI300X',        vramMB: 196608, vendor: 'AMD' },   dropWeight: 0.03 },
 
+  // ✧ Transcendent
+  blackwell_b200:  { type: 'gpu', rarity: 'transcendent', name: 'NVIDIA B200 Blackwell',    icon: '✧', gpu: { model: 'NVIDIA B200 Blackwell',     vramMB: 196608, vendor: 'NVIDIA' }, dropWeight: 0.008 },
+  rubin_ultra:     { type: 'gpu', rarity: 'transcendent', name: 'NVIDIA Rubin Ultra',        icon: '✧', gpu: { model: 'NVIDIA Rubin Ultra',        vramMB: 294912, vendor: 'NVIDIA' }, dropWeight: 0.005 },
+  mi350x:          { type: 'gpu', rarity: 'transcendent', name: 'AMD Instinct MI350X',       icon: '✧', gpu: { model: 'AMD Instinct MI350X',       vramMB: 294912, vendor: 'AMD' },   dropWeight: 0.006 },
+  falcon_shores:   { type: 'gpu', rarity: 'transcendent', name: 'Intel Falcon Shores',       icon: '✧', gpu: { model: 'Intel Falcon Shores',       vramMB: 262144, vendor: 'Intel' }, dropWeight: 0.007 },
+
   // ══════════════════════════════════════
   // RAM — affects VIT / HP / DEF
   // ══════════════════════════════════════
@@ -125,6 +136,9 @@ const PARTS = {
 
   // Mythic
   ram_1tb:       { type: 'ram', rarity: 'mythic',    name: '1 TB DDR5 Server',           icon: '█', ram: { totalGB: 1024 }, dropWeight: 0.05 },
+
+  // ✧ Transcendent
+  hbm4_stack:    { type: 'ram', rarity: 'transcendent', name: '4 TB HBM4 Stacked',        icon: '✧', ram: { totalGB: 4096 }, dropWeight: 0.006 },
 
   // ══════════════════════════════════════
   // Storage — affects SPD
@@ -150,6 +164,10 @@ const PARTS = {
 
   // Mythic
   optane_dc:     { type: 'storage', rarity: 'mythic',    name: 'Intel Optane DC P5800X',  icon: '▤', storage: { type: 'NVMe', sizeGB: 1600 }, dropWeight: 0.05 },
+
+  // ✧ Transcendent
+  pm1743_30tb:   { type: 'storage', rarity: 'transcendent', name: 'Samsung PM1743 30.72TB',  icon: '✧', storage: { type: 'NVMe', sizeGB: 30720 }, dropWeight: 0.007 },
+  ql_petascale:  { type: 'storage', rarity: 'transcendent', name: 'Quantum Photonic Array',   icon: '✧', storage: { type: 'NVMe', sizeGB: 1048576 }, dropWeight: 0.005 },
 };
 
 // ─── Type labels ───

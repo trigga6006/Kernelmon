@@ -170,6 +170,25 @@ const ITEM_ART_COLORS = {
   reactor_overflow:  () => [rgb(255, 220, 100), rgb(255, 240, 140), rgb(240, 180, 60)],
 };
 
+// ─── Transcendent Part Art (unique per part) ───
+
+const TRANSCENDENT_PART_ART = {
+  // GPUs
+  blackwell_b200:  ['╔✧▓✧╗ ', '║◈██◈║', '╚✧▓✧╝ '],
+  rubin_ultra:     ['╔═◈═╗ ', '║✦▓▓✦║', '╚═◈═╝ '],
+  mi350x:          ['╔▓◈▓╗ ', '║█✦█║ ', '╚▓◈▓╝ '],
+  falcon_shores:   ['╔⚡═⚡╗', '║◈▓◈║ ', '╚⚡═⚡╝'],
+  // CPUs
+  epyc_9965:       ['┌✧┬✧┐ ', '│◈▓◈│ ', '└✧┴✧┘ '],
+  cerebras_wse3:   ['╔✧✧✧╗ ', '║✧◈✧║ ', '╚✧✧✧╝ '],
+  m4_ultra_max:    ['┌─◈─┐ ', '│ ✧◈ │ ', '└─◈─┘ '],
+  // RAM
+  hbm4_stack:      ['┃✧║✧┃ ', '┃◈║◈┃ ', '┗✧╩✧┛ '],
+  // Storage
+  pm1743_30tb:     ['╔✧══╗ ', '║◈▤▤◈║', '╚══✧╝ '],
+  ql_petascale:    ['╔·✧·╗ ', '║✧◈✧║ ', '╚·✧·╝ '],
+};
+
 // Part type colors
 const PART_TYPE_ART_COLORS = {
   cpu: () => [rgb(245, 180, 150), rgb(255, 200, 160), rgb(245, 180, 150)],
@@ -197,8 +216,16 @@ function getItemArt(itemId) {
   return { lines: art, colors: colorFn ? colorFn() : null };
 }
 
-// Get art + colors for a part type
-function getPartArt(partType) {
+// Get art + colors for a part (checks for Transcendent-specific art first)
+function getPartArt(partType, partId) {
+  // Transcendent parts get unique art with cycling magenta/gold colors
+  if (partId && TRANSCENDENT_PART_ART[partId]) {
+    const art = TRANSCENDENT_PART_ART[partId];
+    const mag = rgb(200, 120, 255);
+    const gold = rgb(255, 215, 0);
+    const bright = rgb(255, 180, 255);
+    return { lines: art, colors: [mag, bright, gold] };
+  }
   const art = PART_TYPE_ART[partType];
   const colorFn = PART_TYPE_ART_COLORS[partType];
   if (!art) return null;
@@ -215,7 +242,7 @@ function formatArtForConsole(artLines, artColors) {
 }
 
 module.exports = {
-  ITEM_ART, PART_TYPE_ART,
+  ITEM_ART, PART_TYPE_ART, TRANSCENDENT_PART_ART,
   ITEM_ART_COLORS, PART_TYPE_ART_COLORS,
   ART_W, ART_H,
   drawArt, getItemArt, getPartArt, formatArtForConsole,

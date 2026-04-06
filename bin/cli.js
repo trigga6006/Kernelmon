@@ -35,22 +35,24 @@ function getFlag(flag, defaultVal) {
 }
 
 async function buildFighter(rawSpecs) {
-  const { applyBuildOverrides } = require('../src/parts');
+  const { applyBuildOverrides, getActiveBuildIndex, getBuild } = require('../src/parts');
   const specs = applyBuildOverrides(rawSpecs);
   const stats = buildStats(specs);
   const name = fighterName(specs);
   const gpu = gpuName(specs);
-  const sprite = getSprite(specs);
+  let sprite = getSprite(specs);
   const archetype = classifyArchetype(stats, specs);
-  return {
-    id: rawSpecs.id,
-    name,
-    gpu,
-    stats,
-    specs,
-    sprite,
-    archetype,
-  };
+
+  // Apply Transcendent part visual effects (CLI doesn't have skins)
+  const buildIdx = getActiveBuildIndex();
+  const build = getBuild(buildIdx);
+  const equippedParts = build?.parts || {};
+  try {
+    const { applyTranscendentPartEffects } = require('../src/transcendentparts');
+    sprite = applyTranscendentPartEffects(sprite, equippedParts);
+  } catch {}
+
+  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, equippedParts };
 }
 
 async function prepareBenchToBattle(fighter, opponent = null) {

@@ -31,6 +31,13 @@ async function renderBattle(fighterA, fighterB, events) {
           f.sprite = applySkinOverride(f.sprite, f.skinId);
         } catch {}
       }
+      // Re-apply Transcendent part effects (only if no skin)
+      if (!f.skinId && f.equippedParts) {
+        try {
+          const { applyTranscendentPartEffects } = require('./transcendentparts');
+          f.sprite = applyTranscendentPartEffects(f.sprite, f.equippedParts);
+        } catch {}
+      }
     }
   }
 

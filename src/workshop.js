@@ -294,7 +294,13 @@ function openWorkshop(realSpecs, screen) {
       screen.render();
     }
 
+    // Track recent escape to avoid split escape sequences (arrow keys) triggering letter handlers
+    let lastEscTime = 0;
+    function isRecentEsc() { return Date.now() - lastEscTime < 80; }
+
     function onKey(key) {
+      if (key === '\x1b') { lastEscTime = Date.now(); }
+      if (key === '[' && isRecentEsc()) return; // swallow bracket from split arrow sequence
       const builds = getAllBuilds();
 
       if (mode === 'naming') {
@@ -350,22 +356,22 @@ function openWorkshop(realSpecs, screen) {
           partCursor = 0;
           mode = 'parts';
           render();
-        } else if (key === 'u' || key === 'U') {
+        } else if ((key === 'u' || key === 'U') && !isRecentEsc()) {
           const type = SLOT_ORDER[slotCursor];
           unequipPartOnBuild(tabIndex, type);
           render();
-        } else if (key === 'n' || key === 'N') {
+        } else if ((key === 'n' || key === 'N') && !isRecentEsc()) {
           // New character
           mode = 'naming';
           nameBuffer = '';
           render();
-        } else if ((key === 'd' || key === 'D') && tabIndex > 0) {
+        } else if ((key === 'd' || key === 'D') && tabIndex > 0 && !isRecentEsc()) {
           // Delete custom character
           deleteBuild(tabIndex);
           if (tabIndex >= getAllBuilds().length) tabIndex = getAllBuilds().length - 1;
           slotCursor = 0;
           render();
-        } else if (key === 'a' || key === 'A') {
+        } else if ((key === 'a' || key === 'A') && !isRecentEsc()) {
           // Set this build as active for battle
           if (isBuildComplete(tabIndex)) {
             setActiveBuild(tabIndex);
