@@ -103,7 +103,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   }
 
   function resolveSubmittedMove(submittedRole, moveName) {
-    if (!moveName || moveName === '__FORFEIT__') return null;
+    if (!moveName || moveName === '__FORFEIT__' || moveName === '__ITEM_ONLY__') return null;
     const pool = submittedRole === 'host'
       ? (isHost ? movesetA : movesetB)
       : (isHost ? movesetB : movesetA);
@@ -184,6 +184,8 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
 
   // Item ring effect — expanding green ring around the user
   let itemRing = null; // { cx, cy, startFrame, duration }
+  // Bag cooldown — can't use items two turns in a row
+  let lastItemTurn = 0;
   // Special attack effects — full-screen animations (black hole, maelstrom)
   let specialEffect = null; // BlackHoleEffect | MaelstromEffect instance
   let frameCount = 0;
@@ -771,11 +773,15 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       } else if (key === '\x1b[B' || key === 'j') {
         if (movesetA.length > 0) cursor = (cursor + 1) % movesetA.length;
       } else if (key === '\x1b[C' || key === 'l' || key === 'd') {
-        // Right → open bag
-        bagItems = getOwnedItems();
-        selectMode = 'bag';
-        cursor = 0;
-        bagScroll = 0;
+        // Right → open bag (blocked if item used last turn)
+        if (lastItemTurn > 0 && turnNum - lastItemTurn < 2) {
+          addLog(`Bag on cooldown (1 turn)`, colors.dim);
+        } else {
+          bagItems = getOwnedItems();
+          selectMode = 'bag';
+          cursor = 0;
+          bagScroll = 0;
+        }
       } else if (key === '\r' || key === '\n' || key === ' ') {
         if (cursor < movesetA.length) {
           const move = movesetA[cursor];
@@ -1026,11 +1032,10 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         const consumed = useItem(item.id);
         if (consumed) {
           myItem = item;
+          lastItemTurn = turnNum;
           addLog(`Used: ${item.name}`, colors.mint);
         }
-        myMove = movesetA[0];
-        const autoIcon = myMove.signature ? SIGNATURE_ICON : (CAT_ICONS[myMove.cat] || '·');
-        addLog(`${autoIcon} Auto-attack: ${myMove.label}`, colors.p1);
+        myMove = null; // item use consumes the turn — no attack
       } else {
         myMove = choice.move;
         const moveIcon = myMove.signature ? SIGNATURE_ICON : (CAT_ICONS[myMove.cat] || '·');
@@ -1049,7 +1054,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         addLog('Waiting for opponent...', colors.dim);
         phase = 'waiting';
 
-        const moveName = forfeited ? '__FORFEIT__' : myMove.name;
+        const moveName = forfeited ? '__FORFEIT__' : (myMove ? myMove.name : '__ITEM_ONLY__');
         const result = await submitAndWait(relayUrl, roomCode, role, moveName, relayTurnNum, myItem?.id, myQuickHackSuccess);
         hostMove = resolveSubmittedMove('host', result.hostMove);
         joinerMove = resolveSubmittedMove('joiner', result.joinerMove);
@@ -1488,11 +1493,17 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       const bagX = logX + Math.floor(logW / 2) + 2;
       const bagCenterY = logY + 3;
       const ownedCount = getOwnedItems().reduce((s, i) => s + i.count, 0);
-      screen.text(bagX, bagCenterY - 1, '┌──────────┐', colors.mint);
-      screen.text(bagX, bagCenterY,     '│ ◰ BAG    │', colors.mint);
-      screen.text(bagX, bagCenterY + 1, `│ ${String(ownedCount).padStart(3)} items│`, colors.dim);
-      screen.text(bagX, bagCenterY + 2, '└──────────┘', colors.mint);
-      screen.text(bagX + 2, bagCenterY + 3, '▸ to open', colors.dimmer);
+      const bagOnCooldown = lastItemTurn > 0 && turnNum - lastItemTurn < 2;
+      const bagColor = bagOnCooldown ? colors.dim : colors.mint;
+      screen.text(bagX, bagCenterY - 1, '┌──────────┐', bagColor);
+      screen.text(bagX, bagCenterY,     '│ ◰ BAG    │', bagColor);
+      screen.text(bagX, bagCenterY + 1, `│ ${String(ownedCount).padStart(3)} items│`, bagOnCooldown ? colors.dimmer : colors.dim);
+      screen.text(bagX, bagCenterY + 2, '└──────────┘', bagColor);
+      if (bagOnCooldown) {
+        screen.text(bagX + 1, bagCenterY + 3, 'COOLDOWN', colors.rose);
+      } else {
+        screen.text(bagX + 2, bagCenterY + 3, '▸ to open', colors.dimmer);
+      }
 
     } else if (selectMode === 'bag') {
       screen.text(logX + 1, logY, '╸ USE AN ITEM ╺', colors.mint, null, true);
