@@ -95,14 +95,37 @@ function generateGrid(w, h, level, rng) {
     }
   }
 
-  // Data nodes
+  // Build reachability map — BFS from player start using 3-wide movement rules
+  const reachable = [];
+  for (let ry = 0; ry < h; ry++) reachable.push(new Uint8Array(w));
+
+  function canStand(cx, cy) {
+    return cx >= 2 && cx < w - 2 && cy >= 1 && cy < h - 1 &&
+      grid[cy][cx] === 0 && grid[cy][cx - 1] === 0 && grid[cy][cx + 1] === 0;
+  }
+
+  const queue = [[px, py]];
+  reachable[py][px] = 1;
+  while (queue.length > 0) {
+    const [cx, cy] = queue.shift();
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [ddx, ddy] of dirs) {
+      const nx2 = cx + ddx, ny2 = cy + ddy;
+      if (canStand(nx2, ny2) && !reachable[ny2][nx2]) {
+        reachable[ny2][nx2] = 1;
+        queue.push([nx2, ny2]);
+      }
+    }
+  }
+
+  // Data nodes — only spawn at positions reachable by the 3-wide player
   const nodeCount = 6 + Math.min(level * 2, 12);
   const nodes = [];
   let attempts = 0;
   while (nodes.length < nodeCount && attempts < 500) {
     const nx = rng.int(2, w - 3);
     const ny = rng.int(2, h - 3);
-    if (grid[ny][nx] === 0 && !(Math.abs(nx - px) < 3 && Math.abs(ny - py) < 3) && !nodes.some(n => n.x === nx && n.y === ny)) {
+    if (reachable[ny][nx] && !(Math.abs(nx - px) < 3 && Math.abs(ny - py) < 3) && !nodes.some(n => n.x === nx && n.y === ny)) {
       nodes.push({ x: nx, y: ny, char: NODE_CHARS[rng.int(0, NODE_CHARS.length - 1)], pulse: rng.int(0, 20) });
     }
     attempts++;
