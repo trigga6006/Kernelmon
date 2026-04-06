@@ -525,14 +525,17 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   const QTE_TIME_MS = 4000;  // 4 seconds to type
   const EVOLVE_STREAK = 3;   // consecutive QTE successes to evolve
   const EVOLVE_BOOST = 0.18; // +18% all stats on evolution
+  const EVOLVE_DURATION = 10; // evolution lasts 10 turns then expires
   let qteCommand = '';
   let qteInput = '';
   let qteStartTime = 0;
   let qteResolve = null;
   let hackStreak = 0;        // consecutive QTE successes (player)
-  let evolved = false;        // true once player evolves this match
+  let evolved = false;        // true while player is evolved
+  let evolvedTurn = 0;        // turn number when player evolved
   let oppHackStreak = 0;     // consecutive QTE successes (opponent, online)
-  let oppEvolved = false;     // true once opponent evolves this match
+  let oppEvolved = false;     // true while opponent is evolved
+  let oppEvolvedTurn = 0;     // turn number when opponent evolved
 
   function getQuickHackPlan(turnNumber, qteRole = 'solo') {
     if (turnNumber <= 1) return null;
@@ -608,10 +611,32 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
 
     // Big visual burst
     floats.add(cx, cy - 5, '◆ E V O L V E D ◆', colors.gold, 40);
-    floats.add(cx, cy - 3, 'ALL STATS +18%', colors.cyan, 30);
+    floats.add(cx, cy - 3, `ALL STATS +18% (${EVOLVE_DURATION} turns)`, colors.cyan, 30);
     glitch.screenTear(w, 8);
     glitch.scatter(cx, cy, w, h, 20, 10);
     itemRing = { cx, cy, startFrame: frameCount, duration: 24 };
+  }
+
+  // ─── De-evolution: revert stat boosts when duration expires ───
+  function revertEvolution(state, who) {
+    const fighter = state[who];
+    const dWho = toDisplay(who);
+    const cx = dWho === 'a' ? plyCenterX : oppCenterX;
+    const cy = dWho === 'a' ? plyCenterY : oppCenterY;
+
+    // Reverse the stat boosts (same formula as apply)
+    for (const stat of ['str', 'mag', 'spd', 'def']) {
+      const boost = Math.max(1, Math.round(fighter[stat] / (1 + EVOLVE_BOOST) * EVOLVE_BOOST));
+      fighter[stat] = Math.max(1, fighter[stat] - boost);
+    }
+    const hpBoost = Math.round(fighter.maxHp / (1 + EVOLVE_BOOST) * EVOLVE_BOOST);
+    fighter.maxHp = Math.max(1, fighter.maxHp - hpBoost);
+    fighter.hp = Math.min(fighter.hp, fighter.maxHp);
+    if (dWho === 'a') { targetHpA = fighter.hp; }
+    else { targetHpB = fighter.hp; }
+
+    floats.add(cx, cy - 4, 'EVOLUTION EXPIRED', colors.rose, 25);
+    glitch.burst(cx, cy, 4, 4);
   }
 
   let lastTickTime = Date.now();
@@ -931,6 +956,22 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       turnNum++;
       addLog(`═══ Turn ${turnNum} ═══`, colors.gold);
 
+      // Check if evolution expired (10 turns)
+      if (evolved && turnNum - evolvedTurn >= EVOLVE_DURATION) {
+        evolved = false;
+        hackStreak = 0;
+        addLog(`◇ Your evolution has expired!`, colors.rose);
+        revertEvolution(battleState, meSlot);
+        await animateIdle(1200);
+      }
+      if (oppEvolved && turnNum - oppEvolvedTurn >= EVOLVE_DURATION) {
+        oppEvolved = false;
+        oppHackStreak = 0;
+        addLog(`◇ Opponent's evolution has expired!`, colors.dim);
+        revertEvolution(battleState, isHost ? 'b' : 'a');
+        await animateIdle(1200);
+      }
+
       const myQuickHackPlan = !evolved ? getQuickHackPlan(turnNum, isOnline ? role : 'solo') : null;
       let myQuickHackSuccess = false;
 
@@ -947,9 +988,10 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
           if (hackStreak >= EVOLVE_STREAK) {
             // ── EVOLUTION TRIGGERED ──
             evolved = true;
+            evolvedTurn = turnNum;
             addLog(``, null);
             addLog(`◆◆◆ E V O L V E D ◆◆◆`, colors.gold);
-            addLog(`3 consecutive hacks — all stats +18%!`, colors.cyan);
+            addLog(`3 consecutive hacks — all stats +18% for ${EVOLVE_DURATION} turns!`, colors.cyan);
             applyEvolution(battleState, meSlot);
             await animateIdle(2200);
           } else {
@@ -1046,7 +1088,8 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
             oppHackStreak++;
             if (oppHackStreak >= EVOLVE_STREAK) {
               oppEvolved = true;
-              addLog(`⚠ Opponent EVOLVED! All stats +18%`, colors.rose);
+              oppEvolvedTurn = turnNum;
+              addLog(`⚠ Opponent EVOLVED! All stats +18% for ${EVOLVE_DURATION} turns`, colors.rose);
               applyEvolution(battleState, opponentSlot);
               await animateIdle(1500);
             } else {
@@ -1351,8 +1394,9 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     const oppArch = fighterB.archetype?.name || '';
     screen.text(oppBarX, 2, nameB, colors.p2, null, true);
     if (oppEvolved) {
+      const remaining = Math.max(0, EVOLVE_DURATION - (turnNum - oppEvolvedTurn));
       const pulse = frameCount % 12 < 6;
-      screen.text(oppBarX + nameB.length + 1, 2, '◆EVOLVED◆', pulse ? colors.rose : rgb(180, 60, 60), null, true);
+      screen.text(oppBarX + nameB.length + 1, 2, `◆EVOLVED (${remaining})◆`, pulse ? colors.rose : rgb(180, 60, 60), null, true);
     } else if (oppArch) {
       screen.text(oppBarX + nameB.length + 1, 2, oppArch, colors.dimmer);
     }
@@ -1365,9 +1409,10 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     const plyArch = fighterA.archetype?.name || '';
     screen.text(plyBarX, plyBarY, nameA, colors.p1, null, true);
     if (evolved) {
-      // Pulsing EVOLVED tag
+      // Pulsing EVOLVED tag with remaining turns
+      const remaining = Math.max(0, EVOLVE_DURATION - (turnNum - evolvedTurn));
       const pulse = frameCount % 12 < 6;
-      screen.text(plyBarX + nameA.length + 1, plyBarY, '◆EVOLVED◆', pulse ? colors.gold : rgb(180, 150, 60), null, true);
+      screen.text(plyBarX + nameA.length + 1, plyBarY, `◆EVOLVED (${remaining})◆`, pulse ? colors.gold : rgb(180, 150, 60), null, true);
     } else if (hackStreak > 0) {
       // Show streak progress
       const streakDots = '◆'.repeat(hackStreak) + '◇'.repeat(EVOLVE_STREAK - hackStreak);
