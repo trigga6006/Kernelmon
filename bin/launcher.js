@@ -101,6 +101,7 @@ const MENU_ITEMS = [
   { key: 'wager',       label: 'WAGER',             desc: 'Stake credits in online PvP', icon: '◆' },
   { key: 'host',        label: 'HOST GAME',        desc: 'Host a battle for others',   icon: '◎' },
   { key: 'join',        label: 'JOIN BATTLE',      desc: 'Enter a room code to join',  icon: '↗' },
+  { key: 'update',      label: 'UPDATE',            desc: 'Pull latest and restart',    icon: '↻' },
   { key: 'quit',        label: 'EXIT',             desc: 'Disconnect',                 icon: '×' },
 ];
 
@@ -125,6 +126,7 @@ const ITEM_COLORS = {
   wager:       rgb(255, 200, 50),
   host:        colors.coral,
   join:        colors.lilac,
+  update:      colors.cyan,
   quit:        colors.rose,
 };
 
@@ -164,6 +166,7 @@ const MENU_GROUPS = [
     defaultExpanded: false,
     items: ['guide', 'demo', 'demo_turns', 'kerneldex', 'lootbox', 'market', 'redeem', 'history'],
   },
+  { type: 'item', key: 'update' },
   { type: 'item', key: 'quit' },
 ];
 
@@ -3337,11 +3340,71 @@ async function run() {
       case 'join':
         await handleJoin(fighter, sessionState);
         break;
+      case 'update':
+        await handleUpdate();
+        break;
       case 'quit':
         process.exit(0);
     }
     // Each handler uses showInfoScreen which waits for key — loop back to menu
   }
+}
+
+async function handleUpdate() {
+  const { execSync, spawn } = require('node:child_process');
+  const projectDir = require('node:path').join(__dirname, '..');
+
+  // Show pulling screen
+  let pullOutput = '';
+  let pullError = null;
+
+  await withLoadingScreen('Pulling latest updates', async () => {
+    try {
+      pullOutput = execSync('git pull origin main', {
+        cwd: projectDir,
+        encoding: 'utf8',
+        timeout: 30000,
+      }).trim();
+    } catch (err) {
+      pullError = err.stderr || err.message || 'Unknown error';
+    }
+  });
+
+  if (pullError) {
+    await showInfoScreen('UPDATE', (scr) => {
+      const cy = Math.floor(scr.height / 2);
+      scr.centerText(cy - 1, 'Update failed', colors.rose, null, true);
+      scr.centerText(cy + 1, pullError.slice(0, 60), colors.dim);
+    });
+    return;
+  }
+
+  const alreadyUpToDate = pullOutput.includes('Already up to date');
+
+  if (alreadyUpToDate) {
+    await showInfoScreen('UPDATE', (scr) => {
+      scr.centerText(Math.floor(scr.height / 2), 'Already up to date!', colors.mint);
+    });
+    return;
+  }
+
+  // Files changed — restart the launcher to load new code
+  await showInfoScreen('UPDATE', (scr) => {
+    const cy = Math.floor(scr.height / 2);
+    scr.centerText(cy - 2, 'Update complete!', colors.mint, null, true);
+    scr.centerText(cy, pullOutput.split('\n').slice(0, 3).join('  '), colors.dim);
+    scr.centerText(cy + 2, 'Restarting...', colors.cyan);
+  });
+
+  // Respawn the launcher process with the updated code
+  const child = spawn(process.execPath, [__filename, ...process.argv.slice(2)], {
+    cwd: projectDir,
+    stdio: 'inherit',
+    detached: false,
+  });
+  child.on('exit', (code) => process.exit(code || 0));
+  // Stop the current event loop from continuing
+  await new Promise(() => {}); // hang forever — child takes over
 }
 
 function waitForKey() {
