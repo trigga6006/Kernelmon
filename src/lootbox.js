@@ -53,6 +53,21 @@ const BOXES = [
   },
 ];
 
+// ─── Special crates (not listed in shop, redeem-code only) ───
+
+const SPECIAL_BOXES = {
+  skin_crate: {
+    key: 'skin_crate',
+    name: 'Transcendent Skin Crate',
+    cost: 0,
+    icon: '✧',
+    color: rgb(200, 120, 255),
+    desc: 'Guaranteed Transcendent Skin',
+    weights: { transcendent: 100 },
+    skinOnly: true, // restricts pool to skins only
+  },
+};
+
 // ─── Reward pool — mix of items and parts ───
 
 function buildRewardPool() {
@@ -106,10 +121,13 @@ function rollReward(box, rng) {
     if (roll <= 0) { chosenRarity = rarity; break; }
   }
 
-  // Filter pool by rarity
-  const candidates = pool.filter(r => r.rarity === chosenRarity);
+  // Filter pool by rarity (and skin-only if flagged)
+  let candidates = pool.filter(r => r.rarity === chosenRarity);
+  if (box.skinOnly) candidates = candidates.filter(r => r.type === 'skin');
   if (candidates.length === 0) {
-    const fallback = pool.filter(r => r.rarity === 'common');
+    const fallback = box.skinOnly
+      ? pool.filter(r => r.type === 'skin')
+      : pool.filter(r => r.rarity === 'common');
     return fallback[Math.floor(rng.next() * fallback.length)];
   }
 
@@ -395,4 +413,4 @@ function openLootShop(screen) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-module.exports = { BOXES, openLootShop, openLootBoxAnimated, rollReward };
+module.exports = { BOXES, SPECIAL_BOXES, openLootShop, openLootBoxAnimated, rollReward };

@@ -9,7 +9,7 @@ const path = require('node:path');
 const { Screen } = require('./screen');
 const { colors, rgb, RESET } = require('./palette');
 const { addCredits, getBalance, formatBalance } = require('./credits');
-const { BOXES, openLootBoxAnimated } = require('./lootbox');
+const { BOXES, SPECIAL_BOXES, openLootBoxAnimated } = require('./lootbox');
 
 const WSO_DIR = path.join(__dirname, '..', '.kernelmon');
 const REDEEMED_FILE = path.join(WSO_DIR, 'redeemed.json');
@@ -31,6 +31,8 @@ const CODES = {
   TRNSC2: { type: 'lootbox', box: 'transcendent', desc: 'Transcendent Crate' },
   BAGS5K: { type: 'credits', amount: 5000, desc: '5,000 Credits' },
   RICH5K: { type: 'credits', amount: 5000, desc: '5,000 Credits' },
+  SKIN01: { type: 'lootbox', box: 'skin_crate', desc: 'Transcendent Skin Crate' },
+  SKIN02: { type: 'lootbox', box: 'skin_crate', desc: 'Transcendent Skin Crate' },
 };
 
 // ─── Redemption tracking ───
@@ -216,8 +218,8 @@ async function openRedeemScreen() {
           screen.centerText(Math.floor(h / 2), `Opening ${reward.desc}...`, GOLD);
           screen.render();
 
-          // Find the box definition
-          const box = BOXES.find(b => b.key === reward.box) || BOXES[0];
+          // Find the box definition (check special boxes first, then regular)
+          const box = SPECIAL_BOXES[reward.box] || BOXES.find(b => b.key === reward.box) || BOXES[0];
           // Brief pause then open animated lootbox
           await new Promise(r => setTimeout(r, 800));
           screen.exit();
