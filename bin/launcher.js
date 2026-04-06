@@ -98,6 +98,7 @@ const MENU_ITEMS = [
   { key: 'guide',       label: 'GUIDE',            desc: 'Combat basics & matchups',   icon: '?' },
   { key: 'redeem',      label: 'REDEEM CODE',      desc: 'Enter a code for rewards',   icon: '▸' },
   { key: 'history',     label: 'BATTLE LOG',       desc: 'Past match history',         icon: '▤' },
+  { key: 'wager',       label: 'WAGER',             desc: 'Stake credits in online PvP', icon: '◆' },
   { key: 'host',        label: 'HOST GAME',        desc: 'Host a battle for others',   icon: '◎' },
   { key: 'join',        label: 'JOIN BATTLE',      desc: 'Enter a room code to join',  icon: '↗' },
   { key: 'quit',        label: 'EXIT',             desc: 'Disconnect',                 icon: '×' },
@@ -121,6 +122,7 @@ const ITEM_COLORS = {
   guide:       rgb(180, 210, 255),
   redeem:      rgb(130, 255, 180),
   history:     colors.dim,
+  wager:       rgb(255, 200, 50),
   host:        colors.coral,
   join:        colors.lilac,
   quit:        colors.rose,
@@ -140,7 +142,7 @@ const MENU_GROUPS = [
     desc: 'Modes, multiplayer, and match types',
     icon: '>',
     defaultExpanded: true,
-    items: ['rogue', 'gym', 'host', 'join', 'dash', 'hackgrid'],
+    items: ['rogue', 'gym', 'wager', 'host', 'join', 'dash', 'hackgrid'],
   },
   {
     type: 'section',
@@ -2191,6 +2193,610 @@ function textInput(title, prompt) {
   });
 }
 
+// Number input screen — returns a positive integer or null on Esc
+function numberInput(title, prompt, minVal = 1, maxVal = Infinity, currentBalance = null) {
+  return new Promise((resolve) => {
+    const scr = new Screen();
+    scr.enter();
+    const w = scr.width;
+    const h = scr.height;
+    let buf = '';
+    let errorMsg = '';
+
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    function render() {
+      scr.clear();
+      scr.centerText(0, '\u2500'.repeat(w), colors.dimmer);
+      scr.centerText(0, ` ${title} `, rgb(255, 200, 50), null, true);
+
+      const cy = Math.floor(h / 2);
+
+      if (currentBalance !== null) {
+        const { formatBalance } = require('../src/credits');
+        scr.centerText(cy - 4, `Your balance: ${formatBalance(currentBalance)} credits`, colors.gold);
+      }
+
+      scr.centerText(cy - 2, prompt, colors.dim);
+      const inputLine = `> ${buf}_`;
+      scr.centerText(cy, inputLine, colors.white, null, true);
+
+      if (errorMsg) {
+        scr.centerText(cy + 2, errorMsg, colors.rose);
+      }
+
+      scr.centerText(cy + 4, 'Type an amount and press Enter', colors.dimmer);
+      scr.centerText(cy + 5, 'Esc to go back', colors.dimmer);
+
+      scr.hline(2, h - 2, w - 4, '\u2500', colors.ghost);
+      scr.render();
+    }
+
+    function onKey(key) {
+      if (key === '\r' || key === '\n') {
+        const val = parseInt(buf.trim(), 10);
+        if (isNaN(val) || val < minVal) {
+          errorMsg = `Minimum wager is ${minVal.toLocaleString()} credits`;
+          render();
+          return;
+        }
+        if (val > maxVal) {
+          errorMsg = `You only have ${maxVal.toLocaleString()} credits`;
+          render();
+          return;
+        }
+        cleanup();
+        scr.exit();
+        resolve(val);
+      } else if (key === '\x1b' || (key === 'q' && buf.length === 0)) {
+        cleanup();
+        scr.exit();
+        resolve(null);
+      } else if (key === '\x7f' || key === '\b') {
+        buf = buf.slice(0, -1);
+        errorMsg = '';
+        render();
+      } else if (key === '\x03') {
+        cleanup();
+        scr.exit();
+        process.exit(0);
+      } else if (key >= '0' && key <= '9' && buf.length < 10) {
+        buf += key;
+        errorMsg = '';
+        render();
+      }
+    }
+
+    function cleanup() {
+      stdin.removeListener('data', onKey);
+      stdin.setRawMode(false);
+      stdin.pause();
+    }
+
+    stdin.on('data', onKey);
+    render();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WAGER MODE — Online PvP with credit stakes
+// Both players buy in, winner takes the entire pot
+// ═══════════════════════════════════════════════════════════════
+
+async function handleWager(fighter, sessionState) {
+  const { getBalance, deductWager, awardWager, formatBalance } = require('../src/credits');
+  const balance = getBalance();
+
+  if (balance < 100) {
+    await showInfoScreen('WAGER', (scr) => {
+      scr.centerText(Math.floor(scr.height / 2) - 1, 'Not enough credits to wager!', colors.rose);
+      scr.centerText(Math.floor(scr.height / 2) + 1, `Balance: ${formatBalance(balance)} credits (minimum: 100)`, colors.dim);
+    });
+    return;
+  }
+
+  // Step 1: Host or Join?
+  const role = await pickOption('WAGER', [
+    { key: 'host', label: 'HOST WAGER', desc: 'Create a wager lobby and set the stakes' },
+    { key: 'join', label: 'JOIN WAGER', desc: 'Enter a room code to accept a wager' },
+  ]);
+  if (!role) return;
+
+  if (role === 'host') {
+    await handleWagerHost(fighter, sessionState);
+  } else {
+    await handleWagerJoin(fighter, sessionState);
+  }
+}
+
+async function handleWagerHost(fighter, sessionState) {
+  const { getBalance, deductWager, awardWager, formatBalance } = require('../src/credits');
+
+  // Step 1: Pick battle mode
+  const mode = await pickOption('WAGER — BATTLE MODE', [
+    { key: 'turns', label: 'TURN-BASED', desc: 'Take turns choosing moves' },
+    { key: 'auto',  label: 'QUICK BATTLE', desc: 'Auto-simulated fight' },
+  ]);
+  if (!mode) return;
+
+  const turnMode = mode === 'turns';
+
+  // Step 2: Set wager amount
+  const balance = getBalance();
+  const wagerAmount = await numberInput(
+    'SET WAGER AMOUNT',
+    'How many credits to wager?',
+    100,
+    balance,
+    balance
+  );
+  if (!wagerAmount) return;
+
+  // Step 3: Confirm
+  const confirm = await pickOption('CONFIRM WAGER', [
+    { key: 'yes', label: `STAKE ${wagerAmount.toLocaleString()} CREDITS`, desc: `Winner takes ${(wagerAmount * 2).toLocaleString()} credits total` },
+    { key: 'no',  label: 'CANCEL', desc: 'Go back to menu' },
+  ]);
+  if (confirm !== 'yes') return;
+
+  // Deduct wager from host balance
+  if (!deductWager(wagerAmount)) {
+    await showInfoScreen('WAGER', (scr) => {
+      scr.centerText(Math.floor(scr.height / 2), 'Insufficient credits!', colors.rose);
+    });
+    return;
+  }
+
+  // Suppress console.log from relay modules
+  const origLog = console.log;
+  const logBuffer = [];
+  console.log = (...args) => logBuffer.push(args.map(String).join(' '));
+
+  let myFighter = fighter;
+  let opponent, matchSeed = 0, roomCode, seed;
+
+  try {
+    const { DEFAULT_RELAY_URL } = require('../src/relay');
+
+    myFighter = await ensureSessionFighter(sessionState, myFighter);
+
+    // Create wager room
+    let createResult;
+    await withLoadingScreen('Creating wager lobby', async () => {
+      const base = DEFAULT_RELAY_URL.replace(/\/$/, '');
+      const http = require('node:http');
+      const https = require('node:https');
+      const parsed = new URL(`${base}/rooms`);
+      const mod = parsed.protocol === 'https:' ? https : http;
+      const payload = JSON.stringify({ fighter: myFighter, wager: wagerAmount });
+
+      createResult = await new Promise((resolve, reject) => {
+        const req = mod.request(parsed, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+          timeout: 10000,
+        }, (res) => {
+          let data = '';
+          res.on('data', c => { data += c; });
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)); }
+            catch { reject(new Error('Invalid relay response')); }
+          });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+        req.write(payload);
+        req.end();
+      });
+    });
+
+    roomCode = createResult.code;
+    matchSeed = createResult.matchSeed || 0;
+
+    // Show wager waiting screen
+    const waitScreen = new Screen();
+    waitScreen.enter();
+    const ww = waitScreen.width;
+    const wh = waitScreen.height;
+    const cy = Math.floor(wh / 2);
+    let waitFrame = 0;
+    let matched = false;
+    let waitError = null;
+
+    const spinChars = ['\u280B', '\u2819', '\u2839', '\u2838', '\u283C', '\u2834', '\u2826', '\u2827', '\u2807', '\u280F'];
+
+    // Poll in background
+    const { DEFAULT_RELAY_URL: relayBase } = require('../src/relay');
+    const base = relayBase.replace(/\/$/, '');
+    const pollStart = Date.now();
+    const POLL_TIMEOUT = 15 * 60_000;
+
+    (async () => {
+      const http = require('node:http');
+      const https = require('node:https');
+      while (!matched && Date.now() - pollStart < POLL_TIMEOUT) {
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          const parsed = new URL(`${base}/rooms/${roomCode}`);
+          const mod = parsed.protocol === 'https:' ? https : http;
+          const result = await new Promise((resolve, reject) => {
+            const req = mod.request(parsed, { method: 'GET', timeout: 10000 }, (res) => {
+              let data = '';
+              res.on('data', c => { data += c; });
+              res.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch { reject(new Error('bad response')); }
+              });
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+            req.end();
+          });
+          if (result.status === 'matched' && result.fighter) {
+            opponent = result.fighter;
+            matchSeed = result.matchSeed || matchSeed;
+            matched = true;
+          }
+        } catch (err) {
+          if (err.message.includes('429')) await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+      if (!matched) waitError = 'Timed out waiting for opponent. Wager refunded.';
+    })();
+
+    // Render wager waiting screen
+    const waitInterval = setInterval(() => {
+      waitFrame++;
+      waitScreen.clear();
+
+      waitScreen.centerText(0, '\u2500'.repeat(ww), colors.dimmer);
+      waitScreen.centerText(0, ' WAGER LOBBY ', rgb(255, 200, 50), null, true);
+
+      waitScreen.centerText(cy - 6, 'Share this room code with your opponent:', colors.dim);
+      waitScreen.centerText(cy - 4, '\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557', colors.cyan);
+      waitScreen.centerText(cy - 3, `\u2551    ${roomCode}     \u2551`, colors.white, null, true);
+      waitScreen.centerText(cy - 2, '\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D', colors.cyan);
+
+      waitScreen.centerText(cy, `Mode: ${turnMode ? 'Turn-Based' : 'Quick Battle'}`, colors.dim);
+      waitScreen.centerText(cy + 1, `Wager: ${wagerAmount.toLocaleString()} credits each`, rgb(255, 200, 50), null, true);
+      waitScreen.centerText(cy + 2, `Winner takes: ${(wagerAmount * 2).toLocaleString()} credits`, colors.gold);
+
+      const spin = spinChars[waitFrame % spinChars.length];
+      waitScreen.centerText(cy + 4, `${spin}  Waiting for opponent...`, colors.cyan);
+
+      waitScreen.hline(2, wh - 2, ww - 4, '\u2500', colors.ghost);
+      waitScreen.text(4, wh - 2, ' Esc to cancel (wager refunded) ', colors.dim);
+
+      waitScreen.render();
+    }, 50);
+
+    // Allow Esc to cancel
+    const cancelPromise = new Promise(resolve => {
+      const stdin = process.stdin;
+      stdin.setRawMode(true);
+      stdin.resume();
+      stdin.setEncoding('utf8');
+      function onK(key) {
+        if (key === '\x1b' || key === 'q' || key === '\x03') {
+          stdin.removeListener('data', onK);
+          stdin.setRawMode(false);
+          stdin.pause();
+          resolve('cancel');
+        }
+      }
+      stdin.on('data', onK);
+    });
+
+    // Wait for match or cancel
+    while (!matched && !waitError) {
+      const result = await Promise.race([
+        new Promise(r => setTimeout(r, 100)),
+        cancelPromise,
+      ]);
+      if (result === 'cancel') {
+        clearInterval(waitInterval);
+        waitScreen.exit();
+        console.log = origLog;
+        // Refund wager on cancel
+        awardWager(wagerAmount);
+        return;
+      }
+    }
+
+    clearInterval(waitInterval);
+    waitScreen.exit();
+
+    if (waitError) {
+      console.log = origLog;
+      // Refund wager on timeout
+      awardWager(wagerAmount);
+      await showInfoScreen('WAGER', (scr) => {
+        scr.centerText(Math.floor(scr.height / 2), waitError, colors.rose);
+      });
+      return;
+    }
+
+    // Rebuild opponent sprite
+    if (opponent.specs) {
+      opponent.sprite = getSprite(opponent.specs);
+      if (opponent.skinId) {
+        opponent.sprite = applySkinOverride(opponent.sprite, opponent.skinId);
+      } else if (opponent.equippedParts) {
+        try {
+          const { applyTranscendentPartEffects } = require('../src/transcendentparts');
+          opponent.sprite = applyTranscendentPartEffects(opponent.sprite, opponent.equippedParts);
+        } catch {}
+      }
+    }
+    await prepareBenchToBattle(myFighter, opponent);
+
+    console.log = origLog;
+
+    // Compute seed
+    seed = combinedSeed(myFighter.id, opponent.id) ^ matchSeed;
+
+    // Run battle
+    let winner;
+    if (turnMode && renderTurnBattle) {
+      const myMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
+      try { registerSignatureAnims(myMoves.filter(m => m.signature)); } catch {}
+      const oppMoves = assignMoveset(opponent.stats, opponent.specs, opponent.archetype);
+      winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, {
+        role: 'host', roomCode, relayUrl: require('../src/relay').DEFAULT_RELAY_URL, seed,
+      });
+    } else {
+      const events = simulate(myFighter, opponent, seed);
+      winner = await renderBattle(myFighter, opponent, events);
+    }
+
+    // Wager payout
+    const won = winner === 'a';
+    const pot = wagerAmount * 2;
+
+    if (won) {
+      const newBal = awardWager(pot);
+      await showWagerResults(true, pot, newBal, myFighter, opponent);
+    } else {
+      await showWagerResults(false, pot, getBalance(), myFighter, opponent);
+    }
+
+    // Still save match history (but no normal credit rewards — wager replaces them)
+    saveMatch(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
+
+  } catch (err) {
+    console.log = origLog;
+    // Refund wager on error
+    awardWager(wagerAmount);
+    await showInfoScreen('ERROR', (scr) => {
+      scr.text(4, 4, `Wager error: ${err.message}`, colors.rose);
+      scr.text(4, 6, 'Your wager has been refunded.', colors.gold);
+      scr.text(4, 8, 'Press any key to return to menu.', colors.dim);
+    });
+  } finally {
+    console.log = origLog;
+  }
+}
+
+async function handleWagerJoin(fighter, sessionState) {
+  const { getBalance, deductWager, awardWager, formatBalance } = require('../src/credits');
+
+  // Step 1: Enter room code
+  const code = await textInput('JOIN WAGER', 'Enter wager room code:');
+  if (!code) return;
+
+  const { ROOM_CODE_PATTERN, joinOnline, DEFAULT_RELAY_URL } = require('../src/relay');
+  if (!ROOM_CODE_PATTERN.test(code)) {
+    await showInfoScreen('WAGER', (scr) => {
+      scr.centerText(Math.floor(scr.height / 2), 'Invalid room code. Wager rooms use online relay only.', colors.rose);
+    });
+    return;
+  }
+
+  // Suppress console.log
+  const origLog = console.log;
+  console.log = () => {};
+
+  let myFighter = fighter;
+  let opponent, matchSeed = 0, wagerAmount = 0;
+  const roomCode = code.toUpperCase();
+
+  try {
+    myFighter = await ensureSessionFighter(sessionState, myFighter);
+
+    // Peek at the room to learn the wager amount before joining
+    let roomInfo;
+    await withLoadingScreen(`Checking room ${roomCode}`, async () => {
+      const base = DEFAULT_RELAY_URL.replace(/\/$/, '');
+      const http = require('node:http');
+      const https = require('node:https');
+      const parsed = new URL(`${base}/rooms/${roomCode}`);
+      const mod = parsed.protocol === 'https:' ? https : http;
+      roomInfo = await new Promise((resolve, reject) => {
+        const req = mod.request(parsed, { method: 'GET', timeout: 10000 }, (res) => {
+          let data = '';
+          res.on('data', c => { data += c; });
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)); }
+            catch { reject(new Error('Invalid relay response')); }
+          });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+        req.end();
+      });
+    });
+
+    console.log = origLog;
+
+    if (roomInfo.error) {
+      await showInfoScreen('WAGER', (scr) => {
+        scr.centerText(Math.floor(scr.height / 2), `Room error: ${roomInfo.error}`, colors.rose);
+      });
+      return;
+    }
+
+    wagerAmount = roomInfo.wager || 0;
+    if (wagerAmount <= 0) {
+      await showInfoScreen('WAGER', (scr) => {
+        scr.centerText(Math.floor(scr.height / 2), 'This room is not a wager lobby.', colors.rose);
+      });
+      return;
+    }
+
+    const balance = getBalance();
+    if (balance < wagerAmount) {
+      await showInfoScreen('WAGER', (scr) => {
+        const cy = Math.floor(scr.height / 2);
+        scr.centerText(cy - 1, `This wager requires ${wagerAmount.toLocaleString()} credits`, colors.rose);
+        scr.centerText(cy + 1, `Your balance: ${formatBalance(balance)} credits`, colors.dim);
+      });
+      return;
+    }
+
+    // Confirm the wager
+    const confirm = await pickOption('ACCEPT WAGER?', [
+      { key: 'yes', label: `STAKE ${wagerAmount.toLocaleString()} CREDITS`, desc: `Winner takes ${(wagerAmount * 2).toLocaleString()} credits total` },
+      { key: 'no',  label: 'DECLINE', desc: 'Go back to menu' },
+    ]);
+    if (confirm !== 'yes') return;
+
+    // Deduct wager from joiner balance
+    if (!deductWager(wagerAmount)) {
+      await showInfoScreen('WAGER', (scr) => {
+        scr.centerText(Math.floor(scr.height / 2), 'Insufficient credits!', colors.rose);
+      });
+      return;
+    }
+
+    // Join the room
+    console.log = () => {};
+
+    await withLoadingScreen(`Joining wager room ${roomCode}`, async () => {
+      const result = await joinOnline(myFighter, roomCode, DEFAULT_RELAY_URL);
+      opponent = result.opponent;
+      matchSeed = result.matchSeed || 0;
+    });
+
+    // Rebuild opponent sprite
+    if (opponent.specs) {
+      opponent.sprite = getSprite(opponent.specs);
+      if (opponent.skinId) {
+        opponent.sprite = applySkinOverride(opponent.sprite, opponent.skinId);
+      } else if (opponent.equippedParts) {
+        try {
+          const { applyTranscendentPartEffects } = require('../src/transcendentparts');
+          opponent.sprite = applyTranscendentPartEffects(opponent.sprite, opponent.equippedParts);
+        } catch {}
+      }
+    }
+    await prepareBenchToBattle(myFighter, opponent);
+
+    console.log = origLog;
+
+    // Auto-detect turn mode (defaults to turns for richer experience)
+    const turnMode = !!renderTurnBattle;
+
+    const seed = combinedSeed(opponent.id, myFighter.id) ^ matchSeed;
+    let winner;
+
+    if (turnMode) {
+      const myMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
+      try { registerSignatureAnims(myMoves.filter(m => m.signature)); } catch {}
+      const oppMoves = assignMoveset(opponent.stats, opponent.specs, opponent.archetype);
+      winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, {
+        role: 'joiner', roomCode, relayUrl: DEFAULT_RELAY_URL, seed,
+      });
+    } else {
+      const events = simulate(opponent, myFighter, seed);
+      const swapped = events.map(e => {
+        const s = { ...e };
+        const swapAB = v => v === 'a' ? 'b' : v === 'b' ? 'a' : v;
+        if ('who' in s) s.who = swapAB(s.who);
+        if ('target' in s) s.target = swapAB(s.target);
+        if ('winner' in s) s.winner = swapAB(s.winner);
+        if ('loser' in s) s.loser = swapAB(s.loser);
+        if ('attacker' in s) s.attacker = swapAB(s.attacker);
+        const tmpHp = s.hpA; s.hpA = s.hpB; s.hpB = tmpHp;
+        const tmpMax = s.maxHpA; s.maxHpA = s.maxHpB; s.maxHpB = tmpMax;
+        const tmpFinal = s.finalHpA; s.finalHpA = s.finalHpB; s.finalHpB = tmpFinal;
+        return s;
+      });
+      winner = await renderBattle(myFighter, opponent, swapped);
+    }
+
+    // Wager payout
+    const won = winner === 'a';
+    const pot = wagerAmount * 2;
+
+    if (won) {
+      const newBal = awardWager(pot);
+      await showWagerResults(true, pot, newBal, myFighter, opponent);
+    } else {
+      await showWagerResults(false, pot, getBalance(), myFighter, opponent);
+    }
+
+    // Save match history (no normal credit rewards — wager replaces them)
+    saveMatch(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
+
+  } catch (err) {
+    console.log = origLog;
+    // Refund wager on error
+    if (wagerAmount > 0) awardWager(wagerAmount);
+    await showInfoScreen('ERROR', (scr) => {
+      scr.text(4, 4, `Wager error: ${err.message}`, colors.rose);
+      scr.text(4, 6, wagerAmount > 0 ? 'Your wager has been refunded.' : '', colors.gold);
+      scr.text(4, 8, 'Press any key to return to menu.', colors.dim);
+    });
+  } finally {
+    console.log = origLog;
+  }
+}
+
+// ─── Wager results screen ───
+async function showWagerResults(won, pot, currentBalance, myFighter, opponent) {
+  const { formatBalance } = require('../src/credits');
+  const scr = new Screen();
+  scr.enter();
+  const w = scr.width;
+  const h = scr.height;
+  const cy = Math.floor(h / 2);
+
+  scr.centerText(0, '\u2500'.repeat(w), colors.dimmer);
+  scr.centerText(0, ' WAGER COMPLETE ', rgb(255, 200, 50), null, true);
+
+  if (won) {
+    scr.centerText(cy - 5, '\u2605 \u2605 \u2605  V I C T O R Y  \u2605 \u2605 \u2605', colors.gold, null, true);
+    scr.centerText(cy - 3, 'You won the wager!', colors.cyan);
+
+    // Animate pot counter
+    const steps = Math.min(pot, 30);
+    for (let i = 1; i <= steps; i++) {
+      const current = Math.floor((pot * i) / steps);
+      scr.centerText(cy - 1, `\u25C6 +${current.toLocaleString()} credits`, colors.gold, null, true);
+      scr.render();
+      await sleep(30);
+    }
+    scr.centerText(cy - 1, `\u25C6 +${pot.toLocaleString()} credits`, colors.gold, null, true);
+    scr.centerText(cy + 1, `New balance: ${formatBalance(currentBalance)} credits`, colors.dim);
+  } else {
+    scr.centerText(cy - 5, 'D E F E A T', colors.rose, null, true);
+    scr.centerText(cy - 3, 'You lost the wager.', colors.dim);
+    scr.centerText(cy - 1, `\u25C6 -${(pot / 2).toLocaleString()} credits`, colors.rose, null, true);
+    scr.centerText(cy + 1, `Balance: ${formatBalance(currentBalance)} credits`, colors.dim);
+  }
+
+  scr.hline(2, h - 4, w - 4, '\u2500', colors.ghost);
+  scr.centerText(h - 3, 'Press any key to continue', colors.dimmer);
+  scr.text(w - 14, h - 1, '\u2500 kernelmon \u2500', colors.dimmer);
+  scr.render();
+
+  await waitForKey();
+  scr.exit();
+}
+
 async function handleHost(fighter, sessionState) {
   // Step 1: Pick battle mode
   const mode = await pickOption('HOST GAME', [
@@ -2652,6 +3258,9 @@ async function run() {
             scr.centerText(Math.floor(scr.height / 2), 'Redeem system unavailable', colors.rose);
           });
         }
+        break;
+      case 'wager':
+        await handleWager(fighter, sessionState);
         break;
       case 'host':
         await handleHost(fighter, sessionState);

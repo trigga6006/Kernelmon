@@ -5,6 +5,8 @@
 //   kmon host [--online] [--turns]   Host a battle (--turns for turn-based mode)
 //   kmon join <room-code>            Join an online battle
 //   kmon join <ip> [--port 7331]     Join a LAN battle
+//   kmon wager <amount> [--turns]    Host a wager match (online, stake credits)
+//   kmon wager join <room-code>      Join a wager match
 //   kmon demo [--turns]              Demo battle (--turns for turn-based)
 //   kmon rogue                       Rogue-like exploration mode
 //   kmon profile                     Show your PC's fighter stats
@@ -453,6 +455,200 @@ async function main() {
           console.log('\x1b[38;2;240;220;140m  ★ YOUR RIG WINS! ★\x1b[0m');
         } else {
           console.log('\x1b[38;2;130;220;235m  Opponent\'s rig wins.\x1b[0m');
+        }
+        console.log('');
+        break;
+      }
+
+      case 'wager': {
+        const { getBalance, deductWager, awardWager, formatBalance } = require('../src/credits');
+        const wagerSub = args[1];
+
+        if (wagerSub === 'join') {
+          // Join a wager room: kmon wager join ABCD-1234
+          const wagerCode = args[2];
+          if (!wagerCode || !ROOM_CODE_PATTERN.test(wagerCode)) {
+            console.error('\x1b[38;2;240;150;170m  ✗ Usage: kmon wager join <room-code>\x1b[0m');
+            process.exit(1);
+          }
+
+          console.log('\n\x1b[38;2;255;200;50m  ◆ WAGER MODE — Joining lobby...\x1b[0m');
+          console.log('\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m');
+          const specs = await getSpecs();
+          const myFighter = await prepareBenchToBattle(await buildFighter(specs));
+
+          // Peek at room to learn wager amount
+          const relayUrl = getFlag('--relay', DEFAULT_RELAY_URL);
+          const base = relayUrl.replace(/\/$/, '');
+          const http = require('node:http');
+          const https = require('node:https');
+          const peekParsed = new URL(`${base}/rooms/${wagerCode.toUpperCase()}`);
+          const peekMod = peekParsed.protocol === 'https:' ? https : http;
+          const roomInfo = await new Promise((resolve, reject) => {
+            const req = peekMod.request(peekParsed, { method: 'GET', timeout: 10000 }, (res) => {
+              let data = '';
+              res.on('data', c => { data += c; });
+              res.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid response')); } });
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+            req.end();
+          });
+
+          const wagerAmt = roomInfo.wager || 0;
+          if (wagerAmt <= 0) {
+            console.error('\x1b[38;2;240;150;170m  ✗ This room is not a wager lobby.\x1b[0m');
+            process.exit(1);
+          }
+
+          const bal = getBalance();
+          if (bal < wagerAmt) {
+            console.error(`\x1b[38;2;240;150;170m  ✗ Wager requires ${wagerAmt.toLocaleString()} credits. You have ${formatBalance(bal)}.\x1b[0m`);
+            process.exit(1);
+          }
+
+          console.log(`\x1b[38;2;255;200;50m  ◆ Wager: ${wagerAmt.toLocaleString()} credits each | Winner takes: ${(wagerAmt * 2).toLocaleString()}\x1b[0m`);
+          printFighter(myFighter, '\x1b[38;2;180;160;240m');
+
+          // Deduct wager
+          if (!deductWager(wagerAmt)) {
+            console.error('\x1b[38;2;240;150;170m  ✗ Insufficient credits!\x1b[0m');
+            process.exit(1);
+          }
+
+          try {
+            const result = await joinOnline(myFighter, wagerCode, relayUrl);
+            const opponent = result.opponent;
+            const matchSeed = result.matchSeed || 0;
+
+            if (opponent.specs) opponent.sprite = getSprite(opponent.specs);
+            console.log('\x1b[38;2;130;220;235m  ◆ Opponent found!\x1b[0m');
+            printFighter(opponent, '\x1b[38;2;130;220;235m', true);
+
+            const turnMode = args.includes('--turns');
+            const seed = combinedSeed(opponent.id, myFighter.id) ^ matchSeed;
+            let winner;
+
+            if (turnMode) {
+              const myMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
+              registerSignatureAnims(myMoves.filter(m => m.signature));
+              const oppMoves = assignMoveset(opponent.stats, opponent.specs, opponent.archetype);
+              console.log('\x1b[38;2;240;220;140m  ◆ Turn-based wager battle starting...\x1b[0m\n');
+              await sleep(2000);
+              winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, {
+                role: 'joiner', roomCode: wagerCode, relayUrl, seed,
+              });
+            } else {
+              console.log('\n\x1b[38;2;240;220;140m  ◆ Wager battle starting in 3 seconds...\x1b[0m\n');
+              await sleep(3000);
+              const events = simulate(opponent, myFighter, seed);
+              const swapped = events.map(e => {
+                const s = { ...e };
+                const swapAB = v => v === 'a' ? 'b' : v === 'b' ? 'a' : v;
+                if ('who' in s) s.who = swapAB(s.who);
+                if ('target' in s) s.target = swapAB(s.target);
+                if ('winner' in s) s.winner = swapAB(s.winner);
+                if ('loser' in s) s.loser = swapAB(s.loser);
+                if ('attacker' in s) s.attacker = swapAB(s.attacker);
+                const tmpHp = s.hpA; s.hpA = s.hpB; s.hpB = tmpHp;
+                const tmpMax = s.maxHpA; s.maxHpA = s.maxHpB; s.maxHpB = tmpMax;
+                const tmpFinal = s.finalHpA; s.finalHpA = s.finalHpB; s.finalHpB = tmpFinal;
+                return s;
+              });
+              winner = await renderBattle(myFighter, opponent, swapped);
+            }
+
+            const won = winner === 'a';
+            const pot = wagerAmt * 2;
+            console.log('');
+            if (won) {
+              const newBal = awardWager(pot);
+              console.log(`\x1b[38;2;255;215;0m  ★ YOU WIN THE WAGER! +${pot.toLocaleString()} credits (balance: ${formatBalance(newBal)}) ★\x1b[0m`);
+            } else {
+              console.log(`\x1b[38;2;240;150;170m  You lost the wager. -${wagerAmt.toLocaleString()} credits (balance: ${formatBalance(getBalance())})\x1b[0m`);
+            }
+            saveMatch(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
+          } catch (err) {
+            // Refund on error
+            awardWager(wagerAmt);
+            throw err;
+          }
+        } else {
+          // Host a wager: kmon wager <amount> [--turns]
+          const wagerAmt = parseInt(wagerSub, 10);
+          if (isNaN(wagerAmt) || wagerAmt < 100) {
+            console.error('\x1b[38;2;240;150;170m  ✗ Usage: kmon wager <amount> [--turns]\x1b[0m');
+            console.error('\x1b[38;2;240;150;170m    Amount must be at least 100 credits.\x1b[0m');
+            console.error('\x1b[38;2;240;150;170m    kmon wager join <room-code>   to join a wager lobby\x1b[0m');
+            process.exit(1);
+          }
+
+          const bal = getBalance();
+          if (bal < wagerAmt) {
+            console.error(`\x1b[38;2;240;150;170m  ✗ Insufficient credits. You have ${formatBalance(bal)}, need ${wagerAmt.toLocaleString()}.\x1b[0m`);
+            process.exit(1);
+          }
+
+          const turnMode = args.includes('--turns');
+          const relayUrl = getFlag('--relay', DEFAULT_RELAY_URL);
+
+          console.log('\n\x1b[38;2;255;200;50m  ◆ WAGER MODE\x1b[0m');
+          console.log('\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m');
+          const specs = await getSpecs();
+          const myFighter = await prepareBenchToBattle(await buildFighter(specs));
+          printFighter(myFighter, '\x1b[38;2;130;220;235m');
+
+          // Deduct wager
+          if (!deductWager(wagerAmt)) {
+            console.error('\x1b[38;2;240;150;170m  ✗ Insufficient credits!\x1b[0m');
+            process.exit(1);
+          }
+
+          try {
+            const result = await hostOnline(myFighter, relayUrl, wagerAmt);
+            const opponent = result.opponent;
+            const matchSeed = result.matchSeed || 0;
+            const roomCode = result.roomCode;
+
+            if (opponent.specs) opponent.sprite = getSprite(opponent.specs);
+            console.log('\x1b[38;2;180;160;240m  ◆ Opponent found!\x1b[0m');
+            console.log(`\x1b[38;2;255;200;50m  ◆ Wager: ${wagerAmt.toLocaleString()} credits each | Winner takes: ${(wagerAmt * 2).toLocaleString()}\x1b[0m`);
+            printFighter(opponent, '\x1b[38;2;180;160;240m', true);
+
+            const seed = combinedSeed(myFighter.id, opponent.id) ^ matchSeed;
+            let winner;
+
+            if (turnMode) {
+              const myMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
+              registerSignatureAnims(myMoves.filter(m => m.signature));
+              const oppMoves = assignMoveset(opponent.stats, opponent.specs, opponent.archetype);
+              console.log('\x1b[38;2;240;220;140m  ◆ Turn-based wager battle starting...\x1b[0m\n');
+              await sleep(2000);
+              winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, {
+                role: 'host', roomCode, relayUrl, seed,
+              });
+            } else {
+              console.log('\n\x1b[38;2;240;220;140m  ◆ Wager battle starting in 3 seconds...\x1b[0m\n');
+              await sleep(3000);
+              const events = simulate(myFighter, opponent, seed);
+              winner = await renderBattle(myFighter, opponent, events);
+            }
+
+            const won = winner === 'a';
+            const pot = wagerAmt * 2;
+            console.log('');
+            if (won) {
+              const newBal = awardWager(pot);
+              console.log(`\x1b[38;2;255;215;0m  ★ YOU WIN THE WAGER! +${pot.toLocaleString()} credits (balance: ${formatBalance(newBal)}) ★\x1b[0m`);
+            } else {
+              console.log(`\x1b[38;2;240;150;170m  You lost the wager. -${wagerAmt.toLocaleString()} credits (balance: ${formatBalance(getBalance())})\x1b[0m`);
+            }
+            saveMatch(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
+          } catch (err) {
+            // Refund on error
+            awardWager(wagerAmt);
+            throw err;
+          }
         }
         console.log('');
         break;

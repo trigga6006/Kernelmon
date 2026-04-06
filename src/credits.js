@@ -105,8 +105,27 @@ function formatBalance(bal) {
   return bal.toLocaleString();
 }
 
+// ─── Wager helpers ───
+
+function deductWager(amount) {
+  const data = loadCredits();
+  if (data.balance < amount) return false;
+  data.balance -= amount;
+  saveCredits(data);
+  return true;
+}
+
+function awardWager(amount) {
+  const data = loadCredits();
+  data.balance += amount;
+  data.lifetime += amount;
+  saveCredits(data);
+  return data.balance;
+}
+
 module.exports = {
   getBalance, getLifetimeEarned,
   addCredits, spendCredits,
+  deductWager, awardWager,
   calculateBattleCredits, calculateDashCredits, printCreditEarned, formatBalance,
 };

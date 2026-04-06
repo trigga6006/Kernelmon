@@ -445,6 +445,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   let cursorCol = 0;   // 0 = left column, 1 = right column
   let selectMode = 'moves'; // 'moves' | 'bag'
   let bagItems = [];
+  let bagScroll = 0; // scroll offset for bag list
   // Helper: get linear move index from row/col
   function getCursorIndex() { return cursorRow * 2 + cursorCol; }
   // Legacy compat: expose cursor as linear index for auto-select etc.
@@ -630,6 +631,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
           bagItems = getOwnedItems();
           cursor = bagItems.findIndex(it => it.id === plan.itemId);
           if (cursor < 0) cursor = 0;
+          bagScroll = Math.max(0, cursor - (logHeight - 2));
           setTimeout(() => {
             if (moveResolve && bagItems.length > 0) {
               const r = moveResolve; moveResolve = null;
@@ -712,6 +714,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         bagItems = getOwnedItems();
         selectMode = 'bag';
         cursor = 0;
+        bagScroll = 0;
       } else if (key === '\r' || key === '\n' || key === ' ') {
         if (cursor < movesetA.length) {
           const move = movesetA[cursor];
@@ -724,10 +727,17 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         }
       }
     } else if (selectMode === 'bag') {
+      const bagVisible = logHeight - 1;
       if (key === '\x1b[A' || key === 'k') {
         if (bagItems.length > 0) cursor = (cursor - 1 + bagItems.length) % bagItems.length;
+        if (cursor < bagScroll) bagScroll = cursor;
+        if (cursor >= bagScroll + bagVisible) bagScroll = cursor - bagVisible + 1;
+        if (cursor === bagItems.length - 1 && bagScroll === 0) bagScroll = Math.max(0, bagItems.length - bagVisible); // wrap to bottom
       } else if (key === '\x1b[B' || key === 'j') {
         if (bagItems.length > 0) cursor = (cursor + 1) % bagItems.length;
+        if (cursor >= bagScroll + bagVisible) bagScroll = cursor - bagVisible + 1;
+        if (cursor < bagScroll) bagScroll = cursor;
+        if (cursor === 0) bagScroll = 0; // wrap to top
       } else if (key === '\r' || key === '\n' || key === ' ') {
         if (bagItems.length > 0 && cursor < bagItems.length) {
           if (moveResolve) { const r = moveResolve; moveResolve = null; r({ type: 'item', item: bagItems[cursor] }); }
@@ -1410,9 +1420,15 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       if (bagItems.length === 0) {
         screen.text(logX + 3, logY + 1, 'Bag is empty! Win battles to earn items.', colors.dim);
       } else {
-        for (let i = 0; i < Math.min(bagItems.length, logHeight - 1); i++) {
+        const bagVisible = logHeight - 1;
+        const hasAbove = bagScroll > 0;
+        const hasBelow = bagScroll + bagVisible < bagItems.length;
+
+        for (let vi = 0; vi < Math.min(bagVisible, bagItems.length); vi++) {
+          const i = bagScroll + vi;
+          if (i >= bagItems.length) break;
           const item = bagItems[i];
-          const y = logY + 1 + i;
+          const y = logY + 1 + vi;
           const selected = i === cursor;
           const rc = RARITY_COLORS[item.rarity] || colors.dim;
 
@@ -1427,6 +1443,10 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
             screen.text(logX + 28, y, item.desc.slice(0, logW - 32), colors.dimmer);
           }
         }
+
+        // Scroll indicators
+        if (hasAbove) screen.text(logX + logW - 3, logY + 1, '▲', colors.dim);
+        if (hasBelow) screen.text(logX + logW - 3, logY + bagVisible, '▼', colors.dim);
       }
     }
   }

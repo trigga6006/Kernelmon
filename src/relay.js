@@ -64,12 +64,14 @@ function httpRequest(url, method, body = null) {
 
 // ─── Host: create room and wait for opponent ───
 
-async function hostOnline(myFighter, relayUrl = DEFAULT_RELAY_URL) {
+async function hostOnline(myFighter, relayUrl = DEFAULT_RELAY_URL, wager = 0) {
   const base = relayUrl.replace(/\/$/, '');
 
   // Create room
   console.log('\x1b[38;2;130;220;235m  ◆ Creating room on relay...\x1b[0m');
-  const createResult = await httpRequest(`${base}/rooms`, 'POST', { fighter: myFighter });
+  const body = { fighter: myFighter };
+  if (wager > 0) body.wager = wager;
+  const createResult = await httpRequest(`${base}/rooms`, 'POST', body);
   const code = createResult.code;
   let matchSeed = createResult.matchSeed || 0;
 
@@ -92,7 +94,7 @@ async function hostOnline(myFighter, relayUrl = DEFAULT_RELAY_URL) {
     try {
       const result = await httpRequest(`${base}/rooms/${code}`, 'GET');
       if (result.status === 'matched' && result.fighter) {
-        return { opponent: result.fighter, roomCode: code, matchSeed: result.matchSeed || matchSeed };
+        return { opponent: result.fighter, roomCode: code, matchSeed: result.matchSeed || matchSeed, wager: result.wager || 0 };
       }
     } catch (err) {
       // Rate limited — back off and retry
@@ -123,7 +125,7 @@ async function joinOnline(myFighter, roomCode, relayUrl = DEFAULT_RELAY_URL) {
   }
 
   console.log('\x1b[38;2;180;160;240m  ◆ Matched! Exchanging specs...\x1b[0m');
-  return { opponent: result.fighter, matchSeed: result.matchSeed || 0 };
+  return { opponent: result.fighter, matchSeed: result.matchSeed || 0, wager: result.wager || 0 };
 }
 
 function sleep(ms) {

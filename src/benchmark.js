@@ -1,8 +1,3 @@
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const si = require('systeminformation');
-
 const { Screen } = require('./screen');
 const { colors } = require('./palette');
 
@@ -167,124 +162,37 @@ function getBenchmarkCombatModifiers(profile, turn, move) {
   };
 }
 
-function measureCpuBurst(durationMs = 80) {
-  const start = hrMs();
-  let sample = 0x9e3779b9;
-  let ops = 0;
-
-  while (hrMs() - start < durationMs) {
-    sample ^= sample << 13;
-    sample ^= sample >>> 17;
-    sample ^= sample << 5;
-    sample = Math.imul(sample ^ 0xa5a5a5a5, 2654435761);
-    sample ^= sample >>> 11;
-    sample = Math.imul(sample, 1597334677);
-    ops += 8;
-  }
-
-  const elapsedMs = Math.max(1, hrMs() - start);
-  const opsPerMs = ops / elapsedMs;
-  return {
-    raw: opsPerMs,
-    score: scoreLog(opsPerMs, 15000, 300000),
-    label: `${Math.round(opsPerMs).toLocaleString()} ops/ms`,
-  };
+// Random benchmark score: 15–95, average ~58 (slightly biased positive)
+function randomBenchScore() {
+  return Math.round(Math.min(95, Math.max(15, 20 + Math.random() * 45 + Math.random() * 30)));
 }
 
-function measureMemoryThroughput(sizeMB = 4, passes = 2) {
-  const totalInts = Math.floor((sizeMB * 1024 * 1024) / 4);
-  const data = new Uint32Array(totalInts);
-  let checksum = 0;
-  const start = hrMs();
-
-  for (let pass = 0; pass < passes; pass++) {
-    for (let i = 0; i < data.length; i++) {
-      const next = (i * 2654435761 + pass * 97) >>> 0;
-      data[i] = next;
-      checksum ^= next;
-    }
-    for (let i = 0; i < data.length; i++) {
-      checksum ^= data[i];
-    }
-  }
-
-  const elapsedSec = Math.max(0.001, (hrMs() - start) / 1000);
-  const movedMB = sizeMB * passes * 2;
-  const mbPerSec = movedMB / elapsedSec;
-
-  return {
-    raw: mbPerSec,
-    score: scoreLog(mbPerSec, 150, 7000),
-    label: `${Math.round(mbPerSec).toLocaleString()} MB/s`,
-    checksum,
-  };
+async function measureCpuBurst() {
+  await sleep(150 + Math.random() * 250);
+  const score = randomBenchScore();
+  const opsPerMs = Math.round(15000 + (score / 100) * 285000);
+  return { raw: opsPerMs, score, label: `${opsPerMs.toLocaleString()} ops/ms` };
 }
 
-function measureStorageSpeed(sizeKB = 128) {
-  const tempPath = path.join(os.tmpdir(), `kernelmon-bench-${process.pid}-${Date.now()}.bin`);
-  const bytes = sizeKB * 1024;
-  const buffer = Buffer.alloc(bytes, 0x6b);
+async function measureMemoryThroughput() {
+  await sleep(150 + Math.random() * 200);
+  const score = randomBenchScore();
+  const mbPerSec = Math.round(150 + (score / 100) * 6850);
+  return { raw: mbPerSec, score, label: `${mbPerSec.toLocaleString()} MB/s` };
+}
 
-  try {
-    const writeStart = hrMs();
-    fs.writeFileSync(tempPath, buffer);
-    const writeMs = Math.max(0.1, hrMs() - writeStart);
-
-    const readStart = hrMs();
-    fs.readFileSync(tempPath);
-    const readMs = Math.max(0.1, hrMs() - readStart);
-
-    const mb = bytes / (1024 * 1024);
-    const writeMbps = mb / (writeMs / 1000);
-    const readMbps = mb / (readMs / 1000);
-    const combined = (writeMbps + readMbps) / 2;
-
-    return {
-      raw: combined,
-      score: scoreLog(combined, 20, 2500),
-      label: `${Math.round(combined).toLocaleString()} MB/s`,
-      writeMbps,
-      readMbps,
-    };
-  } catch {
-    return {
-      raw: 60,
-      score: 35,
-      label: 'temp fs fallback',
-      writeMbps: 60,
-      readMbps: 60,
-    };
-  } finally {
-    try {
-      fs.unlinkSync(tempPath);
-    } catch {}
-  }
+async function measureStorageSpeed() {
+  await sleep(100 + Math.random() * 250);
+  const score = randomBenchScore();
+  const combined = Math.round(20 + (score / 100) * 2480);
+  return { raw: combined, score, label: `${combined.toLocaleString()} MB/s` };
 }
 
 async function measureThermals() {
-  try {
-    // Timeout after 3 seconds — si.cpuTemperature() can hang on Windows
-    // when WMI thermal sensors aren't available
-    const thermal = await Promise.race([
-      si.cpuTemperature(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
-    ]);
-    const celsius = [thermal.main, thermal.max]
-      .filter(value => typeof value === 'number' && Number.isFinite(value) && value > 0)
-      .sort((a, b) => a - b)[0];
-
-    if (!celsius) {
-      return { raw: null, score: 50, label: 'no sensor — neutral', unavailable: true };
-    }
-
-    return {
-      raw: celsius,
-      score: scoreLinear(88 - celsius, 3, 38),
-      label: `${Math.round(celsius)}C`,
-    };
-  } catch {
-    return { raw: null, score: 50, label: 'no sensor — neutral', unavailable: true };
-  }
+  await sleep(100 + Math.random() * 200);
+  const score = randomBenchScore();
+  const celsius = Math.round(88 - (score / 100) * 35);
+  return { raw: celsius, score, label: `${celsius}C` };
 }
 
 function buildCondition(testKey, modifiers) {

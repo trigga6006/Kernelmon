@@ -147,20 +147,26 @@ const server = http.createServer(async (req, res) => {
       // matchSeed: random number both players get for per-match variety
       const matchSeed = crypto.randomBytes(4).readUInt32BE(0);
 
+      // Wager support: optional credit amount both players stake
+      const wager = typeof body.wager === 'number' && body.wager > 0
+        ? Math.floor(body.wager)
+        : 0;
+
       rooms.set(normalized, {
         hostFighter: body.fighter,
         joinerFighter: null,
         createdAt: Date.now(),
         endedAt: null,
         matchSeed,
+        wager,
         // Turn-based state
         turnNum: 0,
         hostMove: null,
         joinerMove: null,
       });
 
-      console.log(`[+] Room ${code} created by ${ip} (${rooms.size} active)`);
-      return json(res, 201, { code, matchSeed });
+      console.log(`[+] Room ${code} created by ${ip} (${rooms.size}${wager ? ` wager:${wager}` : ''} active)`);
+      return json(res, 201, { code, matchSeed, wager });
     }
 
     // GET /rooms/:code — host polls for joiner
@@ -173,10 +179,10 @@ const server = http.createServer(async (req, res) => {
       if (room.joinerFighter) {
         // Match found — return joiner's fighter (room stays alive for turns)
         const fighter = room.joinerFighter;
-        const { matchSeed } = room;
-        return json(res, 200, { status: 'matched', fighter, matchSeed });
+        const { matchSeed, wager } = room;
+        return json(res, 200, { status: 'matched', fighter, matchSeed, wager });
       }
-      return json(res, 200, { status: 'waiting' });
+      return json(res, 200, { status: 'waiting', wager: room.wager });
     }
 
     // POST /rooms/:code/join — joiner submits fighter
@@ -192,7 +198,7 @@ const server = http.createServer(async (req, res) => {
 
       room.joinerFighter = body.fighter;
       console.log(`[*] Room ${joinMatch[1]} matched! (${ip})`);
-      return json(res, 200, { status: 'matched', fighter: room.hostFighter, matchSeed: room.matchSeed });
+      return json(res, 200, { status: 'matched', fighter: room.hostFighter, matchSeed: room.matchSeed, wager: room.wager });
     }
 
     // POST /rooms/:code/turn — submit a move choice
