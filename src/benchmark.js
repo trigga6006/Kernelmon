@@ -263,13 +263,18 @@ function measureStorageSpeed(sizeKB = 128) {
 
 async function measureThermals() {
   try {
-    const thermal = await si.cpuTemperature();
+    // Timeout after 3 seconds — si.cpuTemperature() can hang on Windows
+    // when WMI thermal sensors aren't available
+    const thermal = await Promise.race([
+      si.cpuTemperature(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+    ]);
     const celsius = [thermal.main, thermal.max]
       .filter(value => typeof value === 'number' && Number.isFinite(value) && value > 0)
       .sort((a, b) => a - b)[0];
 
     if (!celsius) {
-      return { raw: null, score: null, label: 'sensor unavailable', unavailable: true };
+      return { raw: null, score: 50, label: 'no sensor — neutral', unavailable: true };
     }
 
     return {
@@ -278,7 +283,7 @@ async function measureThermals() {
       label: `${Math.round(celsius)}C`,
     };
   } catch {
-    return { raw: null, score: null, label: 'sensor unavailable', unavailable: true };
+    return { raw: null, score: 50, label: 'no sensor — neutral', unavailable: true };
   }
 }
 
@@ -452,8 +457,9 @@ function renderFrame(screen, fighter, opponent, title, subtitle, results, active
     screen.text(8, y, label.padEnd(18), result ? colors.white : colors.dim, null, !!result);
     if (result) {
       screen.text(28, y, String(result.label || '').slice(0, 20), toneColor(activeKey === key ? 'focus' : 'speed'));
-      screen.bar(50, y, Math.min(16, w - 56), (result.score || 0) / 100, colors.mint, colors.ghost);
-      screen.text(50 + Math.min(16, w - 56) + 1, y, `${String(result.score).padStart(3)}%`, colors.dim);
+      const displayScore = typeof result.score === 'number' ? result.score : 50;
+      screen.bar(50, y, Math.min(16, w - 56), displayScore / 100, colors.mint, colors.ghost);
+      screen.text(50 + Math.min(16, w - 56) + 1, y, result.unavailable ? ' N/A' : `${String(displayScore).padStart(3)}%`, colors.dim);
     } else if (selected) {
       screen.text(28, y, 'sampling...', colors.gold);
     } else {
@@ -602,6 +608,9 @@ async function runBenchmarkSequence(screen, fighter, opponent, stdin) {
     renderFrame(screen, fighter, opponent, 'BENCH TO BATTLE', `${step.key.toUpperCase()} locked in.`, results, step.key);
     await sleep(220);
   }
+
+  // Flush any stale keypresses from stdin (user may have typed during thermal wait)
+  stdin.read();
 
   results.reflex = await captureReflexTrial(screen, fighter, opponent, results, stdin);
   renderFrame(screen, fighter, opponent, 'BENCH TO BATTLE', 'Conditions compiled.', results, 'reflex', ['Press Enter to deploy these live conditions.']);
