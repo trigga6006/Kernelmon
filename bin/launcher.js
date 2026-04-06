@@ -96,6 +96,7 @@ const MENU_ITEMS = [
   { key: 'market',      label: 'MARKET',            desc: 'Trade skins with players',   icon: '⇌' },
   { key: 'kerneldex',   label: 'KERNELDEX',        desc: 'Rigs you\'ve scanned',       icon: '◈' },
   { key: 'guide',       label: 'GUIDE',            desc: 'Combat basics & matchups',   icon: '?' },
+  { key: 'redeem',      label: 'REDEEM CODE',      desc: 'Enter a code for rewards',   icon: '▸' },
   { key: 'history',     label: 'BATTLE LOG',       desc: 'Past match history',         icon: '▤' },
   { key: 'host',        label: 'HOST GAME',        desc: 'Host a battle for others',   icon: '◎' },
   { key: 'join',        label: 'JOIN BATTLE',      desc: 'Enter a room code to join',  icon: '↗' },
@@ -118,6 +119,7 @@ const ITEM_COLORS = {
   market:      rgb(180, 220, 140),
   kerneldex:   rgb(130, 220, 235),
   guide:       rgb(180, 210, 255),
+  redeem:      rgb(130, 255, 180),
   history:     colors.dim,
   host:        colors.coral,
   join:        colors.lilac,
@@ -158,7 +160,7 @@ const MENU_GROUPS = [
     desc: 'Loot, battle log, and future extras',
     icon: '.',
     defaultExpanded: false,
-    items: ['guide', 'demo', 'demo_turns', 'kerneldex', 'lootbox', 'market', 'history'],
+    items: ['guide', 'demo', 'demo_turns', 'kerneldex', 'lootbox', 'market', 'redeem', 'history'],
   },
   { type: 'item', key: 'quit' },
 ];
@@ -2632,6 +2634,16 @@ async function run() {
         break;
       case 'history':
         await handleHistory();
+        break;
+      case 'redeem':
+        try {
+          const { openRedeemScreen } = require('../src/redeem');
+          await openRedeemScreen();
+        } catch (e) {
+          await showInfoScreen('REDEEM CODE', (scr) => {
+            scr.centerText(Math.floor(scr.height / 2), 'Redeem system unavailable', colors.rose);
+          });
+        }
         break;
       case 'host':
         await handleHost(fighter, sessionState);

@@ -6,6 +6,12 @@
 // Does NOT render when a skin is equipped (skin takes priority).
 // ALL equipped Transcendent parts stack their effects simultaneously.
 // Full set (all 4 slots transcendent) triggers additional mega-effects.
+//
+// Design principles:
+//   - Structured form over random noise (clear shapes, not scattered dots)
+//   - Each effect has a hovering companion entity for personality
+//   - Smooth continuous motion, not random blinking/teleporting
+//   - GPU companions: right flank | CPU: above | RAM: left flank | Storage: below
 // ═══════════════════════════════════════════════════════════════
 
 const { rgb } = require('./palette');
@@ -23,14 +29,19 @@ function transcendentGlow(frame, phase) {
 
 function hash(a, b) { return ((a * 2654435761) ^ (b * 340573321)) >>> 0; }
 
-// Sine wave helper (returns 0–1)
+// Sine wave 0–1
 function wave(frame, period, phase) {
   return Math.sin(((frame + (phase || 0)) % period) / period * Math.PI * 2) * 0.5 + 0.5;
 }
 
-// Sprite bounds for effect placement (14 wide × 12 tall standard sprite)
+// Smooth bob offset (returns -1, 0, or 1)
+function bob(frame, speed) {
+  return Math.round(Math.sin(frame * (speed || 0.08)) * 1.0);
+}
+
+// Sprite bounds (14 wide × 12 tall standard sprite)
 const SW = 14, SH = 12;
-const CX = 7, CY = 5; // sprite center
+const CX = 7, CY = 5;
 
 // ═══════════════════════════════════════════════════════════════
 // TRANSCENDENT EFFECT DEFINITIONS
@@ -40,7 +51,7 @@ const TRANSCENDENT_EFFECTS = {
 
   // ─────────────────────────────────────────
   // GPU: NVIDIA B200 Blackwell — "Digital Godstorm"
-  // Dense matrix rain, energy border, dual scan beams
+  // Structured matrix columns, energy border, hovering data drone
   // ─────────────────────────────────────────
   blackwell_b200: {
     theme: {
@@ -57,68 +68,56 @@ const TRANSCENDENT_EFFECTS = {
       const mid = rgb(0, 180, 40);
       const dk = rgb(0, 100, 25);
 
-      // Dense matrix rain — 10 columns spanning well beyond sprite
-      for (let col = -4; col <= SW + 3; col += 2) {
-        for (let row = -2; row < SH + 3; row++) {
-          const phase = (frame * 2 + col * 7 + row * 3) % 16;
-          if (phase < 5) {
-            const ch = String.fromCharCode(0x30 + (hash(col, frame + row) % 10));
-            const bright = phase === 0 ? grn : phase < 2 ? mid : dk;
-            s.set(ox + col, oy + row, ch, bright);
-          }
+      // 4 defined matrix columns — 2 per side, smooth downward scroll
+      const colPositions = [-3, -1, SW, SW + 2];
+      for (const col of colPositions) {
+        for (let row = -3; row < SH + 3; row++) {
+          // Smooth scrolling digit stream (not random teleport)
+          const scrollY = (frame + row * 3 + col * 7) % 18;
+          const ch = String.fromCharCode(0x30 + ((row + frame) % 10));
+          const bright = scrollY < 2 ? grn : scrollY < 5 ? mid : scrollY < 8 ? dk : null;
+          if (bright) s.set(ox + col, oy + row, ch, bright);
         }
       }
 
-      // Energy border — solid glowing frame around sprite
+      // Clean energy border — solid green frame
       for (let x = -1; x <= SW; x++) {
-        const bc = ((frame + x * 3) % 12 < 6) ? grn : mid;
-        s.set(ox + x, oy - 2, '▄', bc);
-        s.set(ox + x, oy + SH + 1, '▀', bc);
+        s.set(ox + x, oy - 2, '▄', mid);
+        s.set(ox + x, oy + SH + 1, '▀', mid);
       }
       for (let y = -1; y < SH + 1; y++) {
-        const bc = ((frame + y * 4) % 12 < 6) ? grn : mid;
-        s.set(ox - 2, oy + y, '▐', bc);
-        s.set(ox + SW + 1, oy + y, '▌', bc);
-      }
-
-      // Digital rune band above sprite
-      const runes = '◈✦★⚡◆▣◉✧';
-      for (let x = 0; x < SW; x += 2) {
-        const ri = hash(x, Math.floor(frame / 4)) % runes.length;
-        const rc = ((frame + x * 5) % 8 < 4) ? grn : dk;
-        s.set(ox + x, oy - 3, runes[ri], rc);
+        s.set(ox - 2, oy + y, '▐', mid);
+        s.set(ox + SW + 1, oy + y, '▌', mid);
       }
     },
     drawOverlay(s, ox, oy, frame) {
       const grn = rgb(0, 255, 100);
-      const bright = rgb(120, 255, 160);
+      const mid = rgb(0, 180, 40);
+      const dk = rgb(0, 100, 25);
 
-      // Dual scan beams — horizontal and vertical
-      const hScan = Math.floor(((frame % 30) / 30) * SH);
+      // Single clean scan beam — horizontal sweep
+      const scanY = Math.floor(((frame % 40) / 40) * SH);
       for (let x = 0; x < SW; x++) {
-        if ((frame + x) % 2 === 0) s.set(ox + x, oy + hScan, '─', grn);
-      }
-      const vScan = Math.floor(((frame % 25) / 25) * SW);
-      for (let y = 0; y < SH; y++) {
-        if ((frame + y) % 3 === 0) s.set(ox + vScan, oy + y, '│', grn);
+        s.set(ox + x, oy + scanY, '─', grn);
       }
 
-      // Code injection — hex values flashing on sprite body
-      for (let i = 0; i < 4; i++) {
-        const seed = hash(i, Math.floor(frame / 3));
-        const px = seed % SW;
-        const py = (seed >> 8) % SH;
-        const hex = ((frame + i * 17) % 256).toString(16).toUpperCase();
-        if ((frame + i * 7) % 10 < 4) {
-          s.set(ox + px, oy + py, hex[0], bright);
-        }
+      // ── Companion: hovering data drone (right flank) ──
+      const dy = bob(frame, 0.07);
+      const cx = SW + 3, cy = CY - 1 + dy;
+      s.set(ox + cx - 1, oy + cy, '─', mid);
+      s.set(ox + cx,     oy + cy, '◈', grn);
+      s.set(ox + cx + 1, oy + cy, '─', mid);
+      s.set(ox + cx,     oy + cy + 1, '│', dk);
+      // Drone canopy
+      if (frame % 30 < 25) {
+        s.set(ox + cx, oy + cy - 1, '▀', dk);
       }
     },
   },
 
   // ─────────────────────────────────────────
   // GPU: NVIDIA Rubin Ultra — "Solar Furnace"
-  // Thick heat shimmer, molten border, rising plasma
+  // Structured heat shimmer, molten border, solar wisp companion
   // ─────────────────────────────────────────
   rubin_ultra: {
     theme: {
@@ -134,73 +133,56 @@ const TRANSCENDENT_EFFECTS = {
       const hot = rgb(255, 250, 220);
       const warm = rgb(255, 200, 100);
       const ember = rgb(220, 140, 50);
-      const shimmerChars = ['░', '▒', '▓', '█', '▓', '▒'];
+      const shimmerChars = ['░', '▒', '▓', '▒'];
 
-      // Thick shimmer border — 2 cells deep on all sides
+      // Clean shimmer border — 1 cell deep, smooth cycling
       for (let y = -1; y < SH + 1; y++) {
-        for (let layer = 0; layer < 2; layer++) {
-          const ch = shimmerChars[(frame + y * 2 + layer * 3) % 6];
-          const col = layer === 0 ? hot : warm;
-          s.set(ox - 1 - layer, oy + y, ch, col);
-          s.set(ox + SW + layer, oy + y, shimmerChars[(frame + y * 2 + layer * 3 + 2) % 6], col);
+        const ch = shimmerChars[(frame + y * 2) % 4];
+        s.set(ox - 1, oy + y, ch, hot);
+        s.set(ox + SW, oy + y, shimmerChars[(frame + y * 2 + 2) % 4], hot);
+      }
+      for (let x = -1; x <= SW; x++) {
+        s.set(ox + x, oy - 1, shimmerChars[(frame + x) % 4], warm);
+      }
+
+      // Organized rising heat — 3 fixed columns above sprite, smooth Y motion
+      const heatCols = [2, CX, SW - 3];
+      for (const hx of heatCols) {
+        for (let i = 0; i < 3; i++) {
+          const hy = -2 - ((frame + i * 8 + hx * 3) % 6);
+          const ch = i === 0 ? '°' : '·';
+          if (hy >= -5) s.set(ox + hx, oy + hy, ch, i === 0 ? hot : ember);
         }
       }
-      // Top border — 2 rows of heat waves
+
+      // Molten floor — solid gradient
       for (let x = -1; x <= SW; x++) {
-        const ch1 = shimmerChars[(frame + x * 2) % 6];
-        s.set(ox + x, oy - 1, ch1, warm);
-        const waveChars = ['~', '≈', '~', '∿'];
-        s.set(ox + x, oy - 2, waveChars[(frame + x * 3) % 4], ember);
-      }
-      // Heat waves — 3 rows above
-      for (let row = 0; row < 3; row++) {
-        for (let x = 0; x < SW; x += 2) {
-          const vis = (frame + x * 3 + row * 7) % 10 < 5;
-          if (vis) {
-            s.set(ox + x, oy - 3 - row, '~', row === 0 ? warm : ember);
-          }
-        }
-      }
-      // Molten floor — 2 rows below
-      for (let x = -1; x <= SW; x++) {
-        const fc = ((frame + x * 4) % 8 < 4) ? hot : warm;
-        s.set(ox + x, oy + SH, '▀', fc);
-        s.set(ox + x, oy + SH + 1, shimmerChars[(frame + x * 2) % 6], ember);
+        const pulse = wave(frame, 25, x * 2);
+        s.set(ox + x, oy + SH, '▀', pulse > 0.5 ? hot : warm);
+        s.set(ox + x, oy + SH + 1, '░', ember);
       }
     },
     drawOverlay(s, ox, oy, frame) {
-      // 8 rising heat particles
-      const heatChars = ['°', '˚', '·', '∘', '°', '˚'];
-      for (let i = 0; i < 8; i++) {
-        const seed = hash(i, Math.floor(frame / 3));
-        const px = seed % SW;
-        const py = -1 - ((frame + i * 4) % (SH + 6));
-        const ch = heatChars[seed % 6];
-        const hc = (seed % 3 === 0) ? rgb(255, 255, 240) : rgb(255, 210, 130);
-        if (oy + py >= oy - 4) s.set(ox + px, oy + py, ch, hc);
-      }
-      // Sunspot flares — bright flashes at random positions
-      for (let i = 0; i < 3; i++) {
-        if ((frame + i * 11) % 15 < 3) {
-          const sx = hash(frame + i, 33) % SW;
-          const sy = hash(frame + i, 77) % SH;
-          s.set(ox + sx, oy + sy, '✦', rgb(255, 255, 255));
-        }
-      }
-      // Corona streaks — horizontal bright lines
-      const streakY = (frame % 20 < 10) ? (frame % 10) : 9 - (frame % 10);
-      const sRow = Math.floor(streakY * SH / 10);
-      if (sRow >= 0 && sRow < SH && (frame % 3 === 0)) {
-        for (let x = 0; x < SW; x += 2) {
-          s.set(ox + x, oy + sRow, '═', rgb(255, 255, 255));
-        }
-      }
+      const hot = rgb(255, 250, 220);
+      const warm = rgb(255, 200, 100);
+      const ember = rgb(220, 140, 50);
+
+      // ── Companion: solar wisp (right flank) ──
+      const dy = bob(frame, 0.06);
+      const wx = SW + 3, wy = CY + dy;
+      s.set(ox + wx, oy + wy - 1, '✦', hot);
+      s.set(ox + wx - 1, oy + wy, '╱', warm);
+      s.set(ox + wx + 1, oy + wy, '╲', warm);
+      s.set(ox + wx, oy + wy, '▓', hot);
+      // Wisp flame flicker
+      const flickCh = frame % 12 < 6 ? '°' : '·';
+      s.set(ox + wx, oy + wy - 2, flickCh, ember);
     },
   },
 
   // ─────────────────────────────────────────
   // GPU: AMD Instinct MI350X — "Infernal Forge"
-  // Massive forge glow, ember columns, lava cracks, volcanic burst
+  // Forge glow, defined ember streams, forge hammer companion
   // ─────────────────────────────────────────
   mi350x: {
     theme: {
@@ -215,90 +197,61 @@ const TRANSCENDENT_EFFECTS = {
     drawAura(s, ox, oy, frame) {
       const fire = rgb(255, 80, 20);
       const lava = rgb(255, 180, 40);
-      const ember = rgb(200, 50, 10);
       const ash = rgb(120, 30, 8);
 
-      // Forge glow — bottom 3 rows, wide spread
-      const pulse = wave(frame, 20, 0);
-      for (let row = 0; row < 3; row++) {
-        const width = SW + 4 - row * 2;
-        const startX = -2 + row;
-        for (let x = startX; x < startX + width; x++) {
-          const intensity = (frame + x * 5 + row * 3) % 8;
-          const ch = intensity < 2 ? '█' : intensity < 4 ? '▓' : '░';
-          const glowR = Math.floor(200 + 55 * pulse);
-          const col = intensity < 4 ? rgb(glowR, 40 + Math.floor(30 * pulse), 5) : ash;
-          s.set(ox + x, oy + SH + row, ch, col);
-        }
+      // Forge glow — bottom 2 rows, solid gradient
+      const pulse = wave(frame, 25, 0);
+      for (let x = -2; x <= SW + 1; x++) {
+        const glowR = Math.floor(200 + 55 * pulse);
+        s.set(ox + x, oy + SH, '▀', rgb(glowR, 50, 8));
+        s.set(ox + x, oy + SH + 1, '░', ash);
       }
 
-      // Side ember columns — rising particles on both flanks
-      for (let side = 0; side < 2; side++) {
-        const baseX = side === 0 ? -3 : SW + 2;
-        for (let y = SH + 1; y >= -2; y--) {
-          const phase = (frame * 2 + y * 3 + side * 17) % 20;
-          if (phase < 6) {
-            const ch = phase < 2 ? '▓' : phase < 4 ? '░' : '·';
-            const col = phase < 2 ? fire : phase < 4 ? ember : ash;
-            s.set(ox + baseX, oy + y, ch, col);
-            s.set(ox + baseX + (side === 0 ? 1 : -1), oy + y, phase < 3 ? '░' : '·', col);
+      // 4 defined ember streams — fixed X positions, smooth rise
+      const emberCols = [-2, -1, SW, SW + 1];
+      const emberChars = ['·', '∘', '°', '•'];
+      for (const ex of emberCols) {
+        for (let i = 0; i < 4; i++) {
+          const ey = SH - ((frame + i * 5 + ex * 3) % (SH + 6));
+          if (ey >= -2 && ey < SH + 1) {
+            const ch = emberChars[i % 4];
+            const col = (i < 2) ? fire : lava;
+            s.set(ox + ex, oy + ey, ch, col);
           }
         }
       }
 
-      // Lava cracks across bottom edge
-      for (let x = -1; x <= SW; x++) {
-        if ((frame + x * 7) % 12 < 5) {
-          s.set(ox + x, oy + SH - 1, '═', lava);
-        }
-      }
-
-      // Smoke wisps above
-      for (let x = 1; x < SW - 1; x += 3) {
-        const smokeY = -1 - ((frame + x * 2) % 4);
-        if ((frame + x * 5) % 8 < 3) {
-          s.set(ox + x, oy + smokeY, '░', rgb(80, 50, 40));
-        }
+      // Lava cracks — persistent line at bottom edge
+      for (let x = 0; x < SW; x++) {
+        const vis = wave(frame, 30, x * 4) > 0.3;
+        if (vis) s.set(ox + x, oy + SH - 1, '═', lava);
       }
     },
     drawOverlay(s, ox, oy, frame) {
-      // 12 rising embers through and above sprite
-      const emberChars = ['·', '∘', '°', '•', '✹', '◆'];
-      for (let i = 0; i < 12; i++) {
-        const seed = hash(i, Math.floor(frame / 3));
-        const px = seed % (SW + 2) - 1;
-        const py = SH - ((frame + i * 5) % (SH + 8));
-        const ch = emberChars[seed % 6];
-        const bright = (seed % 3 === 0) ? rgb(255, 180, 40) : rgb(255, 80, 20);
-        if (py >= -3 && py < SH + 1) s.set(ox + px, oy + py, ch, bright);
-      }
+      const fire = rgb(255, 80, 20);
+      const lava = rgb(255, 180, 40);
+      const bright = rgb(255, 220, 100);
 
-      // Magma veins — shifting bright lines on sprite body
-      for (let i = 0; i < 3; i++) {
-        const seed = hash(i, Math.floor(frame / 8));
-        const sy = seed % SH;
-        const sx = (seed >> 4) % (SW - 4);
-        const len = 3 + (seed % 3);
-        const col = ((frame + i * 10) % 12 < 6) ? rgb(255, 180, 40) : rgb(255, 80, 20);
-        for (let j = 0; j < len; j++) {
-          if (sx + j < SW) s.set(ox + sx + j, oy + sy, '─', col);
-        }
-      }
-
-      // Volcanic flash — bright burst every 35 frames
-      if (frame % 35 < 3) {
-        s.set(ox + CX, oy + CY, '✹', rgb(255, 255, 200));
-        s.set(ox + CX - 1, oy + CY, '─', rgb(255, 200, 100));
-        s.set(ox + CX + 1, oy + CY, '─', rgb(255, 200, 100));
-        s.set(ox + CX, oy + CY - 1, '│', rgb(255, 200, 100));
-        s.set(ox + CX, oy + CY + 1, '│', rgb(255, 200, 100));
+      // ── Companion: forge hammer (right flank) ──
+      // Hammer "strikes" with a quick bob snap
+      const hammerCycle = frame % 40;
+      const hammerY = hammerCycle < 5 ? -1 : hammerCycle < 8 ? 1 : 0; // quick strike motion
+      const hx = SW + 3, hy = CY - 2 + hammerY;
+      s.set(ox + hx, oy + hy, '█', lava);       // hammer head
+      s.set(ox + hx + 1, oy + hy, '▌', fire);   // hammer side
+      s.set(ox + hx, oy + hy + 1, '║', fire);   // handle
+      s.set(ox + hx, oy + hy + 2, '║', rgb(140, 30, 8)); // handle
+      // Spark on strike
+      if (hammerCycle >= 5 && hammerCycle < 10) {
+        s.set(ox + hx - 1, oy + hy, '✹', bright);
+        s.set(ox + hx + 2, oy + hy + 1, '·', fire);
       }
     },
   },
 
   // ─────────────────────────────────────────
   // GPU: Intel Falcon Shores — "Tesla's Wrath"
-  // Dense lightning network, electric corona, ground strikes
+  // Defined lightning paths, electric border, storm orb companion
   // ─────────────────────────────────────────
   falcon_shores: {
     theme: {
@@ -313,90 +266,66 @@ const TRANSCENDENT_EFFECTS = {
     drawAura(s, ox, oy, frame) {
       const blue = rgb(100, 180, 255);
       const bright = rgb(200, 235, 255);
-      const white = rgb(255, 255, 255);
       const dim = rgb(40, 90, 180);
 
-      // 6 lightning bolts with 4 segments each, snapping every 5 frames
-      const boltSeed = Math.floor(frame / 5);
-      const boltChars = ['╱', '╲', '│', '─', '┘', '┐', '└', '┌'];
-      for (let bolt = 0; bolt < 6; bolt++) {
-        const h1 = hash(bolt, boltSeed);
-        const startX = h1 % (SW + 4) - 2;
-        const startY = (h1 >> 4) % 3 - 1;
-        const boltColor = (frame % 3 < 2) ? bright : blue;
-
-        let px = startX, py = startY;
-        for (let seg = 0; seg < 4; seg++) {
-          const segSeed = hash(bolt * 10 + seg, boltSeed);
-          const dx = (segSeed % 5) - 2;
-          const dy = Math.floor(seg * SH / 4) + (segSeed % 3);
-          px = Math.max(-3, Math.min(SW + 2, startX + dx));
-          py = startY + dy;
-          if (py >= -2 && py < SH + 2) {
-            s.set(ox + px, oy + py, boltChars[segSeed % 8], boltColor);
-            // Bolt glow — adjacent cell
-            if (px + 1 < SW + 3) s.set(ox + px + 1, oy + py, '░', dim);
+      // 3 defined lightning rods — vertical lines at fixed positions with arcs
+      const rodPositions = [-2, CX, SW + 1];
+      const boltSeed = Math.floor(frame / 10); // persist longer (10 frames)
+      for (let r = 0; r < 3; r++) {
+        const rx = rodPositions[r];
+        // Rod base
+        s.set(ox + rx, oy + SH, '╋', bright);
+        // Bolt path — 4 segments zigzagging upward from rod
+        const h1 = hash(r, boltSeed);
+        let bx = rx;
+        for (let seg = 0; seg < 5; seg++) {
+          const segY = SH - 1 - seg * 2 - ((h1 >> (seg * 3)) % 2);
+          const jitter = ((h1 >> (seg * 4 + 8)) % 3) - 1;
+          bx = Math.max(-3, Math.min(SW + 2, rx + jitter));
+          if (segY >= -2 && segY < SH) {
+            const ch = jitter > 0 ? '╲' : jitter < 0 ? '╱' : '│';
+            s.set(ox + bx, oy + segY, ch, (frame % 4 < 2) ? bright : blue);
           }
         }
       }
 
-      // Electric corona — flickering ░ border all around
-      for (let x = -2; x <= SW + 1; x++) {
-        if ((frame + x * 3) % 4 < 2) {
-          s.set(ox + x, oy - 2, '░', blue);
-          s.set(ox + x, oy + SH + 1, '░', blue);
-        }
+      // Solid electric border — dim persistent glow
+      for (let x = -1; x <= SW; x++) {
+        s.set(ox + x, oy - 1, '░', dim);
+        s.set(ox + x, oy + SH + 1, '░', dim);
       }
-      for (let y = -1; y < SH + 1; y++) {
-        if ((frame + y * 5) % 4 < 2) {
-          s.set(ox - 2, oy + y, '░', blue);
-          s.set(ox + SW + 1, oy + y, '░', blue);
-        }
-      }
-
-      // Ground strikes — bright marks at bottom
-      for (let i = 0; i < 3; i++) {
-        const gx = hash(i, Math.floor(frame / 8)) % SW;
-        if ((frame + i * 11) % 16 < 4) {
-          s.set(ox + gx, oy + SH, '╋', white);
-          s.set(ox + gx, oy + SH + 1, '│', blue);
-        }
+      for (let y = 0; y < SH; y++) {
+        s.set(ox - 1, oy + y, '░', dim);
+        s.set(ox + SW, oy + y, '░', dim);
       }
     },
     drawOverlay(s, ox, oy, frame) {
-      const white = rgb(255, 255, 255);
       const blue = rgb(140, 210, 255);
+      const bright = rgb(200, 235, 255);
 
-      // 4 simultaneous crackling sparks
-      for (let i = 0; i < 4; i++) {
-        if ((frame + i * 5) % 4 < 2) {
-          const sx = hash(frame + i, 99) % SW;
-          const sy = hash(frame + i, 77) % SH;
-          s.set(ox + sx, oy + sy, '*', white);
-        }
-      }
-
-      // Tesla coil — vertical bright line that sways
-      const coilX = CX + Math.round(Math.sin(frame * 0.15) * 3);
-      for (let y = 0; y < SH; y += 2) {
-        if ((frame + y) % 4 < 2) {
-          s.set(ox + coilX, oy + y, '│', blue);
-        }
-      }
-
-      // Energy nodes — fixed points that pulse
-      const nodes = [[2, 2], [SW - 3, 2], [CX, SH - 3], [1, SH - 2], [SW - 2, SH - 2]];
+      // Energy nodes — fixed symmetric positions, pulse in sequence
+      const nodes = [[2, 2], [SW - 3, 2], [2, SH - 3], [SW - 3, SH - 3], [CX, CY]];
       for (let i = 0; i < nodes.length; i++) {
-        if ((frame + i * 8) % 12 < 6) {
-          s.set(ox + nodes[i][0], oy + nodes[i][1], '◉', blue);
-        }
+        const brightness = wave(frame, 20, i * 4);
+        const col = brightness > 0.5 ? bright : blue;
+        s.set(ox + nodes[i][0], oy + nodes[i][1], '◉', col);
       }
+
+      // ── Companion: storm orb (right flank) ──
+      const dy = bob(frame, 0.09);
+      const sx = SW + 3, sy = CY - 1 + dy;
+      s.set(ox + sx - 1, oy + sy, '⚡', blue);
+      s.set(ox + sx,     oy + sy, '◉', bright);
+      s.set(ox + sx + 1, oy + sy, '⚡', blue);
+      // Orb electrical arc below
+      const arcCh = frame % 8 < 4 ? '╱' : '╲';
+      s.set(ox + sx, oy + sy + 1, arcCh, rgb(40, 90, 180));
     },
   },
 
   // ─────────────────────────────────────────
   // CPU: AMD EPYC 9965 Turin — "Threadweaver"
-  // Dense concentric rings, starburst rays, pulsing mega-core
+  // Clean concentric rings, radiating lines, processing die companion
   // ─────────────────────────────────────────
   epyc_9965: {
     theme: {
@@ -413,41 +342,33 @@ const TRANSCENDENT_EFFECTS = {
       const amber = rgb(220, 130, 30);
       const dim = rgb(140, 80, 15);
 
-      // 5 concentric rings expanding — faster period
-      const maxR = 10;
-      for (let ring = 0; ring < 5; ring++) {
-        const ringPhase = ((frame % 20) / 20 + ring * 0.2) % 1.0;
-        const r = ringPhase * maxR;
+      // 3 concentric rings — smooth expansion, clear circular form
+      const maxR = 9;
+      for (let ring = 0; ring < 3; ring++) {
+        const r = ((frame % 30) / 30 + ring * 0.33) % 1.0 * maxR;
         const ri = Math.floor(r);
         if (ri < 1 || ri > maxR) continue;
         const brightness = Math.max(0, 1 - r / maxR);
-        const col = rgb(
-          Math.floor(255 * brightness),
-          Math.floor(160 * brightness),
-          Math.floor(35 * brightness)
-        );
-        for (let angle = 0; angle < 12; angle++) {
-          const ax = Math.round(Math.cos(angle * Math.PI / 6) * ri * 1.3);
-          const ay = Math.round(Math.sin(angle * Math.PI / 6) * ri * 0.55);
-          const px = CX + ax;
-          const py = CY + ay;
-          if (px >= -4 && px < SW + 4 && py >= -3 && py < SH + 3) {
-            s.set(ox + px, oy + py, '·', col);
+        const col = rgb(Math.floor(255 * brightness), Math.floor(160 * brightness), Math.floor(35 * brightness));
+        for (let angle = 0; angle < 16; angle++) {
+          const ax = Math.round(Math.cos(angle * Math.PI / 8) * ri * 1.3);
+          const ay = Math.round(Math.sin(angle * Math.PI / 8) * ri * 0.55);
+          if (CX + ax >= -3 && CX + ax < SW + 3 && CY + ay >= -2 && CY + ay < SH + 2) {
+            s.set(ox + CX + ax, oy + CY + ay, '·', col);
           }
         }
       }
 
-      // 12 starburst rays from center to edges
-      for (let ray = 0; ray < 12; ray++) {
-        const angle = ray * Math.PI / 6;
-        const len = 6 + Math.floor(wave(frame, 15, ray * 3) * 3);
-        for (let step = 2; step < len; step++) {
+      // 8 radiating lines — persistent, pulse brightness
+      for (let ray = 0; ray < 8; ray++) {
+        const angle = ray * Math.PI / 4;
+        const brightness = wave(frame, 20, ray * 5);
+        const col = brightness > 0.5 ? gold : amber;
+        for (let step = 3; step < 7; step++) {
           const rx = Math.round(CX + Math.cos(angle) * step * 1.3);
           const ry = Math.round(CY + Math.sin(angle) * step * 0.55);
           if (rx >= -3 && rx < SW + 3 && ry >= -2 && ry < SH + 2) {
-            const ch = step % 3 === 0 ? '·' : '─';
-            const col = step < 4 ? gold : amber;
-            s.set(ox + rx, oy + ry, ch, col);
+            s.set(ox + rx, oy + ry, '·', col);
           }
         }
       }
@@ -456,26 +377,34 @@ const TRANSCENDENT_EFFECTS = {
       const gold = rgb(255, 200, 70);
       const bright = rgb(255, 240, 120);
 
-      // Large 3×3 pulsing core display
-      const pulse = wave(frame, 10, 0);
-      const coreColor = rgb(255, Math.floor(180 + 60 * pulse), Math.floor(50 + 50 * pulse));
+      // Pulsing core — 3×3 cross at center
+      const pulse = wave(frame, 12, 0);
+      const coreCol = rgb(255, Math.floor(180 + 60 * pulse), Math.floor(50 + 50 * pulse));
       s.set(ox + CX, oy + CY, '◉', bright);
-      s.set(ox + CX - 1, oy + CY, '○', coreColor);
-      s.set(ox + CX + 1, oy + CY, '○', coreColor);
-      s.set(ox + CX, oy + CY - 1, '○', coreColor);
-      s.set(ox + CX, oy + CY + 1, '○', coreColor);
+      s.set(ox + CX - 1, oy + CY, '─', coreCol);
+      s.set(ox + CX + 1, oy + CY, '─', coreCol);
+      s.set(ox + CX, oy + CY - 1, '│', coreCol);
+      s.set(ox + CX, oy + CY + 1, '│', coreCol);
 
-      // Thread wave — horizontal pulse lines
-      const waveY = Math.floor(wave(frame, 20, 0) * SH);
-      for (let x = 1; x < SW - 1; x += 2) {
-        s.set(ox + x, oy + waveY, '─', gold);
-      }
+      // ── Companion: processing die (above sprite) ──
+      const dy = bob(frame, 0.06);
+      const dx = CX + 4, ddy = -4 + dy;
+      s.set(ox + dx - 1, oy + ddy - 1, '┌', gold);
+      s.set(ox + dx,     oy + ddy - 1, '─', gold);
+      s.set(ox + dx + 1, oy + ddy - 1, '┐', gold);
+      s.set(ox + dx - 1, oy + ddy,     '│', gold);
+      const diePulse = wave(frame, 15, 0);
+      s.set(ox + dx,     oy + ddy,     '◉', diePulse > 0.5 ? bright : gold);
+      s.set(ox + dx + 1, oy + ddy,     '│', gold);
+      s.set(ox + dx - 1, oy + ddy + 1, '└', gold);
+      s.set(ox + dx,     oy + ddy + 1, '─', gold);
+      s.set(ox + dx + 1, oy + ddy + 1, '┘', gold);
     },
   },
 
   // ─────────────────────────────────────────
   // CPU: Cerebras WSE-3 — "Prismatic Singularity"
-  // Triple holographic border, corner crystals, prismatic burst
+  // Double holographic border, corner crystals, holo prism companion
   // ─────────────────────────────────────────
   cerebras_wse3: {
     theme: {
@@ -488,17 +417,17 @@ const TRANSCENDENT_EFFECTS = {
       emblem: rgb(210, 170, 255), data: rgb(100, 70, 180),
     },
     drawAura(s, ox, oy, frame) {
-      // Triple holographic border — each layer cycles at different speed
-      // Outer border (distance 2)
+      // Outer holographic border — smooth rainbow cycle
       for (let x = -2; x <= SW + 1; x++) {
         s.set(ox + x, oy - 2, '·', transcendentGlow(frame, x * 3));
-        s.set(ox + x, oy + SH + 1, '·', transcendentGlow(frame, x * 3 + 40));
+        s.set(ox + x, oy + SH + 1, '·', transcendentGlow(frame, x * 3 + 30));
       }
       for (let y = -1; y < SH + 1; y++) {
         s.set(ox - 2, oy + y, '·', transcendentGlow(frame, y * 5));
-        s.set(ox + SW + 1, oy + y, '·', transcendentGlow(frame, y * 5 + 40));
+        s.set(ox + SW + 1, oy + y, '·', transcendentGlow(frame, y * 5 + 30));
       }
-      // Middle border (distance 1) — block characters
+
+      // Inner holographic border — block characters, faster cycle
       for (let x = -1; x <= SW; x++) {
         s.set(ox + x, oy - 1, '▄', transcendentGlow(frame * 2, x * 4));
         s.set(ox + x, oy + SH, '▀', transcendentGlow(frame * 2, x * 4 + 20));
@@ -507,80 +436,36 @@ const TRANSCENDENT_EFFECTS = {
         s.set(ox - 1, oy + y, '▐', transcendentGlow(frame * 2, y * 6));
         s.set(ox + SW, oy + y, '▌', transcendentGlow(frame * 2, y * 6 + 30));
       }
-      // Inner glow — faint shimmer just inside sprite edge
-      for (let x = 0; x < SW; x++) {
-        if ((frame + x * 2) % 6 < 2) {
-          s.set(ox + x, oy, '░', transcendentGlow(frame * 3, x * 5));
-          s.set(ox + x, oy + SH - 1, '░', transcendentGlow(frame * 3, x * 5 + 30));
-        }
-      }
 
-      // Corner crystals with trailing sparkles
+      // Corner crystals — persistent, color-cycling
       const corners = [[-2, -2], [SW + 1, -2], [-2, SH + 1], [SW + 1, SH + 1]];
       for (let i = 0; i < 4; i++) {
-        const [cx, cy] = corners[i];
-        s.set(ox + cx, oy + cy, '✦', transcendentGlow(frame, i * 15));
-        // Trailing sparkle
-        const tx = cx + (i < 2 ? -1 : 1) * ((frame + i * 5) % 3);
-        const ty = cy + (i % 2 === 0 ? -1 : 1) * ((frame + i * 7) % 2);
-        s.set(ox + tx, oy + ty, '✧', transcendentGlow(frame, i * 15 + 10));
-      }
-
-      // Diagonal rainbow streaks from corners
-      for (let d = 0; d < 4; d++) {
-        const phase = (frame + d * 15) % 30;
-        if (phase < 8) {
-          const dx = (d < 2 ? 1 : -1);
-          const dy = (d % 2 === 0 ? 1 : -1);
-          const startX = d < 2 ? -1 : SW;
-          const startY = d % 2 === 0 ? -1 : SH;
-          for (let step = 0; step < 4; step++) {
-            const px = startX + dx * step;
-            const py = startY + dy * Math.floor(step * 0.5);
-            if (px >= -3 && px < SW + 3 && py >= -3 && py < SH + 3) {
-              s.set(ox + px, oy + py, '─', transcendentGlow(frame, d * 10 + step * 5));
-            }
-          }
-        }
+        s.set(ox + corners[i][0], oy + corners[i][1], '✦', transcendentGlow(frame, i * 15));
       }
     },
     drawOverlay(s, ox, oy, frame) {
-      // 3 simultaneous scan lines at different speeds
-      for (let i = 0; i < 3; i++) {
-        const scanRow = (frame * (i + 1)) % (SH + 6) - 3;
-        if (scanRow >= 0 && scanRow < SH) {
-          for (let x = 0; x < SW; x++) {
-            if ((x + frame + i * 4) % 3 === 0) {
-              s.set(ox + x, oy + scanRow, '═', transcendentGlow(frame, x * 3 + i * 20));
-            }
-          }
+      // Single clean scan line — slow sweep
+      const scanRow = Math.floor(((frame % 50) / 50) * (SH + 2)) - 1;
+      if (scanRow >= 0 && scanRow < SH) {
+        for (let x = 0; x < SW; x += 2) {
+          s.set(ox + x, oy + scanRow, '═', transcendentGlow(frame, x * 3));
         }
       }
 
-      // Prismatic burst every 40 frames — 8 directional particles
-      const burstPhase = frame % 40;
-      if (burstPhase < 10) {
-        const r = burstPhase;
-        for (let dir = 0; dir < 8; dir++) {
-          const ax = Math.round(Math.cos(dir * Math.PI / 4) * r * 0.8);
-          const ay = Math.round(Math.sin(dir * Math.PI / 4) * r * 0.4);
-          const px = CX + ax;
-          const py = CY + ay;
-          if (px >= 0 && px < SW && py >= 0 && py < SH) {
-            s.set(ox + px, oy + py, '✦', transcendentGlow(frame, dir * 7));
-          }
-        }
-      }
-      // Central flash at burst start
-      if (burstPhase < 3) {
-        s.set(ox + CX, oy + CY, '◉', rgb(255, 255, 255));
-      }
+      // ── Companion: holographic prism (above sprite) ──
+      const dy = bob(frame, 0.07);
+      const px = CX - 4, py = -3 + dy;
+      s.set(ox + px,     oy + py - 1, '△', transcendentGlow(frame, 0));
+      s.set(ox + px - 1, oy + py,     '◇', transcendentGlow(frame, 20));
+      s.set(ox + px,     oy + py,     '◈', rgb(255, 255, 255));
+      s.set(ox + px + 1, oy + py,     '◇', transcendentGlow(frame, 40));
+      s.set(ox + px,     oy + py + 1, '▽', transcendentGlow(frame, 10));
     },
   },
 
   // ─────────────────────────────────────────
   // CPU: Apple M4 Ultra Max — "Platinum Ascendant"
-  // Dense particle constellation, solid border, orbital geometry
+  // Elegant border, fixed constellation, orbiting geometry
   // ─────────────────────────────────────────
   m4_ultra_max: {
     theme: {
@@ -595,20 +480,8 @@ const TRANSCENDENT_EFFECTS = {
     drawAura(s, ox, oy, frame) {
       const plat = rgb(220, 228, 245);
       const silver = rgb(180, 190, 215);
-      const soft = rgb(140, 150, 175);
 
-      // Dense 18-particle field — always visible, not blinking
-      for (let i = 0; i < 18; i++) {
-        const seed = hash(i, 42); // Fixed positions, not frame-dependent
-        const px = (seed % (SW + 10)) - 5;
-        const py = ((seed >> 8) % (SH + 8)) - 4;
-        // Gentle brightness pulsing instead of on/off
-        const brightness = wave(frame, 30 + (i % 5) * 4, i * 7);
-        const col = brightness > 0.5 ? plat : silver;
-        s.set(ox + px, oy + py, '·', col);
-      }
-
-      // Solid elegant border — always visible, thin platinum line
+      // Solid elegant border — permanent thin line
       for (let x = -1; x <= SW; x++) {
         s.set(ox + x, oy - 1, '─', silver);
         s.set(ox + x, oy + SH, '─', silver);
@@ -617,56 +490,44 @@ const TRANSCENDENT_EFFECTS = {
         s.set(ox - 1, oy + y, '│', silver);
         s.set(ox + SW, oy + y, '│', silver);
       }
-      // Corner accents
       s.set(ox - 1, oy - 1, '┌', plat);
       s.set(ox + SW, oy - 1, '┐', plat);
       s.set(ox - 1, oy + SH, '└', plat);
       s.set(ox + SW, oy + SH, '┘', plat);
 
-      // Constellation lines connecting nearby particles
-      for (let i = 0; i < 6; i++) {
-        const s1 = hash(i * 2, 42);
-        const s2 = hash(i * 2 + 1, 42);
-        const x1 = (s1 % (SW + 10)) - 5;
-        const y1 = ((s1 >> 8) % (SH + 8)) - 4;
-        const x2 = (s2 % (SW + 10)) - 5;
-        const y2 = ((s2 >> 8) % (SH + 8)) - 4;
-        const midX = Math.floor((x1 + x2) / 2);
-        const midY = Math.floor((y1 + y2) / 2);
-        if ((frame + i * 10) % 20 < 10) {
-          s.set(ox + midX, oy + midY, '·', soft);
-        }
+      // Fixed star field — permanent positions, gentle brightness pulse (no blink)
+      const stars = [[-4, -2], [-3, 3], [-5, 7], [SW + 3, -1], [SW + 4, 5], [SW + 2, 9],
+                     [2, -3], [CX, -4], [SW - 3, -3], [3, SH + 2], [CX + 1, SH + 3], [SW - 2, SH + 2]];
+      for (let i = 0; i < stars.length; i++) {
+        const brightness = wave(frame, 40 + i * 3, i * 7);
+        s.set(ox + stars[i][0], oy + stars[i][1], '·', brightness > 0.4 ? plat : silver);
       }
     },
     drawOverlay(s, ox, oy, frame) {
       const plat = rgb(230, 238, 255);
-      const bright = rgb(255, 255, 255);
 
-      // 8 orbiting geometric shapes — wider orbit
-      const shapes = ['◇', '○', '△', '□', '◇', '○', '△', '□'];
-      for (let i = 0; i < 8; i++) {
-        const angle = (frame / 80 * Math.PI * 2) + (i * Math.PI * 2 / 8);
-        const orbitX = Math.round(CX + 8 * Math.cos(angle));
-        const orbitY = Math.round(CY + 5 * Math.sin(angle));
-        if (orbitX >= -4 && orbitX < SW + 4 && orbitY >= -3 && orbitY < SH + 3) {
+      // 6 orbiting geometric shapes — clean elliptical path
+      const shapes = ['◇', '○', '△', '□', '◇', '○'];
+      for (let i = 0; i < 6; i++) {
+        const angle = (frame / 90 * Math.PI * 2) + (i * Math.PI * 2 / 6);
+        const orbitX = Math.round(CX + 9 * Math.cos(angle));
+        const orbitY = Math.round(CY + 6 * Math.sin(angle));
+        if (orbitX >= -5 && orbitX < SW + 5 && orbitY >= -4 && orbitY < SH + 3) {
           s.set(ox + orbitX, oy + orbitY, shapes[i], plat);
         }
       }
 
-      // Platinum pulse — whole-sprite brightness flash every 35 frames
-      if (frame % 35 < 2) {
-        for (let y = 0; y < SH; y += 3) {
-          for (let x = 0; x < SW; x += 3) {
-            s.set(ox + x, oy + y, '·', bright);
-          }
-        }
-      }
+      // ── Companion: platinum glyph (above sprite) ──
+      const dy = bob(frame, 0.05);
+      const gx = CX + 5, gy = -3 + dy;
+      s.set(ox + gx, oy + gy, '◇', rgb(255, 255, 255));
+      s.set(ox + gx, oy + gy + 1, '·', plat);
     },
   },
 
   // ─────────────────────────────────────────
   // RAM: 4TB HBM4 Stacked — "Data Typhoon"
-  // Quad data pillars, horizontal streams, data burst
+  // Twin data pillars, flowing streams, memory module companion
   // ─────────────────────────────────────────
   hbm4_stack: {
     theme: {
@@ -682,61 +543,41 @@ const TRANSCENDENT_EFFECTS = {
       const cyan = rgb(80, 230, 255);
       const violet = rgb(160, 100, 255);
       const dim = rgb(40, 120, 180);
-      const streamChars = ['║', '│', '┃', '║', '│', '┃'];
+      const streamChars = ['║', '│', '┃', '║'];
 
-      // 4 data pillars — 2 on each side, staggered
-      const pillarPositions = [-3, -2, SW + 1, SW + 2];
-      for (let p = 0; p < 4; p++) {
+      // 2 data pillars — one per side, smooth scrolling characters
+      const pillarPositions = [-2, SW + 1];
+      for (let p = 0; p < 2; p++) {
         const px = pillarPositions[p];
         for (let y = -2; y < SH + 3; y++) {
-          const phase = (frame * 2 + y * 2 + p * 13) % 16;
-          // Cyan-to-violet gradient
+          const scrollPhase = (frame + y * 2 + p * 13) % 12;
           const t = Math.max(0, Math.min(1, (y + 2) / (SH + 4)));
           const r = Math.floor(80 + 80 * t);
           const g = Math.floor(230 - 130 * t);
-          const b = 255;
-          const col = phase < 6 ? rgb(r, g, b) : rgb(Math.floor(r * 0.3), Math.floor(g * 0.3), Math.floor(b * 0.4));
-          s.set(ox + px, oy + y, streamChars[phase % 6], col);
+          const col = scrollPhase < 4 ? rgb(r, g, 255) : rgb(Math.floor(r * 0.3), Math.floor(g * 0.3), Math.floor(255 * 0.4));
+          s.set(ox + px, oy + y, streamChars[scrollPhase % 4], col);
         }
       }
 
-      // Horizontal data streams above and below
+      // Horizontal data stream — smooth flow above and below
       for (let x = -3; x <= SW + 2; x++) {
-        // Above: flowing left
-        const abovePhase = (frame + x * 3) % 12;
+        const abovePhase = (frame + x * 2) % 16;
         if (abovePhase < 4) {
-          const hex = ((frame + x * 7) % 16).toString(16).toUpperCase();
-          s.set(ox + x, oy - 3, hex, cyan);
+          s.set(ox + x, oy - 2, '─', cyan);
         }
-        // Below: flowing right
-        const belowPhase = (frame - x * 3 + 60) % 12;
+        const belowPhase = (frame - x * 2 + 40) % 16;
         if (belowPhase < 4) {
-          const hex = ((frame + x * 11) % 16).toString(16).toUpperCase();
-          s.set(ox + x, oy + SH + 2, hex, violet);
-        }
-      }
-
-      // Data burst — expanding ring from center every 25 frames
-      const burstPhase = frame % 25;
-      if (burstPhase < 8) {
-        const r = burstPhase + 1;
-        for (let angle = 0; angle < 8; angle++) {
-          const bx = Math.round(CX + r * 1.2 * Math.cos(angle * Math.PI / 4));
-          const by = Math.round(CY + r * 0.5 * Math.sin(angle * Math.PI / 4));
-          if (bx >= -3 && bx < SW + 3 && by >= -2 && by < SH + 2) {
-            s.set(ox + bx, oy + by, '·', cyan);
-          }
+          s.set(ox + x, oy + SH + 2, '─', violet);
         }
       }
     },
     drawOverlay(s, ox, oy, frame) {
       const cyan = rgb(100, 240, 255);
-      const bright = rgb(180, 255, 255);
 
-      // 8 streaming data bytes through sprite
-      for (let i = 0; i < 8; i++) {
-        const col = (hash(i, 42) % (SW - 2)) + 1;
-        const row = SH - ((frame + i * 4) % (SH + 4));
+      // 4 streaming data bytes — smooth vertical flow through sprite
+      for (let i = 0; i < 4; i++) {
+        const col = 2 + i * 3; // fixed column positions
+        const row = SH - ((frame + i * 6) % (SH + 4));
         if (row >= 0 && row < SH) {
           const hex = ((frame + i * 13) % 256).toString(16).toUpperCase().padStart(2, '0');
           const t = row / SH;
@@ -746,20 +587,22 @@ const TRANSCENDENT_EFFECTS = {
         }
       }
 
-      // Hex dump flash — brief row of hex values
-      if (frame % 20 < 3) {
-        const flashRow = hash(frame, 42) % SH;
-        for (let x = 0; x < SW; x += 2) {
-          s.set(ox + x, oy + flashRow, 'F', bright);
-          if (x + 1 < SW) s.set(ox + x + 1, oy + flashRow, ((frame + x) % 16).toString(16).toUpperCase(), bright);
-        }
-      }
+      // ── Companion: memory module (left flank) ──
+      const dy = bob(frame, 0.06);
+      const mx = -4, my = CY - 1 + dy;
+      s.set(ox + mx, oy + my - 1, '┃', cyan);
+      s.set(ox + mx, oy + my,     '█', rgb(80, 230, 255));
+      s.set(ox + mx, oy + my + 1, '█', rgb(130, 200, 255));
+      s.set(ox + mx, oy + my + 2, '┃', cyan);
+      // Module status LED
+      const ledOn = wave(frame, 20, 0) > 0.5;
+      s.set(ox + mx + 1, oy + my, ledOn ? '◆' : '◇', ledOn ? rgb(0, 255, 180) : rgb(40, 120, 100));
     },
   },
 
   // ─────────────────────────────────────────
   // Storage: Samsung PM1743 30.72TB — "Golden God Circuit"
-  // Extended circuit traces, gold aura, spark nodes, dense overlay
+  // Permanent circuit grid, gold border, circuit node companion
   // ─────────────────────────────────────────
   pm1743_30tb: {
     theme: {
@@ -773,120 +616,80 @@ const TRANSCENDENT_EFFECTS = {
     },
     drawAura(s, ox, oy, frame) {
       const gold = rgb(255, 210, 60);
-      const bright = rgb(255, 240, 140);
       const dim = rgb(180, 140, 30);
-      const traceChars = ['─', '│', '┐', '┘', '┌', '└', '├', '┤'];
 
-      // Extended circuit traces BEYOND sprite — 3 cells out in all directions
-      for (let trace = 0; trace < 6; trace++) {
-        const seed = hash(trace, Math.floor(frame / 8));
-        const isExternal = trace < 3; // first 3 traces go outside sprite
-        let startX, startY, dir;
-
-        if (isExternal) {
-          // Traces in the aura zone (outside sprite)
-          startX = (seed % (SW + 8)) - 4;
-          startY = (trace === 0) ? -2 : (trace === 1) ? SH + 1 : ((seed >> 4) % 3) - 1;
-          dir = trace === 2 ? 1 : 0;
-        } else {
-          startX = (seed % (SW + 4)) - 2;
-          startY = ((seed >> 4) % (SH + 4)) - 2;
-          dir = seed % 2;
-        }
-
-        const len = 4 + (seed % 4);
-        const c = ((frame + trace * 8) % 14 < 7) ? gold : dim;
-
-        for (let step = 0; step < len; step++) {
-          let px, py;
-          if (dir === 0) {
-            px = startX + step;
-            py = startY;
-          } else {
-            px = startX;
-            py = startY + step;
-          }
-          if (px >= -4 && px < SW + 4 && py >= -3 && py < SH + 3) {
-            s.set(ox + px, oy + py, dir === 0 ? '─' : '│', c);
-          }
-        }
-        // Corner junction
-        const cx = dir === 0 ? startX + len : startX;
-        const cy = dir === 0 ? startY : startY + len;
-        if (cx >= -4 && cx < SW + 4 && cy >= -3 && cy < SH + 3) {
-          s.set(ox + cx, oy + cy, traceChars[2 + (seed % 4)], c);
-        }
+      // Permanent circuit grid extending from sprite — fixed structure
+      // Horizontal traces above and below
+      for (let x = -3; x <= SW + 2; x++) {
+        s.set(ox + x, oy - 2, '─', dim);
+        s.set(ox + x, oy + SH + 1, '─', dim);
+      }
+      // Vertical traces on sides
+      for (let y = -1; y < SH + 1; y++) {
+        s.set(ox - 3, oy + y, '│', dim);
+        s.set(ox + SW + 2, oy + y, '│', dim);
+      }
+      // Junction nodes at corners of the circuit — pulsing
+      const junctions = [[-3, -2], [SW + 2, -2], [-3, SH + 1], [SW + 2, SH + 1],
+                         [CX, -2], [CX, SH + 1], [-3, CY], [SW + 2, CY]];
+      for (let i = 0; i < junctions.length; i++) {
+        const brightness = wave(frame, 20, i * 5);
+        s.set(ox + junctions[i][0], oy + junctions[i][1], '┼', brightness > 0.5 ? gold : dim);
       }
 
-      // Pulsing gold floor glow
+      // Gold floor glow
       for (let x = -1; x <= SW; x++) {
-        const gc = ((frame + x * 3) % 10 < 5) ? gold : dim;
-        s.set(ox + x, oy + SH, '▀', gc);
+        s.set(ox + x, oy + SH, '▀', wave(frame, 30, x * 2) > 0.5 ? gold : dim);
       }
 
-      // Spark nodes at circuit junctions outside sprite
-      const sparkPositions = [[-3, 1], [-2, SH - 2], [SW + 2, 3], [SW + 1, SH - 1], [CX, -2]];
-      for (let i = 0; i < sparkPositions.length; i++) {
-        if ((frame + i * 9) % 12 < 5) {
-          s.set(ox + sparkPositions[i][0], oy + sparkPositions[i][1], '✦', bright);
-        }
+      // Data flow dots moving along the circuit traces (smooth motion)
+      for (let i = 0; i < 3; i++) {
+        // Horizontal flow along top trace
+        const hx = ((frame + i * 8) % (SW + 6)) - 3;
+        s.set(ox + hx, oy - 2, '●', gold);
+        // Vertical flow along left trace
+        const vy = ((frame + i * 10) % (SH + 3)) - 1;
+        s.set(ox - 3, oy + vy, '●', gold);
       }
     },
     drawOverlay(s, ox, oy, frame) {
       const gold = rgb(255, 210, 60);
-      const bright = rgb(255, 240, 160);
       const dim = rgb(180, 140, 30);
-      const traceChars = ['─', '│', '┐', '┘', '┌', '└'];
 
-      // 8 dense circuit traces ON sprite body
-      for (let trace = 0; trace < 8; trace++) {
-        const seed = hash(trace + 100, Math.floor(frame / 6));
-        const startY = seed % SH;
-        const startX = (frame + trace * 3) % SW;
-        const dir = seed % 2;
-        const len = 2 + (seed % 4);
-        const c = ((frame + trace * 6) % 12 < 6) ? gold : dim;
-
-        for (let step = 0; step < len; step++) {
-          let px, py;
-          if (dir === 0) {
-            px = (startX + step) % SW;
-            py = startY;
-          } else {
-            px = startX % SW;
-            py = (startY + step) % SH;
-          }
-          s.set(ox + px, oy + py, dir === 0 ? '─' : '│', c);
-        }
-        // Corner at end
-        const cx = dir === 0 ? (startX + len) % SW : startX % SW;
-        const cy = dir === 0 ? startY : (startY + len) % SH;
-        s.set(ox + cx, oy + cy, traceChars[2 + (seed % 4)], c);
-      }
-
-      // Animated data dots flowing along traces
-      for (let i = 0; i < 5; i++) {
-        const dx = (frame * 2 + i * 7) % SW;
-        const dy = hash(i, 99) % SH;
-        if ((frame + i * 3) % 6 < 3) {
-          s.set(ox + dx, oy + dy, '·', bright);
+      // 4 persistent circuit traces on sprite body — fixed paths
+      const traces = [
+        { y: 2, x0: 1, len: 6, dir: 'h' },
+        { y: 5, x0: 4, len: 7, dir: 'h' },
+        { y: 8, x0: 2, len: 5, dir: 'h' },
+        { x: CX, y0: 1, len: 4, dir: 'v' },
+      ];
+      for (const t of traces) {
+        const brightness = wave(frame, 25, (t.x0 || t.x || 0) * 3);
+        const col = brightness > 0.4 ? gold : dim;
+        if (t.dir === 'h') {
+          for (let j = 0; j < t.len; j++) s.set(ox + t.x0 + j, oy + t.y, '─', col);
+          s.set(ox + t.x0 + t.len, oy + t.y, '┐', col);
+        } else {
+          for (let j = 0; j < t.len; j++) s.set(ox + t.x, oy + t.y0 + j, '│', col);
+          s.set(ox + t.x, oy + t.y0 + t.len, '┘', col);
         }
       }
 
-      // Gold flash — brief pulse across sprite
-      if (frame % 30 < 2) {
-        for (let y = 0; y < SH; y += 2) {
-          for (let x = 0; x < SW; x += 3) {
-            s.set(ox + x, oy + y, '·', bright);
-          }
-        }
-      }
+      // ── Companion: circuit node (below sprite) ──
+      const dy = bob(frame, 0.05);
+      const cx = CX + 3, cy = SH + 2 + dy;
+      s.set(ox + cx - 1, oy + cy, '┌', gold);
+      s.set(ox + cx,     oy + cy, '◈', rgb(255, 240, 140));
+      s.set(ox + cx + 1, oy + cy, '┐', gold);
+      s.set(ox + cx - 1, oy + cy + 1, '└', dim);
+      s.set(ox + cx,     oy + cy + 1, '─', dim);
+      s.set(ox + cx + 1, oy + cy + 1, '┘', dim);
     },
   },
 
   // ─────────────────────────────────────────
   // Storage: Quantum Photonic Array — "Quantum Transcendence"
-  // Dense probability cloud, entanglement lines, dramatic collapse
+  // Fixed probability ring, entanglement lines, quantum orb companion
   // ─────────────────────────────────────────
   ql_petascale: {
     theme: {
@@ -903,41 +706,31 @@ const TRANSCENDENT_EFFECTS = {
       const mid = rgb(140, 100, 230);
       const dim = rgb(80, 50, 160);
 
-      // 22 probability dots — dense cloud
-      const cloudW = SW + 10;
-      const cloudH = SH + 8;
-      const visibleDots = [];
-      for (let i = 0; i < 22; i++) {
-        const dotSeed = hash(i, Math.floor(frame / 2));
-        const px = (dotSeed % cloudW) - 5;
-        const py = ((dotSeed >> 8) % cloudH) - 4;
-        const visible = ((frame + i * 5) % 8) < 5;
-        if (visible) {
-          const col = (dotSeed % 4 === 0) ? bright : (dotSeed % 3 === 0) ? mid : dim;
-          s.set(ox + px, oy + py, '·', col);
-          visibleDots.push([px, py]);
-        }
+      // Fixed probability ring — 16 dots in elliptical formation, pulse brightness
+      for (let i = 0; i < 16; i++) {
+        const angle = i * Math.PI * 2 / 16;
+        const rx = Math.round(CX + 9 * Math.cos(angle));
+        const ry = Math.round(CY + 6 * Math.sin(angle));
+        const brightness = wave(frame, 30, i * 4);
+        const col = brightness > 0.6 ? bright : brightness > 0.3 ? mid : dim;
+        s.set(ox + rx, oy + ry, '·', col);
       }
 
-      // Entanglement lines — connect pairs of visible dots
-      for (let i = 0; i < visibleDots.length - 1; i += 2) {
-        const [x1, y1] = visibleDots[i];
-        const [x2, y2] = visibleDots[i + 1];
-        const midX = Math.floor((x1 + x2) / 2);
-        const midY = Math.floor((y1 + y2) / 2);
-        const dx = Math.abs(x2 - x1);
-        if (dx < 8 && (frame + i * 3) % 6 < 3) {
+      // Entanglement lines — 4 fixed pairs connected by persistent lines
+      const pairs = [[0, 8], [2, 10], [4, 12], [6, 14]];
+      for (let p = 0; p < pairs.length; p++) {
+        const a1 = pairs[p][0] * Math.PI * 2 / 16;
+        const a2 = pairs[p][1] * Math.PI * 2 / 16;
+        const x1 = Math.round(CX + 9 * Math.cos(a1));
+        const y1 = Math.round(CY + 6 * Math.sin(a1));
+        const x2 = Math.round(CX + 9 * Math.cos(a2));
+        const y2 = Math.round(CY + 6 * Math.sin(a2));
+        const mx = Math.floor((x1 + x2) / 2);
+        const my = Math.floor((y1 + y2) / 2);
+        const lineVis = wave(frame, 25, p * 7);
+        if (lineVis > 0.3) {
           const ch = Math.abs(x2 - x1) > Math.abs(y2 - y1) ? '─' : '│';
-          s.set(ox + midX, oy + midY, ch, dim);
-        }
-      }
-
-      // Quantum field — subtle shimmer around sprite
-      for (let x = -2; x <= SW + 1; x += 3) {
-        for (let y = -1; y < SH + 1; y += 3) {
-          if ((frame + x * 2 + y * 5) % 10 < 2) {
-            s.set(ox + x, oy + y, '░', rgb(50, 30, 100));
-          }
+          s.set(ox + mx, oy + my, ch, dim);
         }
       }
     },
@@ -946,48 +739,38 @@ const TRANSCENDENT_EFFECTS = {
       const white = rgb(255, 255, 255);
       const violet = rgb(160, 120, 255);
 
-      // Dramatic wave collapse — expanding ring that snaps to center
-      const cycleLen = 35;
+      // Wave collapse — expanding ring then snap (structured, no random scatter)
+      const cycleLen = 50;
       const phase = frame % cycleLen;
 
-      if (phase < 22) {
-        // Ring expands outward — larger radius
-        const r = Math.floor(phase / 2.5);
+      if (phase < 25) {
+        const r = Math.floor(phase / 3);
         const col = rgb(Math.max(0, 180 - r * 12), Math.max(0, 140 - r * 10), 255);
         for (let angle = 0; angle < 12; angle++) {
-          const ax = Math.round(Math.cos(angle * Math.PI / 6) * r * 1.4);
-          const ay = Math.round(Math.sin(angle * Math.PI / 6) * r * 0.5);
-          const px = CX + ax;
-          const py = CY + ay;
-          if (px >= -2 && px < SW + 2 && py >= -1 && py < SH + 1) {
-            s.set(ox + px, oy + py, '◦', col);
+          const ax = Math.round(Math.cos(angle * Math.PI / 6) * r * 1.2);
+          const ay = Math.round(Math.sin(angle * Math.PI / 6) * r * 0.45);
+          if (CX + ax >= 0 && CX + ax < SW && CY + ay >= 0 && CY + ay < SH) {
+            s.set(ox + CX + ax, oy + CY + ay, '◦', col);
           }
         }
-      } else if (phase < 28) {
-        // Collapse flash at center — bright burst
+      } else if (phase < 32) {
+        // Collapse — bright cross at center
         s.set(ox + CX, oy + CY, '✦', white);
         s.set(ox + CX - 1, oy + CY, '═', bright);
         s.set(ox + CX + 1, oy + CY, '═', bright);
         s.set(ox + CX, oy + CY - 1, '║', bright);
         s.set(ox + CX, oy + CY + 1, '║', bright);
-
-        // Post-collapse particles shooting outward
-        const explodeR = (phase - 22) * 2;
-        for (let dir = 0; dir < 8; dir++) {
-          const ex = Math.round(CX + Math.cos(dir * Math.PI / 4) * explodeR);
-          const ey = Math.round(CY + Math.sin(dir * Math.PI / 4) * explodeR * 0.4);
-          if (ex >= 0 && ex < SW && ey >= 0 && ey < SH) {
-            s.set(ox + ex, oy + ey, '·', violet);
-          }
-        }
       }
 
-      // Quantum tunneling — dot teleports across sprite
-      if (frame % 12 < 3) {
-        const tx = hash(frame, 55) % SW;
-        const ty = hash(frame, 88) % SH;
-        s.set(ox + tx, oy + ty, '◈', bright);
-      }
+      // ── Companion: quantum orb (below sprite) ──
+      const dy = bob(frame, 0.09);
+      const qx = CX - 3, qy = SH + 2 + dy;
+      // Orb with orbiting electron
+      s.set(ox + qx, oy + qy, '◈', bright);
+      const eAngle = frame / 20 * Math.PI * 2;
+      const ex = Math.round(qx + 2 * Math.cos(eAngle));
+      const ey = Math.round(qy + 1 * Math.sin(eAngle));
+      s.set(ox + ex, oy + ey, '·', violet);
     },
   },
 };
@@ -995,7 +778,8 @@ const TRANSCENDENT_EFFECTS = {
 // ═══════════════════════════════════════════════════════════════
 // FULL SET MEGA-EFFECT — "KERNEL ASCENDANT"
 // When all 4 slots have transcendent parts equipped.
-// Crown, energy wings, orbital symbols, ground eruption, chromatic storm.
+// Crown, energy wings, orbital symbols, ground eruption.
+// Structured and recognizable, not chaotic.
 // ═══════════════════════════════════════════════════════════════
 
 const FULL_SET_THEME = {
@@ -1013,8 +797,8 @@ const FULL_SET_EFFECT = {
     const gold = rgb(255, 220, 80);
     const white = rgb(255, 255, 255);
 
-    // ── Energy crown — 3 rows above sprite ──
-    const crownPulse = wave(frame, 15, 0);
+    // ── Energy crown — persistent structure above head ──
+    const crownPulse = wave(frame, 20, 0);
     const crownColor = crownPulse > 0.5 ? gold : rgb(255, 240, 180);
     const crownBright = crownPulse > 0.7 ? white : gold;
 
@@ -1027,13 +811,13 @@ const FULL_SET_EFFECT = {
     s.set(ox + CX - 1, oy - 3, '▓', crownColor);
     s.set(ox + CX + 1, oy - 3, '▓', crownColor);
 
-    // ── Energy wings — extending 6 cells each side ──
-    const flapOffset = Math.round(Math.sin(frame * 0.08) * 1.2);
+    // ── Energy wings — smooth flap ──
+    const flapOffset = Math.round(Math.sin(frame * 0.06) * 1.0);
     const wingColor = transcendentGlow(frame, 0);
     const wingDim = transcendentGlow(frame, 30);
+    const wingY = 3 + flapOffset;
 
     // Left wing
-    const wingY = 3 + flapOffset;
     s.set(ox - 6, oy + wingY - 1, '═', wingDim);
     s.set(ox - 5, oy + wingY - 1, '═', wingColor);
     s.set(ox - 4, oy + wingY, '═', wingColor);
@@ -1055,18 +839,14 @@ const FULL_SET_EFFECT = {
     s.set(ox + SW + 3, oy + wingY + 1, '─', wingDim);
     s.set(ox + SW + 2, oy + wingY + 1, '╱', wingDim);
 
-    // ── Ground eruption — 2 rows below sprite ──
+    // ── Ground eruption — smooth energy bar below ──
     for (let x = -3; x <= SW + 2; x++) {
-      const eruptColor = transcendentGlow(frame * 2, x * 5);
-      s.set(ox + x, oy + SH + 1, '▀', eruptColor);
-      if ((frame + x * 3) % 6 < 3) {
-        s.set(ox + x, oy + SH + 2, '░', transcendentGlow(frame, x * 7));
-      }
+      s.set(ox + x, oy + SH + 1, '▀', transcendentGlow(frame, x * 5));
     }
   },
 
   drawOverlay(s, ox, oy, frame) {
-    // ── 6 orbital symbols circling the sprite ──
+    // ── 6 orbital symbols — clean elliptical path ──
     const orbitSymbols = ['✦', '✧', '◆', '◇', '★', '☆'];
     for (let i = 0; i < 6; i++) {
       const angle = (frame / 100 * Math.PI * 2) + (i * Math.PI * 2 / 6);
@@ -1077,31 +857,16 @@ const FULL_SET_EFFECT = {
       }
     }
 
-    // ── Chromatic storm — 14 bright particles in cycling rainbow ──
-    for (let i = 0; i < 14; i++) {
-      const seed = hash(i, Math.floor(frame / 2));
-      const px = (seed % (SW + 14)) - 7;
-      const py = ((seed >> 8) % (SH + 10)) - 5;
-      const visible = ((frame + i * 4) % 7) < 4;
-      if (visible) {
-        const stormChars = ['·', '∘', '°', '✦', '★', '◆'];
-        const ch = stormChars[seed % 6];
-        s.set(ox + px, oy + py, ch, transcendentGlow(frame, i * 9));
-      }
-    }
-
-    // ── Power pulse — full-sprite flash every 50 frames ──
-    if (frame % 50 < 2) {
-      const flashColor = rgb(255, 255, 255);
-      for (let y = 0; y < SH; y += 2) {
-        for (let x = 0; x < SW; x += 2) {
-          s.set(ox + x, oy + y, '·', flashColor);
-        }
-      }
-    }
-
-    // ── Permanent crown jewel — bright star above head ──
+    // ── Permanent crown jewel ──
     s.set(ox + CX, oy - 5, '✦', rgb(255, 255, 255));
+
+    // ── Cardinal energy markers — 4 fixed glyphs at compass points ──
+    const pulse = wave(frame, 25, 0);
+    const markerCol = pulse > 0.5 ? rgb(255, 220, 255) : rgb(180, 140, 220);
+    s.set(ox + CX, oy - 6, '◆', markerCol);                    // North
+    s.set(ox + CX, oy + SH + 3, '◆', markerCol);               // South
+    s.set(ox - 7, oy + CY, '◆', markerCol);                     // West
+    s.set(ox + SW + 6, oy + CY, '◆', markerCol);                // East
   },
 };
 
@@ -1109,7 +874,6 @@ const FULL_SET_EFFECT = {
 // Effect Application — stacks ALL transcendent effects
 // ═══════════════════════════════════════════════════════════════
 
-// Application order: later types override theme colors
 const APPLY_ORDER = ['ram', 'storage', 'cpu', 'gpu'];
 
 function findAllTranscendentParts(equippedParts) {
@@ -1124,7 +888,6 @@ function findAllTranscendentParts(equippedParts) {
   return found;
 }
 
-// Backward-compatible: returns highest-priority single part
 const TYPE_PRIORITY = ['gpu', 'cpu', 'storage', 'ram'];
 function findTopTranscendentPart(equippedParts) {
   if (!equippedParts || typeof equippedParts !== 'object') return null;
@@ -1151,7 +914,6 @@ function applyTranscendentPartEffects(sprite, equippedParts) {
       mergedTheme = { ...mergedTheme, ...effect.theme };
     }
   }
-  // Full set overrides everything with ultra-dark prismatic theme
   if (isFullSet) {
     mergedTheme = { ...mergedTheme, ...FULL_SET_THEME };
   }
@@ -1160,22 +922,16 @@ function applyTranscendentPartEffects(sprite, equippedParts) {
   const origBack = sprite.back.draw;
   const origFront = sprite.front.draw;
 
-  // Wrap back draw — stack ALL auras, then sprite, then ALL overlays
   sprite.back = {
     ...sprite.back,
     draw(screen, ox, oy, tint, frame) {
       const f = frame || 0;
-      // All auras (behind sprite)
       for (const tp of transcendentParts) {
         const effect = TRANSCENDENT_EFFECTS[tp.id];
         if (effect && effect.drawAura) effect.drawAura(screen, ox, oy, f);
       }
       if (isFullSet) FULL_SET_EFFECT.drawAura(screen, ox, oy, f);
-
-      // Original sprite
       origBack(screen, ox, oy, tint, frame);
-
-      // All overlays (on top of sprite)
       for (const tp of transcendentParts) {
         const effect = TRANSCENDENT_EFFECTS[tp.id];
         if (effect && effect.drawOverlay) effect.drawOverlay(screen, ox, oy, f);
@@ -1184,7 +940,6 @@ function applyTranscendentPartEffects(sprite, equippedParts) {
     },
   };
 
-  // Wrap front draw — same stacking
   sprite.front = {
     ...sprite.front,
     draw(screen, ox, oy, tint, frame) {
@@ -1194,9 +949,7 @@ function applyTranscendentPartEffects(sprite, equippedParts) {
         if (effect && effect.drawAura) effect.drawAura(screen, ox, oy, f);
       }
       if (isFullSet) FULL_SET_EFFECT.drawAura(screen, ox, oy, f);
-
       origFront(screen, ox, oy, tint, frame);
-
       for (const tp of transcendentParts) {
         const effect = TRANSCENDENT_EFFECTS[tp.id];
         if (effect && effect.drawOverlay) effect.drawOverlay(screen, ox, oy, f);

@@ -15,7 +15,7 @@ const HARDWARE_FILE = path.join(HOME_CACHE_DIR, 'hardware.json');
 // Legacy location — migrate or delete if present
 const LEGACY_HARDWARE_FILE = path.join(PROJECT_DIR, 'hardware.json');
 // Bump this when scan logic changes — forces a fresh rescan for all users
-const SCAN_VERSION = 3;
+const SCAN_VERSION = 4;
 
 // ─── Persistent scan cache ───
 
@@ -54,40 +54,113 @@ function scansMatch(a, b) {
 
 function detectVendor(name) {
   const n = (name || '').toLowerCase();
-  if (n.includes('nvidia') || n.includes('geforce') || n.includes('rtx') || n.includes('gtx')) return 'NVIDIA';
-  if (n.includes('amd') || n.includes('radeon')) return 'AMD';
-  if (n.includes('intel')) return 'Intel';
+  if (n.includes('nvidia') || n.includes('geforce') || n.includes('rtx') || n.includes('gtx') || n.includes('quadro') || n.includes('tesla') || n.includes('titan')) return 'NVIDIA';
+  if (n.includes('amd') || n.includes('advanced micro devices') || n.includes('ati') || n.includes('radeon') || n.includes('firepro') || n.includes('firegl') || n.includes('instinct')) return 'AMD';
+  if (n.includes('intel') || n.includes('iris') || n.includes('uhd') || n.includes('arc')) return 'Intel';
+  if (n.includes('apple') || /\bm[1-9]\b/.test(n)) return 'Apple';
   return '';
 }
 
 function isIntegratedGPU(name) {
   const n = (name || '').toLowerCase();
   return !n || n === 'integrated' ||
-    (/\b(uhd|iris|hd graphics|intel.*graphics)\b/i.test(n) &&
-    !/\barc\b/i.test(n));
+    (/\b(uhd|iris|hd graphics|intel.*graphics)\b/i.test(n) && !/\barc\b/i.test(n)) ||
+    /\bradeon(?:\(tm\))? graphics\b/i.test(n) ||
+    /\bradeon\s+(?:610m|640m|660m|680m|740m|760m|780m)\b/i.test(n) ||
+    /\bvega\s+(?:3|6|7|8|10|11)\b/i.test(n) ||
+    /\badreno\b/i.test(n);
 }
 
-function isDiscreteGPU(name) {
+function isDiscreteGPU(name, vendor = '') {
   const n = (name || '').toLowerCase();
-  return /geforce|radeon|rtx|gtx|rx\s|arc\s*[ab]?\d/i.test(n);
+  const v = detectVendor(vendor || name);
+  if (!n || isVirtualGPU(n) || isIntegratedGPU(n)) return false;
+  if (/geforce|quadro|tesla|titan|rtx|gtx|radeon pro|firepro|firegl|instinct|arc/i.test(n)) return true;
+  if (v === 'NVIDIA' && /\b[apt]\d{3,4}\b/i.test(n)) return true;
+  if (v === 'AMD' && /\brx\s*\d{3,4}\b/i.test(n)) return true;
+  return false;
 }
 
 function isVirtualGPU(name) {
   const n = (name || '').toLowerCase();
-  return /microsoft basic|remote display|virtual|vmware|parallels|hyper-v|parsec|citrix/i.test(n);
+  return /microsoft basic|basic render|basic display|remote display|indirect display|wireless display|miracast|displaylink|virtual|vmware|parallels|hyper-v|parsec|citrix/i.test(n);
 }
 
 // Score a GPU entry — higher = more likely the real discrete GPU
 function gpuQualityScore(gpu) {
   let score = 0;
   const name = (gpu.model || gpu.Name || '').toLowerCase();
+  const vendor = detectVendor(gpu.vendor || gpu.AdapterCompatibility || name);
+  const bus = String(gpu.bus || gpu.Bus || '').toLowerCase();
   const vram = gpu.vramMB || gpu.vram || 0;
   if (isVirtualGPU(name)) return -100; // never pick virtual adapters
-  if (isDiscreteGPU(name)) score += 100;
+  if (isDiscreteGPU(name, vendor)) score += 120;
   if (isIntegratedGPU(name)) score -= 50;
-  if (vram > 0) score += Math.min(vram / 100, 50); // VRAM as tiebreaker
+  if (vendor) score += 8;
+  if (bus.includes('pci')) score += 12;
+  if (vram > 0) score += Math.min(vram / 128, 60); // VRAM as tiebreaker
   if (/\d{4}/.test(name)) score += 10; // has a model number
+  if (/graphics adapter|video controller|display adapter/.test(name)) score -= 20;
   return score;
+}
+
+function normalizeDiskDevice(device) {
+  return String(device || '').replace(/\//g, '\\').toUpperCase();
+}
+
+function diskQualityScore(disk, block = null) {
+  if (!disk) return -1000;
+
+  let score = 0;
+  const name = `${disk.name || ''} ${disk.vendor || ''}`.toLowerCase();
+  const type = String(disk.type || '').toLowerCase();
+  const iface = String(disk.interfaceType || disk.interface || '').toLowerCase();
+  const sizeGB = Number(disk.size || 0) / (1024 ** 3);
+  const physical = String(block?.physical || '').toLowerCase();
+
+  if (block?.removable) score -= 120;
+  if (/usb|thumb|flash|portable|reader|sd card/.test(`${name} ${iface}`)) score -= 80;
+  if (physical.includes('local')) score += 20;
+
+  if (iface.includes('nvme') || name.includes('nvme')) score += 120;
+  else if (type === 'ssd' || name.includes('ssd')) score += 80;
+  else if (type === 'hdd') score += 40;
+
+  if (iface.includes('pci')) score += 10;
+  if (iface.includes('sata')) score += 6;
+  if (sizeGB > 0) score += Math.min(sizeGB / 32, 40);
+
+  return score;
+}
+
+function pickPrimaryDisk(disks, blockDevices) {
+  const diskList = Array.isArray(disks) ? disks.filter(Boolean) : [];
+  if (diskList.length === 0) return {};
+
+  const blocks = Array.isArray(blockDevices) ? blockDevices.filter(Boolean) : [];
+  const blockByDevice = new Map(blocks.map(block => [normalizeDiskDevice(block.device), block]));
+  const systemDrive = process.platform === 'win32'
+    ? String(process.env.SystemDrive || 'C:').toUpperCase()
+    : '/';
+
+  const systemBlock = blocks.find((block) => {
+    const mount = String(block.mount || block.name || '').toUpperCase();
+    if (process.platform === 'win32') return mount.startsWith(systemDrive);
+    return mount === systemDrive;
+  });
+
+  if (systemBlock) {
+    const matchedDisk = diskList.find(disk => normalizeDiskDevice(disk.device) === normalizeDiskDevice(systemBlock.device));
+    if (matchedDisk) return matchedDisk;
+  }
+
+  return diskList
+    .slice()
+    .sort((a, b) => {
+      const aScore = diskQualityScore(a, blockByDevice.get(normalizeDiskDevice(a.device)));
+      const bScore = diskQualityScore(b, blockByDevice.get(normalizeDiskDevice(b.device)));
+      return bScore - aScore;
+    })[0];
 }
 
 // Fallback: query GPU via PowerShell on Windows (model name from driver is authoritative)
@@ -98,7 +171,7 @@ function fallbackGPU() {
   let gpus = null;
   try {
     const raw = execSync(
-      'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM | ConvertTo-Json"',
+      'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM, AdapterCompatibility, PNPDeviceID, VideoProcessor | ConvertTo-Json"',
       { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
     ).toString().trim();
     let parsed = JSON.parse(raw);
@@ -110,14 +183,18 @@ function fallbackGPU() {
   if (!gpus || gpus.length === 0) {
     try {
       const raw = execSync(
-        'wmic path win32_VideoController get Name,AdapterRAM /format:csv',
+        'wmic path win32_VideoController get Name,AdapterRAM,AdapterCompatibility /format:csv',
         { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
       ).toString().trim();
       const lines = raw.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('Node'));
       gpus = lines.map(line => {
         const parts = line.split(',');
-        if (parts.length >= 3) {
-          return { AdapterRAM: parseInt(parts[1], 10) || 0, Name: parts[2]?.trim() };
+        if (parts.length >= 4) {
+          return {
+            AdapterCompatibility: parts[1]?.trim(),
+            AdapterRAM: parseInt(parts[2], 10) || 0,
+            Name: parts[3]?.trim(),
+          };
         }
         return null;
       }).filter(g => g && g.Name);
@@ -127,10 +204,18 @@ function fallbackGPU() {
   if (!gpus || gpus.length === 0) return null;
 
   // Filter out virtual display adapters, then prefer discrete GPU
-  gpus = gpus.filter(g => !isVirtualGPU(g.Name));
+  gpus = gpus.filter(g => !isVirtualGPU([g.Name, g.VideoProcessor, g.AdapterCompatibility, g.PNPDeviceID].filter(Boolean).join(' ')));
   gpus.sort((a, b) => {
-    const aScore = gpuQualityScore({ model: a.Name, vramMB: (a.AdapterRAM || 0) / (1024 * 1024) });
-    const bScore = gpuQualityScore({ model: b.Name, vramMB: (b.AdapterRAM || 0) / (1024 * 1024) });
+    const aScore = gpuQualityScore({
+      model: a.Name,
+      vramMB: (a.AdapterRAM || 0) / (1024 * 1024),
+      vendor: a.AdapterCompatibility,
+    });
+    const bScore = gpuQualityScore({
+      model: b.Name,
+      vramMB: (b.AdapterRAM || 0) / (1024 * 1024),
+      vendor: b.AdapterCompatibility,
+    });
     return bScore - aScore;
   });
 
@@ -144,7 +229,7 @@ function fallbackGPU() {
     return {
       model: best.Name,
       vramMB,
-      vendor: detectVendor(best.Name),
+      vendor: detectVendor(best.AdapterCompatibility || best.Name),
     };
   }
   return null;
@@ -168,8 +253,21 @@ function cpuBrandScore(brand) {
   return score;
 }
 
+function pickBestCpuCandidate(candidates) {
+  return (candidates || [])
+    .filter(candidate => candidate && candidate.brand)
+    .sort((a, b) =>
+      cpuBrandScore(b.brand) - cpuBrandScore(a.brand) ||
+      (b.threads || 0) - (a.threads || 0) ||
+      (b.cores || 0) - (a.cores || 0) ||
+      (b.speedMax || 0) - (a.speedMax || 0)
+    )[0] || null;
+}
+
 // Fallback: prefer Windows CIM CPU info, then WMIC, then Node's os.cpus()
 function fallbackCPU() {
+  const candidates = [];
+
   if (process.platform === 'win32') {
     // Try PowerShell
     try {
@@ -187,14 +285,14 @@ function fallbackCPU() {
       );
       const best = cpus[0];
       if (best && best.Name) {
-        return {
+        candidates.push({
           brand: cleanCpuBrand(best.Name) || 'Unknown CPU',
           manufacturer: cleanCpuBrand(best.Manufacturer),
           cores: best.NumberOfCores || 0,
           threads: best.NumberOfLogicalProcessors || best.NumberOfCores || 0,
           speed: (best.CurrentClockSpeed || best.MaxClockSpeed || 0) / 1000,
           speedMax: (best.MaxClockSpeed || best.CurrentClockSpeed || 0) / 1000,
-        };
+        });
       }
     } catch {}
 
@@ -215,14 +313,14 @@ function fallbackCPU() {
           const cores = parseInt(parts[4], 10) || 0;
           const threads = parseInt(parts[5], 10) || cores;
           if (name) {
-            return {
+            candidates.push({
               brand: cleanCpuBrand(name) || 'Unknown CPU',
               manufacturer: cleanCpuBrand(manufacturer),
               cores,
               threads,
               speed: maxClock / 1000,
               speedMax: maxClock / 1000,
-            };
+            });
           }
         }
       }
@@ -230,24 +328,28 @@ function fallbackCPU() {
   }
 
   const cpus = nodeos.cpus();
-  if (!cpus.length) return null;
-  return {
-    brand: cleanCpuBrand(cpus[0].model) || 'Unknown CPU',
-    manufacturer: cpus[0].model.includes('Intel') ? 'Intel' :
-                   cpus[0].model.includes('AMD') ? 'AMD' : '',
-    cores: cpus.length,        // logical cores
-    threads: cpus.length,
-    speed: cpus[0].speed / 1000, // MHz → GHz
-    speedMax: cpus[0].speed / 1000,
-  };
+  if (cpus.length) {
+    candidates.push({
+      brand: cleanCpuBrand(cpus[0].model) || 'Unknown CPU',
+      manufacturer: cpus[0].model.includes('Intel') ? 'Intel' :
+                     cpus[0].model.includes('AMD') ? 'AMD' : '',
+      cores: cpus.length,        // logical cores
+      threads: cpus.length,
+      speed: cpus[0].speed / 1000, // MHz → GHz
+      speedMax: cpus[0].speed / 1000,
+    });
+  }
+
+  return pickBestCpuCandidate(candidates);
 }
 
 async function scanSpecsUncached() {
-  const [cpu, mem, graphics, disks, os, uuid, chassis] = await Promise.all([
+  const [cpu, mem, graphics, disks, blockDevices, os, uuid, chassis] = await Promise.all([
     si.cpu().catch(() => ({})),
     si.mem().catch(() => ({ total: 8 * 1024 ** 3 })),
     si.graphics().catch(() => ({ controllers: [] })),
     si.diskLayout().catch(() => []),
+    si.blockDevices().catch(() => []),
     si.osInfo().catch(() => ({})),
     si.uuid().catch(() => ({})),
     si.chassis().catch(() => ({ type: '' })),
@@ -282,12 +384,12 @@ async function scanSpecsUncached() {
 
   // ── GPU: cross-reference systeminformation with PowerShell for best result ──
   const gpuControllers = (graphics.controllers || [])
-    .filter(c => !isVirtualGPU(c.model)); // drop virtual/remote display adapters
+    .filter(c => !isVirtualGPU([c.model, c.vendor, c.bus].filter(Boolean).join(' '))); // drop virtual/remote display adapters
 
   // Score and sort si controllers — prefer discrete GPUs, not just highest VRAM
   gpuControllers.sort((a, b) => {
-    const aScore = gpuQualityScore({ model: a.model, vramMB: a.vram });
-    const bScore = gpuQualityScore({ model: b.model, vramMB: b.vram });
+    const aScore = gpuQualityScore({ model: a.model, vramMB: a.vram, vendor: a.vendor, bus: a.bus });
+    const bScore = gpuQualityScore({ model: b.model, vramMB: b.vram, vendor: b.vendor, bus: b.bus });
     return bScore - aScore;
   });
   let gpuMain = gpuControllers[0] || {};
@@ -298,14 +400,14 @@ async function scanSpecsUncached() {
   // so we prefer systeminformation for VRAM.
   const gpuFb = fallbackGPU();
   if (gpuFb) {
-    const siScore = gpuQualityScore({ model: gpuMain.model, vramMB: gpuMain.vram });
-    const fbScore = gpuQualityScore({ model: gpuFb.model, vramMB: gpuFb.vramMB });
+    const siScore = gpuQualityScore({ model: gpuMain.model, vramMB: gpuMain.vram, vendor: gpuMain.vendor, bus: gpuMain.bus });
+    const fbScore = gpuQualityScore({ model: gpuFb.model, vramMB: gpuFb.vramMB, vendor: gpuFb.vendor });
 
     if (fbScore > siScore) {
       // Fallback found a better GPU — use its model name, keep best VRAM
       const bestVram = Math.max(gpuMain.vram || 0, gpuFb.vramMB || 0);
       gpuMain = { model: gpuFb.model, vram: bestVram, vendor: gpuFb.vendor };
-    } else if (isDiscreteGPU(gpuFb.model) && isDiscreteGPU(gpuMain.model)) {
+    } else if (isDiscreteGPU(gpuFb.model, gpuFb.vendor) && isDiscreteGPU(gpuMain.model, gpuMain.vendor)) {
       // Both found discrete GPUs — prefer WMI model name (driver-authoritative),
       // keep the higher VRAM from either source
       const bestVram = Math.max(gpuMain.vram || 0, gpuFb.vramMB || 0);
@@ -313,7 +415,7 @@ async function scanSpecsUncached() {
     }
   }
 
-  const primaryDisk = disks?.[0] || {};
+  const primaryDisk = pickPrimaryDisk(disks, blockDevices);
   const chassisType = (chassis.type || '').toLowerCase();
 
   return {

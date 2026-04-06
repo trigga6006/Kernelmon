@@ -45,7 +45,7 @@ const BOXES = [
   {
     key: 'transcendent',
     name: 'Transcendent Crate',
-    cost: 10000,
+    cost: 1500,
     icon: '✧',
     color: rgb(200, 120, 255),
     desc: 'Ultra-rare Transcendent chance',
