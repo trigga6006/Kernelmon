@@ -13,7 +13,7 @@ const {
   createBuild, deleteBuild,
   equipPartOnBuild, unequipPartOnBuild,
   isBuildComplete, applyBuildOverrides, buildSpecsFromParts,
-  removePart, getSellPrice,
+  removePart, getSellPrice, isSeededPart,
 } = require('./parts');
 const { addCredits, getBalance } = require('./credits');
 const { drawArt, getPartArt } = require('./itemart');
@@ -302,13 +302,20 @@ function openWorkshop(realSpecs, screen) {
           }
 
           const infoX = leftX + 10;
+          const seeded = isSeededPart(p.id);
           if (isCur) {
             screen.text(leftX, y, '▸', colors.white, null, true);
             screen.text(infoX, y, p.name, colors.white, null, true);
+            if (seeded) screen.text(infoX + p.name.length + 1, y, '🔒', colors.dimmer);
             screen.text(infoX, y + 1, `x${p.count}  (${p.rarity})`, rc);
-            screen.text(infoX, y + 2, `Sell: ${price}◆`, GOLD);
+            if (seeded) {
+              screen.text(infoX, y + 2, 'Hardware scan — cannot sell', colors.dimmer);
+            } else {
+              screen.text(infoX, y + 2, `Sell: ${price}◆`, GOLD);
+            }
           } else {
             screen.text(infoX, y, p.name, colors.dim);
+            if (seeded) screen.text(infoX + p.name.length + 1, y, '🔒', colors.dimmer);
             screen.text(infoX, y + 1, `x${p.count}  (${p.rarity})`, colors.dimmer);
           }
         }
@@ -412,7 +419,7 @@ function openWorkshop(realSpecs, screen) {
         if (confirmSell) {
           if (key === 'y' || key === 'Y') {
             const part = partsList[partCursor];
-            if (part) {
+            if (part && !isSeededPart(part.id)) {
               const price = getSellPrice(part.id);
               if (removePart(part.id)) {
                 const newBal = addCredits(price);
@@ -453,7 +460,16 @@ function openWorkshop(realSpecs, screen) {
           }
           render();
         } else if ((key === 's' || key === 'S') && !isRecentEsc() && partsList.length > 0 && partCursor < partsList.length) {
-          confirmSell = true;
+          const sp = partsList[partCursor];
+          if (isSeededPart(sp.id)) {
+            sellFeedback = {
+              text: `Can't sell — ${sp.name} is from your hardware scan`,
+              color: colors.rose,
+              expiry: Date.now() + 2500,
+            };
+          } else {
+            confirmSell = true;
+          }
           render();
         } else if (key === '\x1b' || key === 'q') {
           mode = 'slots';

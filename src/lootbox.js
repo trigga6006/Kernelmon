@@ -11,6 +11,8 @@ const { ITEMS, addItem } = require('./items');
 const { PARTS, RARITY_COLORS, RARITY_ICONS, TYPE_LABELS, TYPE_COLORS, addPart } = require('./parts');
 const { drawArt, getItemArt, getPartArt } = require('./itemart');
 const { SKINS, addSkin } = require('./skins');
+const { TITLES, TITLE_RARITY_COLORS, TITLE_RARITY_ICONS, addTitle } = require('./titles');
+const { CARDS, CARD_RARITY_ICONS, CARD_RARITY_COLORS_RGB, CARD_TYPE_LABELS, CARD_TYPE_COLORS_RGB, addCard } = require('./cards');
 
 // ─── Box tiers ───
 
@@ -93,6 +95,26 @@ function buildRewardPool() {
     });
   }
 
+  // Add titles (excluding special tags — creator/founding_player)
+  for (const [id, title] of Object.entries(TITLES)) {
+    if (title.special) continue;
+    const icon = TITLE_RARITY_ICONS[title.rarity] || '·';
+    pool.push({
+      type: 'title', id, rarity: title.rarity, name: title.name, icon,
+    });
+  }
+
+  // Add cards (excluding divine & primordial — those are gym-leader-only on 3rd round+)
+  const EXCLUDED_CARD_RARITIES = new Set(['divine', 'primordial']);
+  for (const [id, card] of Object.entries(CARDS)) {
+    if (EXCLUDED_CARD_RARITIES.has(card.rarity)) continue;
+    const icon = CARD_RARITY_ICONS[card.rarity] || '·';
+    pool.push({
+      type: 'card', id, rarity: card.rarity, name: card.name, icon,
+      cardType: card.type, // passive/reactive/active
+    });
+  }
+
   return pool;
 }
 
@@ -105,6 +127,8 @@ const TYPE_WEIGHTS = {
   cpu: 1,
   gpu: 1,
   skin: 1,
+  title: 2,
+  card: 2,
 };
 
 function rollReward(box, rng) {
@@ -156,6 +180,10 @@ async function openLootBoxAnimated(box, screen) {
     addItem(reward.id);
   } else if (reward.type === 'skin') {
     addSkin(reward.id, 'lootbox_' + box.key);
+  } else if (reward.type === 'title') {
+    addTitle(reward.id, 'lootbox:' + box.key);
+  } else if (reward.type === 'card') {
+    addCard(reward.id);
   } else {
     addPart(reward.id);
   }
@@ -247,6 +275,21 @@ async function openLootBoxAnimated(box, screen) {
     const shimmer = transcendentGlow || (() => rc);
     screen.centerText(cy - 3, '·  ✧  ·', typeof shimmer === 'function' ? shimmer(0, 0) : rc);
     screen.centerText(cy - 2, '✧     ✧', typeof shimmer === 'function' ? shimmer(0, 10) : rc);
+  } else if (reward.type === 'title') {
+    // Title: show the rarity icon as a badge
+    const titleIcon = TITLE_RARITY_ICONS[reward.rarity] || '·';
+    const titleColor = TITLE_RARITY_COLORS[reward.rarity] || rc;
+    screen.centerText(cy - 3, `${titleIcon}  ${titleIcon}  ${titleIcon}`, titleColor);
+    screen.centerText(cy - 2, `「 TITLE 」`, titleColor);
+  } else if (reward.type === 'card') {
+    // Card: show card type icon and rarity pattern
+    const crc = CARD_RARITY_COLORS_RGB[reward.rarity] || [160, 165, 180];
+    const ctc = CARD_TYPE_COLORS_RGB[reward.cardType] || [180, 180, 180];
+    const cardColor = rgb(crc[0], crc[1], crc[2]);
+    const typeColor = rgb(ctc[0], ctc[1], ctc[2]);
+    const cardIcon = CARD_RARITY_ICONS[reward.rarity] || '·';
+    screen.centerText(cy - 3, `${cardIcon}  ${cardIcon}  ${cardIcon}`, cardColor);
+    screen.centerText(cy - 2, `「 ${CARD_TYPE_LABELS[reward.cardType] || 'CARD'} 」`, typeColor);
   } else {
     const rewardArt = reward.type === 'item' ? getItemArt(reward.id) : getPartArt(reward.partType);
     if (rewardArt) {
@@ -267,6 +310,14 @@ async function openLootBoxAnimated(box, screen) {
   if (reward.type === 'skin') {
     screen.centerText(cy + 2, '║', rc);
     screen.centerText(cy + 2, '✧ Transcendent Skin ✧', rgb(200, 120, 255));
+  } else if (reward.type === 'title') {
+    screen.centerText(cy + 2, '║', rc);
+    screen.centerText(cy + 2, '⚡ Rig Title ⚡', rc);
+  } else if (reward.type === 'card') {
+    const ctc = CARD_TYPE_COLORS_RGB[reward.cardType] || [180, 180, 180];
+    const typeColor = rgb(ctc[0], ctc[1], ctc[2]);
+    screen.centerText(cy + 2, '║', rc);
+    screen.centerText(cy + 2, `♦ ${CARD_TYPE_LABELS[reward.cardType] || 'Card'} Card ♦`, typeColor);
   } else if (reward.type === 'part') {
     const typeLine = `${TYPE_LABELS[reward.partType]} component`;
     screen.centerText(cy + 2, '║', rc);

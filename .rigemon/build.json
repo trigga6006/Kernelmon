@@ -1,0 +1,20 @@
+{
+  "active": 0,
+  "builds": [
+    {
+      "name": "My Rig",
+      "main": true,
+      "parts": {}
+    },
+    {
+      "name": "test1",
+      "main": false,
+      "parts": {
+        "cpu": "r9_7950x",
+        "gpu": "rtx_4090",
+        "ram": "ram_128gb",
+        "storage": "nvme_4tb"
+      }
+    }
+  ]
+}

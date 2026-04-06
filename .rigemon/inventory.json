@@ -1,0 +1,14 @@
+{
+  "thermal_paste": 3,
+  "ram_stick": 2,
+  "nvme_cache": 2,
+  "arctic_silver": 3,
+  "liquid_metal": 2,
+  "overclock_kit": 3,
+  "gpu_bios_flash": 1,
+  "firewall": 1,
+  "driver_update": 2,
+  "voltage_spike": 1,
+  "emp_charge": 1,
+  "zero_day_exploit": 1
+}

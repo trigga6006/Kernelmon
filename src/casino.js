@@ -188,6 +188,7 @@ function drawHandCentered(scr, tx, tw, y, hand, faceDownIdx) {
 
 const CASINO_GAMES = [
   { key: 'blackjack', label: 'BLACKJACK', desc: 'Beat the dealer to 21', icon: '♠' },
+  { key: 'baccarat', label: 'BACCARAT', desc: 'Bet on player, banker, or tie', icon: '♣' },
 ];
 
 async function openCasino(scr) {
@@ -265,9 +266,10 @@ async function openCasino(scr) {
       }
       if (key === '\r' || key === '\n') {
         const game = CASINO_GAMES[cursor];
-        if (game.key === 'blackjack') {
+        if (game.key === 'blackjack' || game.key === 'baccarat') {
           cleanup();
-          await playBlackjack(scr);
+          if (game.key === 'blackjack') await playBlackjack(scr);
+          else await playBaccarat(scr);
           stdin.setRawMode(true);
           stdin.resume();
           stdin.setEncoding('utf8');
@@ -735,6 +737,420 @@ async function playBlackjack(scr) {
           resultColors = [];
           totalWinLoss = 0;
           message = '';
+          render();
+        }
+        return;
+      }
+    }
+
+    function cleanup() {
+      stdin.removeListener('data', onKey);
+    }
+
+    stdin.on('data', onKey);
+    render();
+  });
+}
+
+// ─── Baccarat ───
+
+function baccaratCardValue(card) {
+  if (['10', 'J', 'Q', 'K'].includes(card.rank)) return 0;
+  if (card.rank === 'A') return 1;
+  return parseInt(card.rank, 10);
+}
+
+function baccaratTotal(hand) {
+  let total = 0;
+  for (const card of hand) total += baccaratCardValue(card);
+  return total % 10;
+}
+
+function baccaratDeal(deck) {
+  // Deal two cards each: Player, Banker alternating
+  const playerHand = [deck.pop(), deck.pop()];
+  const bankerHand = [deck.pop(), deck.pop()];
+
+  const pTotal = baccaratTotal(playerHand);
+  const bTotal = baccaratTotal(bankerHand);
+
+  // Natural — 8 or 9 on either hand, no more cards
+  if (pTotal >= 8 || bTotal >= 8) {
+    return { playerHand, bankerHand, natural: true };
+  }
+
+  // Player third card rule
+  let playerThird = null;
+  if (pTotal <= 5) {
+    playerThird = deck.pop();
+    playerHand.push(playerThird);
+  }
+
+  // Banker third card rule
+  if (playerThird === null) {
+    // Player stood — banker draws on 0-5
+    if (bTotal <= 5) bankerHand.push(deck.pop());
+  } else {
+    const p3 = baccaratCardValue(playerThird);
+    if (bTotal <= 2) {
+      bankerHand.push(deck.pop());
+    } else if (bTotal === 3 && p3 !== 8) {
+      bankerHand.push(deck.pop());
+    } else if (bTotal === 4 && p3 >= 2 && p3 <= 7) {
+      bankerHand.push(deck.pop());
+    } else if (bTotal === 5 && p3 >= 4 && p3 <= 7) {
+      bankerHand.push(deck.pop());
+    } else if (bTotal === 6 && (p3 === 6 || p3 === 7)) {
+      bankerHand.push(deck.pop());
+    }
+    // bTotal 7: banker stands
+  }
+
+  return { playerHand, bankerHand, natural: false };
+}
+
+const BACC_TABLE_W = 58;
+const BACC_TABLE_H = 24;
+
+async function playBaccarat(scr) {
+  return new Promise((resolve) => {
+    const w = scr.width;
+    const h = scr.height;
+
+    const tw = Math.min(BACC_TABLE_W, w - 4);
+    const th = Math.min(BACC_TABLE_H, h - 4);
+    const tx = Math.floor((w - tw) / 2);
+    const ty = Math.floor((h - th) / 2);
+
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    // Bet types
+    const BET_SLOTS = ['player', 'tie', 'banker'];
+    const BET_LABELS = { player: 'PLAYER', tie: 'TIE', banker: 'BANKER' };
+    const BET_PAYOUTS = { player: '1:1', tie: '8:1', banker: '0.95:1' };
+    const BET_ICONS = { player: '◇', tie: '◈', banker: '◆' };
+
+    // Game state
+    let phase = 'bet';  // 'bet' | 'result'
+    let bets = { player: 0, tie: 0, banker: 0 };
+    let betCursor = 0;  // index into BET_SLOTS
+    let playerHand = [];
+    let bankerHand = [];
+    let resultMsg = '';
+    let resultColor = neonGold;
+    let winnings = 0;
+    let wasNatural = false;
+
+    function totalBet() {
+      return bets.player + bets.tie + bets.banker;
+    }
+
+    function render() {
+      scr.clear();
+      const bal = getBalance();
+
+      // Dark background
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          scr.set(x, y, ' ', null, darkBg);
+        }
+      }
+
+      drawCodeGlyphs(scr, w, h);
+
+      // Header
+      scr.hline(0, 0, w, '═', dimGreen);
+      scr.centerText(0, ' B A C C A R A T ', neonGold, null, true);
+
+      const balStr = `◆ ${bal.toLocaleString()}`;
+      scr.text(w - balStr.length - 2, 0, balStr, colors.gold);
+
+      // Table
+      drawFeltBackground(scr, tx, ty, tw, th);
+      drawTableBorder(scr, tx, ty, tw, th);
+
+      if (phase === 'bet') {
+        renderBaccaratBet(bal);
+      } else if (phase === 'result') {
+        renderBaccaratResult();
+      }
+
+      scr.hline(0, h - 1, w, '═', dimGreen);
+      scr.render();
+    }
+
+    function renderBaccaratBet(bal) {
+      centerTextOnFelt(scr, tx, tw, ty + 2, '╸ PLACE YOUR BETS ╺', neonCyan, true);
+
+      // Payout reference
+      centerTextOnFelt(scr, tx, tw, ty + 4, 'Player 1:1    Tie 8:1    Banker 0.95:1', colors.dim, false);
+
+      // Divider
+      const divY = ty + 6;
+      drawDivider(scr, tx, ty, tw, divY);
+
+      // Three bet columns
+      const colW = Math.floor((tw - 4) / 3);
+      for (let i = 0; i < 3; i++) {
+        const slot = BET_SLOTS[i];
+        const label = BET_LABELS[slot];
+        const icon = BET_ICONS[slot];
+        const payout = BET_PAYOUTS[slot];
+        const selected = i === betCursor;
+        const colX = tx + 2 + i * (colW + 1);
+        const centerX = colX + Math.floor(colW / 2);
+
+        const labelY = divY + 2;
+        const iconY = divY + 4;
+        const betY = divY + 6;
+        const payY = divY + 8;
+
+        // Highlight selected column
+        if (selected) {
+          for (let row = divY + 1; row < divY + 10; row++) {
+            for (let col = colX; col < colX + colW; col++) {
+              scr.set(col, row, ' ', null, bgRgb(18, 50, 32));
+            }
+          }
+          // Selection arrows
+          scr.text(centerX - 1, betY - 1, '▲', neonCyan, bgRgb(18, 50, 32));
+          scr.text(centerX - 1, betY + 1, '▼', neonCyan, bgRgb(18, 50, 32));
+        }
+
+        const bg = selected ? bgRgb(18, 50, 32) : feltBg;
+
+        // Label
+        const lx = centerX - Math.floor(label.length / 2);
+        scr.text(lx, labelY, label, selected ? neonGold : colors.dim, bg, selected);
+
+        // Icon
+        scr.text(centerX - 1, iconY, icon, selected ? neonCyan : dimGreen, bg);
+
+        // Bet amount
+        const betStr = bets[slot] > 0 ? `◆ ${bets[slot]}` : '─ ─';
+        const bx = centerX - Math.floor(betStr.length / 2);
+        const betColor = bets[slot] > 0 ? neonGold : colors.dim;
+        scr.text(bx, betY, betStr, betColor, bg, bets[slot] > 0);
+
+        // Payout label
+        const px = centerX - Math.floor(payout.length / 2);
+        scr.text(px, payY, payout, colors.dim, bg);
+      }
+
+      // Total bet
+      const tot = totalBet();
+      if (tot > 0) {
+        const totStr = `TOTAL BET: ◆ ${tot}`;
+        centerTextOnFelt(scr, tx, tw, ty + th - 4, totStr, neonGold, true);
+      }
+
+      if (tot > bal + tot) {
+        centerTextOnFelt(scr, tx, tw, ty + th - 3, '!! NOT ENOUGH CREDITS !!', neonPink, true);
+      }
+
+      // Controls
+      const ctrl = '[LEFT/RIGHT] Select   [UP/DOWN] Adjust   [ENTER] Deal   [ESC] Back';
+      scr.text(Math.max(0, Math.floor((w - ctrl.length) / 2)), h - 2, ctrl, colors.dim);
+    }
+
+    function renderBaccaratResult() {
+      // Show bet amounts at top
+      const betParts = [];
+      if (bets.player > 0) betParts.push(`Player ◆${bets.player}`);
+      if (bets.tie > 0) betParts.push(`Tie ◆${bets.tie}`);
+      if (bets.banker > 0) betParts.push(`Banker ◆${bets.banker}`);
+      const betLine = betParts.join('   ');
+      scr.text(tx + Math.floor((tw - betLine.length) / 2), ty + 1, betLine, neonGold, feltBg, true);
+
+      // Player hand — left side
+      const halfW = Math.floor((tw - 2) / 2);
+      const pZoneX = tx + 1;
+      const bZoneX = tx + 1 + halfW + 1;
+
+      // Player label
+      const pTotal = baccaratTotal(playerHand);
+      const pLabel = `P L A Y E R   (${pTotal})`;
+      const pLabelX = pZoneX + Math.floor((halfW - pLabel.length) / 2);
+      const pWin = resultMsg.includes('PLAYER');
+      scr.text(pLabelX, ty + 3, pLabel, pWin ? neonCyan : colors.dim, feltBg, pWin);
+
+      // Player cards
+      const pCardsW = playerHand.length * CARD_W + (playerHand.length - 1);
+      let pCardX = pZoneX + Math.floor((halfW - pCardsW) / 2);
+      for (let i = 0; i < playerHand.length; i++) {
+        drawCard(scr, pCardX, ty + 5, playerHand[i], false);
+        pCardX += CARD_W + 1;
+      }
+
+      // Banker label
+      const bTotal = baccaratTotal(bankerHand);
+      const bLabel = `B A N K E R   (${bTotal})`;
+      const bLabelX = bZoneX + Math.floor((halfW - bLabel.length) / 2);
+      const bWin = resultMsg.includes('BANKER');
+      scr.text(bLabelX, ty + 3, bLabel, bWin ? neonCyan : colors.dim, feltBg, bWin);
+
+      // Banker cards
+      const bCardsW = bankerHand.length * CARD_W + (bankerHand.length - 1);
+      let bCardX = bZoneX + Math.floor((halfW - bCardsW) / 2);
+      for (let i = 0; i < bankerHand.length; i++) {
+        drawCard(scr, bCardX, ty + 5, bankerHand[i], false);
+        bCardX += CARD_W + 1;
+      }
+
+      // Divider with result
+      const divY = ty + 11;
+      drawDivider(scr, tx, ty, tw, divY);
+
+      // Natural badge
+      if (wasNatural) {
+        const natStr = ' ★ NATURAL ★ ';
+        scr.text(tx + Math.floor((tw - natStr.length) / 2), divY - 1, natStr, neonGold, feltBg, true);
+      }
+
+      // Result message on divider
+      const padResult = ` ${resultMsg} `;
+      scr.text(tx + Math.floor((tw - padResult.length) / 2), divY, padResult, resultColor, feltBg, true);
+
+      // Winnings/loss line
+      const winLine = winnings > 0 ? `+◆ ${winnings}` : winnings < 0 ? `-◆ ${Math.abs(winnings)}` : '◆ 0 (push)';
+      const winColor = winnings > 0 ? colors.mint : winnings < 0 ? neonPink : neonGold;
+      centerTextOnFelt(scr, tx, tw, divY + 2, winLine, winColor, true);
+
+      // Per-bet breakdown
+      let breakdownY = divY + 4;
+      if (bets.player > 0) {
+        const pResult = pTotal > bTotal ? `Player: +◆${bets.player}` : pTotal === bTotal ? `Player: push` : `Player: -◆${bets.player}`;
+        centerTextOnFelt(scr, tx, tw, breakdownY, pResult, pTotal > bTotal ? colors.mint : pTotal === bTotal ? neonGold : neonPink, false);
+        breakdownY++;
+      }
+      if (bets.banker > 0) {
+        const bResult = bTotal > pTotal ? `Banker: +◆${Math.floor(bets.banker * 0.95)}  (5% comm.)` : bTotal === pTotal ? `Banker: push` : `Banker: -◆${bets.banker}`;
+        centerTextOnFelt(scr, tx, tw, breakdownY, bResult, bTotal > pTotal ? colors.mint : bTotal === pTotal ? neonGold : neonPink, false);
+        breakdownY++;
+      }
+      if (bets.tie > 0) {
+        const tResult = pTotal === bTotal ? `Tie: +◆${bets.tie * 8}` : `Tie: -◆${bets.tie}`;
+        centerTextOnFelt(scr, tx, tw, breakdownY, tResult, pTotal === bTotal ? colors.mint : neonPink, false);
+        breakdownY++;
+      }
+
+      const ctrl = '[ENTER] Play again   [ESC] Back to Casino';
+      scr.text(Math.floor((w - ctrl.length) / 2), h - 2, ctrl, colors.dim);
+    }
+
+    function startDeal() {
+      const tot = totalBet();
+      if (tot === 0) return false;
+      if (tot > getBalance()) return false;
+
+      spendCredits(tot);
+
+      const deck = makeDeck();
+      const result = baccaratDeal(deck);
+      playerHand = result.playerHand;
+      bankerHand = result.bankerHand;
+      wasNatural = result.natural;
+
+      const pTotal = baccaratTotal(playerHand);
+      const bTotal = baccaratTotal(bankerHand);
+
+      // Determine winner
+      let winner;
+      if (pTotal > bTotal) winner = 'player';
+      else if (bTotal > pTotal) winner = 'banker';
+      else winner = 'tie';
+
+      // Calculate winnings
+      winnings = 0;
+
+      // Player bet
+      if (bets.player > 0) {
+        if (winner === 'player') {
+          winnings += bets.player * 2;      // return + 1:1
+        } else if (winner === 'tie') {
+          winnings += bets.player;           // push on tie
+        }
+        // loss: already spent
+      }
+
+      // Banker bet (5% commission on wins)
+      if (bets.banker > 0) {
+        if (winner === 'banker') {
+          winnings += bets.banker + Math.floor(bets.banker * 0.95); // return + 0.95:1
+        } else if (winner === 'tie') {
+          winnings += bets.banker;           // push on tie
+        }
+      }
+
+      // Tie bet
+      if (bets.tie > 0) {
+        if (winner === 'tie') {
+          winnings += bets.tie * 9;          // return + 8:1
+        }
+        // loss: already spent
+      }
+
+      if (winnings > 0) addCredits(winnings);
+
+      // Net result (winnings minus what was bet)
+      winnings = winnings - tot;
+
+      // Result message
+      if (winner === 'player') {
+        resultMsg = `PLAYER WINS (${pTotal} vs ${bTotal})`;
+        resultColor = bets.player > 0 ? colors.mint : neonPink;
+      } else if (winner === 'banker') {
+        resultMsg = `BANKER WINS (${bTotal} vs ${pTotal})`;
+        resultColor = bets.banker > 0 ? colors.mint : neonPink;
+      } else {
+        resultMsg = `TIE (${pTotal})`;
+        resultColor = bets.tie > 0 ? colors.mint : neonGold;
+      }
+
+      phase = 'result';
+      render();
+      return true;
+    }
+
+    function onKey(key) {
+      if (key === '\x1b') {
+        cleanup();
+        resolve();
+        return;
+      }
+
+      if (phase === 'bet') {
+        const slot = BET_SLOTS[betCursor];
+        if (key === '\x1b[D' || key === 'a') {
+          betCursor = Math.max(0, betCursor - 1);
+        } else if (key === '\x1b[C' || key === 'd') {
+          betCursor = Math.min(BET_SLOTS.length - 1, betCursor + 1);
+        } else if (key === '\x1b[A' || key === 'w') {
+          const maxAdd = getBalance() - totalBet();
+          if (maxAdd >= BET_STEP) {
+            bets[slot] += BET_STEP;
+          }
+        } else if (key === '\x1b[B' || key === 's') {
+          bets[slot] = Math.max(0, bets[slot] - BET_STEP);
+        } else if (key === '\r' || key === '\n') {
+          if (totalBet() > 0) startDeal();
+        }
+        render();
+        return;
+      }
+
+      if (phase === 'result') {
+        if (key === '\r' || key === '\n') {
+          phase = 'bet';
+          bets = { player: 0, tie: 0, banker: 0 };
+          playerHand = [];
+          bankerHand = [];
+          resultMsg = '';
+          winnings = 0;
+          wasNatural = false;
           render();
         }
         return;

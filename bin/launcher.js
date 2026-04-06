@@ -519,7 +519,8 @@ async function mainMenu(sessionState = {}) {
       const mGpu = gpuName(mainSpecs);
       const mSprite = getSprite(mainSpecs);
       const mArch = classifyArchetype(mStats, mainSpecs);
-      cardFighters[idx] = { id: rawSpecs.id, name: mName, gpu: mGpu, stats: mStats, specs: mainSpecs, sprite: mSprite, archetype: mArch };
+      const mTitleId = getEquippedTitleId(idx);
+      cardFighters[idx] = { id: rawSpecs.id, name: mName, gpu: mGpu, stats: mStats, specs: mainSpecs, sprite: mSprite, archetype: mArch, titleId: mTitleId };
     } else {
       // Custom build — construct specs from parts
       const customSpecs = buildSpecsFromParts(build.parts, rawSpecs.id);
@@ -528,7 +529,8 @@ async function mainMenu(sessionState = {}) {
       const cGpu = gpuName(customSpecs);
       const cSprite = getSprite(customSpecs);
       const cArch = classifyArchetype(cStats, customSpecs);
-      cardFighters[idx] = { id: rawSpecs.id, name: cName, gpu: cGpu, stats: cStats, specs: customSpecs, sprite: cSprite, archetype: cArch };
+      const cTitleId = getEquippedTitleId(idx);
+      cardFighters[idx] = { id: rawSpecs.id, name: cName, gpu: cGpu, stats: cStats, specs: customSpecs, sprite: cSprite, archetype: cArch, titleId: cTitleId };
     }
   }
 
@@ -1356,6 +1358,26 @@ async function handleGym(fighter, sessionState) {
       if (partDrop) addPart(partDrop.id);
     }
 
+    // Divine/Primordial card drop — gym leaders on 3rd round+
+    let cardDrop = null;
+    if (target.isLeader && totalClears >= 3) {
+      const { CARDS, CARD_RARITY_COLORS_RGB, addCard } = require('../src/cards');
+      const cardRng = createRNG(Date.now() + 2);
+      const divinePool = Object.entries(CARDS)
+        .filter(([, c]) => c.rarity === 'divine' || c.rarity === 'primordial')
+        .map(([id, c]) => ({ id, ...c }));
+      if (divinePool.length > 0) {
+        const totalW = divinePool.reduce((s, c) => s + (c.dropWeight || 0.001), 0);
+        let roll = cardRng.next() * totalW;
+        for (const card of divinePool) {
+          roll -= (card.dropWeight || 0.001);
+          if (roll <= 0) { cardDrop = card; break; }
+        }
+        if (!cardDrop) cardDrop = divinePool[divinePool.length - 1];
+        addCard(cardDrop.id);
+      }
+    }
+
     const scr = new Screen();
     scr.enter();
     const w = scr.width;
@@ -1386,6 +1408,13 @@ async function handleGym(fighter, sessionState) {
     if (partDrop) {
       const rc = RARITY_COLORS[partDrop.rarity] || colors.dim;
       scr.centerText(rewardLine, `▸ PART: ${partDrop.label || partDrop.id}  (${partDrop.rarity})`, rc, null, true);
+      rewardLine++;
+    }
+    if (cardDrop) {
+      const { CARD_RARITY_COLORS_RGB: CRC } = require('../src/cards');
+      const crc = CRC[cardDrop.rarity] || [255, 215, 100];
+      const cardColor = rgb(crc[0], crc[1], crc[2]);
+      scr.centerText(rewardLine, `▸ ♦ CARD: ${cardDrop.name}  (${cardDrop.rarity})`, cardColor, null, true);
       rewardLine++;
     }
 

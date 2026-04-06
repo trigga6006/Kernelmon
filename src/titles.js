@@ -271,28 +271,32 @@ function getColoredTitle(titleId) {
   return `${color}${text}${RESET}`;
 }
 
-// Returns animated title color for the Creator tag based on frame count
-// Cycles through a rainbow spectrum for a flashy animated effect
+// ─── Creator tag: reality-break effect ───
+// The tag looks like it's corrupting the renderer — unstable, flickering between
+// hot white overexposure and deep void. Characters randomly glitch into symbols
+// as if the game can't contain whoever's wearing it.
+
+const GLITCH_CHARS = '▓▒░█▌▐╪╫╬┼╳※¤∎⌧⍟⌬◊◈☰⚑⛧';
+
+// Deterministic pseudo-random per character per frame (no Math.random in render)
+function creatorHash(i, frame) {
+  let h = (i * 2654435761 + frame * 340573321) >>> 0;
+  h = ((h >> 16) ^ h) * 0x45d9f3b >>> 0;
+  return (h & 0xFFFF) / 0xFFFF; // 0-1
+}
+
 function getCreatorColor(frameCount) {
-  const speed = 0.15;
-  const t = frameCount * speed;
-  // Cycle through: magenta → cyan → gold → rose → lavender
-  const palette = [
-    [255, 60, 200],   // hot magenta
-    [60, 220, 255],   // electric cyan
-    [255, 220, 60],   // bright gold
-    [255, 100, 150],  // hot rose
-    [180, 120, 255],  // electric purple
-    [60, 255, 180],   // neon green
-  ];
-  const idx = Math.floor(t) % palette.length;
-  const next = (idx + 1) % palette.length;
-  const frac = t - Math.floor(t);
+  // Slow burn between white-hot core and void purple, with occasional flicker spikes
+  const t = frameCount * 0.08;
+  const pulse = Math.sin(t) * 0.5 + 0.5; // 0-1 smooth
+  const spike = Math.sin(t * 7.3) > 0.92 ? 1 : 0; // rare hard flicker
 
-  const r = Math.round(palette[idx][0] + (palette[next][0] - palette[idx][0]) * frac);
-  const g = Math.round(palette[idx][1] + (palette[next][1] - palette[idx][1]) * frac);
-  const b = Math.round(palette[idx][2] + (palette[next][2] - palette[idx][2]) * frac);
+  if (spike) return rgb(255, 255, 255); // blinding white flash
 
+  // Interpolate: void black-purple ↔ searing white with magenta undertone
+  const r = Math.round(40 + pulse * 215);
+  const g = Math.round(5 + pulse * 180);
+  const b = Math.round(60 + pulse * 195);
   return rgb(r, g, b);
 }
 
@@ -305,24 +309,56 @@ function drawTitle(screen, x, y, titleId, frameCount) {
   if (!text) return 0;
 
   if (def.rarity === 'creator') {
-    // Animated rainbow wave — each character offset by position
+    const baseColor = getCreatorColor(frameCount);
+    const voidColor = rgb(20, 0, 35);
+    const hotWhite = rgb(255, 240, 255);
+
     for (let i = 0; i < text.length; i++) {
-      const charFrame = frameCount + i * 3; // offset per char for wave
-      const color = getCreatorColor(charFrame);
-      screen.set(x + i, y, text[i], color, null, true);
+      const h = creatorHash(i, frameCount);
+      let ch = text[i];
+      let color = baseColor;
+
+      // ~12% chance a character corrupts into a glitch symbol
+      if (h < 0.12 && ch !== ' ') {
+        ch = GLITCH_CHARS[Math.floor(creatorHash(i + 99, frameCount) * GLITCH_CHARS.length)];
+        // Corrupted chars flicker between void and overexposed
+        color = h < 0.06 ? voidColor : hotWhite;
+      } else {
+        // Stagger color phase per character for depth
+        color = getCreatorColor(frameCount + i * 2);
+      }
+
+      screen.set(x + i, y, ch, color, null, true);
     }
-    // Sparkle effect: occasional glint characters above/around the title
-    const sparkleChars = ['✦', '✧', '⋆', '·', '∘'];
-    const sparkleIdx = Math.floor(frameCount * 0.3) % text.length;
-    if (frameCount % 4 < 2) {
-      const sx = x + sparkleIdx;
-      const sy = y - 1;
-      if (sy >= 0) {
-        const sChar = sparkleChars[frameCount % sparkleChars.length];
-        const sColor = getCreatorColor(frameCount + 10);
-        screen.set(sx, sy, sChar, sColor);
+
+    // Scan-line tear: a horizontal glitch artifact that sweeps across
+    const tearCycle = Math.floor(frameCount * 0.4) % 30;
+    if (tearCycle < text.length) {
+      const ti = tearCycle;
+      const tearChar = GLITCH_CHARS[Math.floor(creatorHash(ti, frameCount * 3) * GLITCH_CHARS.length)];
+      const tearColor = creatorHash(ti, frameCount) > 0.5 ? hotWhite : rgb(140, 0, 80);
+      screen.set(x + ti, y, tearChar, tearColor, null, true);
+    }
+
+    // Ghost echo: faint afterimage of the tag one row above, drifting
+    if (y - 1 >= 0) {
+      const drift = Math.floor(frameCount * 0.15) % 3 - 1; // -1, 0, or 1
+      const echoAlpha = Math.sin(frameCount * 0.1) * 0.3 + 0.3; // 0-0.6
+      if (echoAlpha > 0.2) {
+        for (let i = 0; i < text.length; i++) {
+          const ex = x + i + drift;
+          if (ex >= 0) {
+            const fade = rgb(
+              Math.round(40 * echoAlpha),
+              Math.round(5 * echoAlpha),
+              Math.round(60 * echoAlpha),
+            );
+            screen.set(ex, y - 1, text[i], fade);
+          }
+        }
       }
     }
+
     return text.length;
   }
 

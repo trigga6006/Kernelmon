@@ -94,6 +94,15 @@ const CARDS = {
     effect: { stat: 'def', value: 0.08 },
     dropWeight: 32,
   },
+  spaghetti_code: {
+    name: 'Spaghetti Code',
+    desc: '+12% STR & MAG, but wider damage variance',
+    flavor: 'It works. Nobody knows why.',
+    type: 'passive',
+    rarity: 'common',
+    effect: { stat: 'str', value: 0.12, stat2: 'mag', value2: 0.12, mechanic: 'variance_widen', mechValue: 0.15 },
+    dropWeight: 27,
+  },
 
   // ── Uncommon ──
   overclocked_bus: {
@@ -151,6 +160,24 @@ const CARDS = {
     rarity: 'rare',
     effect: { stat: 'mag', value: 0.10 },
     dropWeight: 7,
+  },
+  bit_rot: {
+    name: 'Bit Rot',
+    desc: 'Each turn: opponent loses 1% of all base stats',
+    flavor: 'Entropy always wins.',
+    type: 'passive',
+    rarity: 'rare',
+    effect: { mechanic: 'decay_aura', value: 0.01 },
+    dropWeight: 5,
+  },
+  dual_boot: {
+    name: 'Dual Boot',
+    desc: 'Each turn: randomly gain +15% STR or +15% MAG',
+    flavor: 'Two systems, one soul.',
+    type: 'passive',
+    rarity: 'rare',
+    effect: { mechanic: 'dual_random', stat1: 'str', stat2: 'mag', value: 0.15 },
+    dropWeight: 6,
   },
 
   // ── Epic ──
@@ -239,6 +266,15 @@ const CARDS = {
     effect: { trigger: 'hp_below', threshold: 0.20, action: 'boost', stat: 'def', value: 0.20, duration: 3, once: true },
     dropWeight: 26,
   },
+  rubber_duck: {
+    name: 'Rubber Duck',
+    desc: 'On stun: 40% chance to resist it + heal 5% HP',
+    flavor: 'Have you tried talking to the duck?',
+    type: 'reactive',
+    rarity: 'common',
+    effect: { trigger: 'on_stun', action: 'resist_heal', resistChance: 0.40, healValue: 0.05 },
+    dropWeight: 25,
+  },
 
   // ── Uncommon ──
   static_shield: {
@@ -267,6 +303,15 @@ const CARDS = {
     rarity: 'uncommon',
     effect: { trigger: 'on_stall', action: 'boost', stat: 'str', value: 0.25, duration: 1, once: true },
     dropWeight: 14,
+  },
+  garbage_collector: {
+    name: 'Garbage Collector',
+    desc: 'Every 4 turns: remove opponent\'s strongest buff',
+    flavor: 'Sweeping up unreferenced objects.',
+    type: 'reactive',
+    rarity: 'uncommon',
+    effect: { trigger: 'every_n_turns', interval: 4, action: 'strip_buff' },
+    dropWeight: 13,
   },
 
   // ── Rare ──
@@ -317,6 +362,15 @@ const CARDS = {
     effect: { trigger: 'on_dodge', action: 'counter', value: 0.15 },
     dropWeight: 2.5,
   },
+  stack_overflow: {
+    name: 'Stack Overflow',
+    desc: 'After 4 hits taken: deal 25% of accumulated damage back',
+    flavor: 'Too deep. Way too deep.',
+    type: 'reactive',
+    rarity: 'epic',
+    effect: { trigger: 'hit_count', threshold: 4, action: 'release_damage', value: 0.25 },
+    dropWeight: 2,
+  },
 
   // ── Legendary ──
   event_horizon: {
@@ -327,6 +381,15 @@ const CARDS = {
     rarity: 'legendary',
     effect: { trigger: 'hp_below', threshold: 0.15, action: 'invulnerable', duration: 1, once: true },
     dropWeight: 0.4,
+  },
+  trojan_horse: {
+    name: 'Trojan Horse',
+    desc: 'When opponent activates a card: steal its effect (once)',
+    flavor: 'A gift you cannot refuse.',
+    type: 'reactive',
+    rarity: 'legendary',
+    effect: { trigger: 'on_enemy_card', action: 'steal_effect', once: true },
+    dropWeight: 0.35,
   },
 
   // ── Mythic ──
@@ -413,6 +476,15 @@ const CARDS = {
     effect: { action: 'damage_stun', damage: 0.10, stunChance: 0.40, cooldown: 4 },
     dropWeight: 14,
   },
+  memory_leak: {
+    name: 'Memory Leak',
+    desc: 'Drain 8% opponent max HP, heal self same amount',
+    flavor: 'malloc() without free(). Classic.',
+    type: 'active',
+    rarity: 'uncommon',
+    effect: { action: 'drain', damage: 0.08, cooldown: 4 },
+    dropWeight: 14,
+  },
 
   // ── Rare ──
   packet_storm: {
@@ -462,6 +534,15 @@ const CARDS = {
     effect: { action: 'shield', charges: 2, cooldown: 7 },
     dropWeight: 2,
   },
+  segfault_trap: {
+    name: 'Segfault Trap',
+    desc: 'Set trap 3 turns: attacker takes 30% self-damage + stun',
+    flavor: 'Access violation at 0xDEADBEEF.',
+    type: 'active',
+    rarity: 'epic',
+    effect: { action: 'set_trap', reflectDamage: 0.30, stunChance: 0.80, trapDuration: 3, cooldown: 6 },
+    dropWeight: 2,
+  },
 
   // ── Legendary ──
   zero_day_cascade: {
@@ -483,6 +564,15 @@ const CARDS = {
     rarity: 'mythic',
     effect: { action: 'blackout', damage: 0.35, stunChance: 1.0, silenceDuration: 3, cooldown: 10 },
     dropWeight: 0.04,
+  },
+  fork_bomb: {
+    name: 'Fork Bomb',
+    desc: 'Deal 12% opponent HP three times, each 25% stun',
+    flavor: ':(){ :|:& };:',
+    type: 'active',
+    rarity: 'mythic',
+    effect: { action: 'multi_hit', damage: 0.12, hits: 3, stunChance: 0.25, cooldown: 9 },
+    dropWeight: 0.05,
   },
 
   // ── Transcendent ──
