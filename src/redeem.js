@@ -29,6 +29,8 @@ const CODES = {
   HACKER: { type: 'credits', amount: 250,  desc: '250 Credits' },
   TRNSC1: { type: 'lootbox', box: 'transcendent', desc: 'Transcendent Crate' },
   TRNSC2: { type: 'lootbox', box: 'transcendent', desc: 'Transcendent Crate' },
+  BAGS5K: { type: 'credits', amount: 5000, desc: '5,000 Credits' },
+  RICH5K: { type: 'credits', amount: 5000, desc: '5,000 Credits' },
 };
 
 // ─── Redemption tracking ───
