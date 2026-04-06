@@ -37,6 +37,14 @@ const CODES = {
   BONUS2: { type: 'credits', amount: 5000, desc: '5,000 Credits' },
   BONUS3: { type: 'credits', amount: 5000, desc: '5,000 Credits' },
   BONUS4: { type: 'credits', amount: 5000, desc: '5,000 Credits' },
+  FNDR01: { type: 'title', titleId: 'founding_player', desc: 'Founding Player Title' },
+  RSTR01: { type: 'parts', parts: ['tr_7995wx', 'rtx_5090', 'hbm4_stack', 'pm1743_30tb'], desc: 'Mythic CPU + Legendary GPU + Transcendent RAM & Storage' },
+  RSTR02: { type: 'items', items: [
+    ['thermal_paste', 5], ['arctic_silver', 3], ['liquid_metal', 1],
+    ['overclock_kit', 3], ['ram_stick', 3], ['nvme_cache', 2],
+    ['gpu_bios_flash', 2], ['firewall', 1], ['driver_update', 2],
+    ['voltage_spike', 1], ['emp_charge', 1], ['surge_protector', 1],
+  ], desc: '25 Bag Items' },
 };
 
 // ─── Redemption tracking ───
@@ -246,6 +254,33 @@ async function openRedeemScreen() {
 
           cleanup();
           resolve(true);
+        } else if (reward.type === 'title') {
+          const { addTitle, TITLES } = require('./titles');
+          const result = addTitle(reward.titleId, 'redeem:' + code);
+          const titleDef = TITLES[reward.titleId];
+          if (result) {
+            phase = 'result';
+            message = { text: `+ ${titleDef ? titleDef.name : reward.desc}`, color: GOLD };
+          } else {
+            phase = 'result';
+            message = { text: `${reward.desc} (already owned)`, color: GOLD };
+          }
+          render();
+          stdin.on('data', onKey);
+        } else if (reward.type === 'parts') {
+          const { addPart } = require('./parts');
+          for (const partId of reward.parts) addPart(partId);
+          phase = 'result';
+          message = { text: `+ ${reward.desc}`, color: GOLD };
+          render();
+          stdin.on('data', onKey);
+        } else if (reward.type === 'items') {
+          const { addItem } = require('./items');
+          for (const [itemId, count] of reward.items) addItem(itemId, count);
+          phase = 'result';
+          message = { text: `+ ${reward.desc}`, color: GOLD };
+          render();
+          stdin.on('data', onKey);
         }
         return;
       }
