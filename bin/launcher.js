@@ -455,10 +455,18 @@ async function mainMenu(sessionState = {}) {
   screen.enter();
   enableMouseInput();
 
+  // Ensure stdin is in a clean state — on Windows, pause/resume across
+  // screens can leave stdin stalled until an extra keypress "kicks" it.
+  // A full reset cycle with an event loop tick in between fixes this.
   const stdin = process.stdin;
+  try { stdin.setRawMode(false); } catch {}
+  try { stdin.pause(); } catch {}
+  await new Promise(r => setImmediate(r));
   stdin.setRawMode(true);
   stdin.resume();
   stdin.setEncoding('utf8');
+  // Drain any stale keypresses left in the buffer from prior screens
+  stdin.read();
 
   let resolveChoice;
   const choicePromise = new Promise(r => { resolveChoice = r; });
