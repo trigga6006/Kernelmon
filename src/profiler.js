@@ -9,6 +9,8 @@ let cachedSpecsPromise = null;
 
 const WSO_DIR = path.join(__dirname, '..', '.kernelmon');
 const HARDWARE_FILE = path.join(WSO_DIR, 'hardware.json');
+// Bump this when scan logic changes — forces a fresh rescan for all users
+const SCAN_VERSION = 2;
 
 // ─── Persistent scan cache ───
 
@@ -63,11 +65,17 @@ function isDiscreteGPU(name) {
   return /geforce|radeon|rtx|gtx|rx\s|arc\s*[ab]?\d/i.test(n);
 }
 
+function isVirtualGPU(name) {
+  const n = (name || '').toLowerCase();
+  return /microsoft basic|remote display|virtual|vmware|parallels|hyper-v|parsec|citrix/i.test(n);
+}
+
 // Score a GPU entry — higher = more likely the real discrete GPU
 function gpuQualityScore(gpu) {
   let score = 0;
   const name = (gpu.model || gpu.Name || '').toLowerCase();
   const vram = gpu.vramMB || gpu.vram || 0;
+  if (isVirtualGPU(name)) return -100; // never pick virtual adapters
   if (isDiscreteGPU(name)) score += 100;
   if (isIntegratedGPU(name)) score -= 50;
   if (vram > 0) score += Math.min(vram / 100, 50); // VRAM as tiebreaker
@@ -77,38 +85,61 @@ function gpuQualityScore(gpu) {
 
 // Fallback: query GPU via PowerShell on Windows (model name from driver is authoritative)
 function fallbackGPU() {
+  if (process.platform !== 'win32') return null;
+
+  // Try PowerShell first, then WMIC as a last resort
+  let gpus = null;
   try {
-    if (process.platform !== 'win32') return null;
     const raw = execSync(
-      'powershell -NoProfile -Command "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM | ConvertTo-Json"',
-      { timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+      'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM | ConvertTo-Json"',
+      { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
     ).toString().trim();
-    let gpus = JSON.parse(raw);
-    if (!Array.isArray(gpus)) gpus = [gpus];
-    gpus = gpus.filter(g => g && g.Name);
-
-    // Prefer discrete GPU over integrated
-    gpus.sort((a, b) => {
-      const aDiscrete = isDiscreteGPU(a.Name) ? 1 : 0;
-      const bDiscrete = isDiscreteGPU(b.Name) ? 1 : 0;
-      if (bDiscrete !== aDiscrete) return bDiscrete - aDiscrete;
-      return (b.AdapterRAM || 0) - (a.AdapterRAM || 0);
-    });
-
-    const best = gpus[0];
-    if (best && best.Name) {
-      // WMI AdapterRAM is a uint32 — overflows at 4GB. Treat 0 or negative as unknown.
-      const rawBytes = best.AdapterRAM || 0;
-      const vramMB = (rawBytes > 0 && rawBytes <= 4294967295)
-        ? Math.round(rawBytes / (1024 * 1024))
-        : 0; // overflow — will use systeminformation VRAM instead
-      return {
-        model: best.Name,
-        vramMB,
-        vendor: detectVendor(best.Name),
-      };
-    }
+    let parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) parsed = [parsed];
+    gpus = parsed.filter(g => g && g.Name);
   } catch {}
+
+  // WMIC fallback — deprecated but still present on most Windows installs
+  if (!gpus || gpus.length === 0) {
+    try {
+      const raw = execSync(
+        'wmic path win32_VideoController get Name,AdapterRAM /format:csv',
+        { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+      ).toString().trim();
+      const lines = raw.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('Node'));
+      gpus = lines.map(line => {
+        const parts = line.split(',');
+        if (parts.length >= 3) {
+          return { AdapterRAM: parseInt(parts[1], 10) || 0, Name: parts[2]?.trim() };
+        }
+        return null;
+      }).filter(g => g && g.Name);
+    } catch {}
+  }
+
+  if (!gpus || gpus.length === 0) return null;
+
+  // Filter out virtual display adapters, then prefer discrete GPU
+  gpus = gpus.filter(g => !isVirtualGPU(g.Name));
+  gpus.sort((a, b) => {
+    const aScore = gpuQualityScore({ model: a.Name, vramMB: (a.AdapterRAM || 0) / (1024 * 1024) });
+    const bScore = gpuQualityScore({ model: b.Name, vramMB: (b.AdapterRAM || 0) / (1024 * 1024) });
+    return bScore - aScore;
+  });
+
+  const best = gpus[0];
+  if (best && best.Name) {
+    // WMI AdapterRAM is a uint32 — overflows at 4GB. Treat 0 or negative as unknown.
+    const rawBytes = best.AdapterRAM || 0;
+    const vramMB = (rawBytes > 0 && rawBytes <= 4294967295)
+      ? Math.round(rawBytes / (1024 * 1024))
+      : 0; // overflow — will use systeminformation VRAM instead
+    return {
+      model: best.Name,
+      vramMB,
+      vendor: detectVendor(best.Name),
+    };
+  }
   return null;
 }
 
@@ -130,13 +161,14 @@ function cpuBrandScore(brand) {
   return score;
 }
 
-// Fallback: prefer Windows CIM CPU info, then Node's os.cpus()
+// Fallback: prefer Windows CIM CPU info, then WMIC, then Node's os.cpus()
 function fallbackCPU() {
-  try {
-    if (process.platform === 'win32') {
+  if (process.platform === 'win32') {
+    // Try PowerShell
+    try {
       const raw = execSync(
-        'powershell -NoProfile -Command "Get-CimInstance Win32_Processor | Select-Object Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, CurrentClockSpeed | ConvertTo-Json"',
-        { timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+        'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Processor | Select-Object Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, CurrentClockSpeed | ConvertTo-Json"',
+        { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
       ).toString().trim();
       let cpus = JSON.parse(raw);
       if (!Array.isArray(cpus)) cpus = [cpus];
@@ -157,8 +189,38 @@ function fallbackCPU() {
           speedMax: (best.MaxClockSpeed || best.CurrentClockSpeed || 0) / 1000,
         };
       }
-    }
-  } catch {}
+    } catch {}
+
+    // WMIC fallback
+    try {
+      const raw = execSync(
+        'wmic cpu get Name,Manufacturer,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed /format:csv',
+        { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+      ).toString().trim();
+      const lines = raw.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('Node'));
+      if (lines.length > 0) {
+        const parts = lines[0].split(',');
+        // CSV columns: Node, Manufacturer, MaxClockSpeed, Name, NumberOfCores, NumberOfLogicalProcessors
+        if (parts.length >= 6) {
+          const manufacturer = parts[1]?.trim();
+          const maxClock = parseInt(parts[2], 10) || 0;
+          const name = parts[3]?.trim();
+          const cores = parseInt(parts[4], 10) || 0;
+          const threads = parseInt(parts[5], 10) || cores;
+          if (name) {
+            return {
+              brand: cleanCpuBrand(name) || 'Unknown CPU',
+              manufacturer: cleanCpuBrand(manufacturer),
+              cores,
+              threads,
+              speed: maxClock / 1000,
+              speedMax: maxClock / 1000,
+            };
+          }
+        }
+      }
+    } catch {}
+  }
 
   const cpus = nodeos.cpus();
   if (!cpus.length) return null;
@@ -212,7 +274,8 @@ async function scanSpecsUncached() {
   if (!cpuInfo.speedMax) cpuInfo.speedMax = cpuInfo.speed;
 
   // ── GPU: cross-reference systeminformation with PowerShell for best result ──
-  const gpuControllers = (graphics.controllers || []).slice();
+  const gpuControllers = (graphics.controllers || [])
+    .filter(c => !isVirtualGPU(c.model)); // drop virtual/remote display adapters
 
   // Score and sort si controllers — prefer discrete GPUs, not just highest VRAM
   gpuControllers.sort((a, b) => {
@@ -281,12 +344,16 @@ async function getSpecs(options = {}) {
       const freshScan = await scanSpecsUncached();
       const cached = loadCachedScan();
 
-      if (cached && scansMatch(cached, freshScan)) {
+      // Force rescan when scan logic has been updated (version bump)
+      const cacheStale = !cached || (cached._scanVersion || 0) < SCAN_VERSION;
+
+      if (!cacheStale && scansMatch(cached, freshScan)) {
         // Hardware unchanged — reuse the cached scan (deterministic stats)
         return cached;
       }
 
       // New or changed hardware — save fresh scan as the new baseline
+      freshScan._scanVersion = SCAN_VERSION;
       saveScanToCache(freshScan);
       return freshScan;
     })().catch((err) => {
