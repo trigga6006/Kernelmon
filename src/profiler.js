@@ -7,10 +7,15 @@ const { execSync } = require('node:child_process');
 
 let cachedSpecsPromise = null;
 
-const WSO_DIR = path.join(__dirname, '..', '.kernelmon');
-const HARDWARE_FILE = path.join(WSO_DIR, 'hardware.json');
+const PROJECT_DIR = path.join(__dirname, '..', '.kernelmon');
+// Hardware cache lives in the user's home directory so different users
+// on the same machine or sharing the same repo checkout don't collide.
+const HOME_CACHE_DIR = path.join(nodeos.homedir(), '.kernelmon');
+const HARDWARE_FILE = path.join(HOME_CACHE_DIR, 'hardware.json');
+// Legacy location — migrate or delete if present
+const LEGACY_HARDWARE_FILE = path.join(PROJECT_DIR, 'hardware.json');
 // Bump this when scan logic changes — forces a fresh rescan for all users
-const SCAN_VERSION = 2;
+const SCAN_VERSION = 3;
 
 // ─── Persistent scan cache ───
 
@@ -22,9 +27,11 @@ function loadCachedScan() {
 
 function saveScanToCache(specs) {
   try {
-    if (!fs.existsSync(WSO_DIR)) fs.mkdirSync(WSO_DIR, { recursive: true });
+    if (!fs.existsSync(HOME_CACHE_DIR)) fs.mkdirSync(HOME_CACHE_DIR, { recursive: true });
     fs.writeFileSync(HARDWARE_FILE, JSON.stringify(specs, null, 2), 'utf8');
   } catch {}
+  // Remove legacy project-local cache so it can't pollute future runs
+  try { if (fs.existsSync(LEGACY_HARDWARE_FILE)) fs.unlinkSync(LEGACY_HARDWARE_FILE); } catch {}
 }
 
 // Compare two scans — only hardware-relevant fields (ignoring transient data)

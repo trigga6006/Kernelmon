@@ -2376,10 +2376,17 @@ async function handleHost(fighter, sessionState) {
       opponent = result.opponent;
     }
 
-    // Rebuild opponent sprite (apply skin if they have one)
+    // Rebuild opponent sprite (apply skin / transcendent effects)
     if (opponent.specs) {
       opponent.sprite = getSprite(opponent.specs);
-      if (opponent.skinId) opponent.sprite = applySkinOverride(opponent.sprite, opponent.skinId);
+      if (opponent.skinId) {
+        opponent.sprite = applySkinOverride(opponent.sprite, opponent.skinId);
+      } else if (opponent.equippedParts) {
+        try {
+          const { applyTranscendentPartEffects } = require('../src/transcendentparts');
+          opponent.sprite = applyTranscendentPartEffects(opponent.sprite, opponent.equippedParts);
+        } catch {}
+      }
     }
     await prepareBenchToBattle(myFighter, opponent);
 
@@ -2449,7 +2456,14 @@ async function handleJoin(fighter, sessionState) {
 
     if (opponent.specs) {
       opponent.sprite = getSprite(opponent.specs);
-      if (opponent.skinId) opponent.sprite = applySkinOverride(opponent.sprite, opponent.skinId);
+      if (opponent.skinId) {
+        opponent.sprite = applySkinOverride(opponent.sprite, opponent.skinId);
+      } else if (opponent.equippedParts) {
+        try {
+          const { applyTranscendentPartEffects } = require('../src/transcendentparts');
+          opponent.sprite = applyTranscendentPartEffects(opponent.sprite, opponent.equippedParts);
+        } catch {}
+      }
     }
     await prepareBenchToBattle(myFighter, opponent);
 
@@ -2554,6 +2568,18 @@ async function withLoadingScreen(label, asyncFn) {
 // ═══════════════════════════════════════════════════════════════
 
 async function run() {
+  // --rescan flag: delete cached hardware scan and force a fresh one
+  if (process.argv.includes('--rescan')) {
+    try {
+      const os = require('node:os');
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const homeCache = path.join(os.homedir(), '.kernelmon', 'hardware.json');
+      const projCache = path.join(__dirname, '..', '.kernelmon', 'hardware.json');
+      if (fs.existsSync(homeCache)) fs.unlinkSync(homeCache);
+      if (fs.existsSync(projCache)) fs.unlinkSync(projCache);
+    } catch {}
+  }
   const sessionState = {};
   while (true) {
     const { choice, fighter } = await mainMenu(sessionState);
