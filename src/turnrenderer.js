@@ -418,6 +418,42 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     }
   }
 
+  // ─── Online ready-up sync ───
+  // Both players must signal READY before the battle intro plays.
+  // Uses turn -1 as a handshake so both clients start at the same time.
+  if (isOnline) {
+    const READY_TURN = -1;
+    const readySpinChars = ['\u280B', '\u2819', '\u2839', '\u2838', '\u283C', '\u2834', '\u2826', '\u2827', '\u2807', '\u280F'];
+    let readyFrame = 0;
+    let readyDone = false;
+
+    // Render waiting screen while we sync
+    const readyInterval = setInterval(() => {
+      readyFrame++;
+      screen.clear();
+      screen.centerText(0, '\u2500'.repeat(w), colors.dimmer);
+      screen.centerText(0, ' READY UP ', colors.gold, null, true);
+
+      const cy = Math.floor(h / 2);
+      const spin = readySpinChars[readyFrame % readySpinChars.length];
+      screen.centerText(cy - 1, '\u2714 You are ready!', rgb(0, 220, 120));
+      screen.centerText(cy + 1, `${spin}  Waiting for opponent to ready up...`, colors.cyan);
+
+      screen.hline(2, h - 2, w - 4, '\u2500', colors.ghost);
+      screen.render();
+    }, 50);
+
+    try {
+      // Submit our ready signal and wait for opponent's
+      await submitAndWait(relayUrl, roomCode, role, '__READY__', READY_TURN);
+    } catch (e) {
+      // If sync fails (timeout, etc.) proceed anyway so the game isn't stuck
+    }
+
+    readyDone = true;
+    clearInterval(readyInterval);
+  }
+
   // ─── Battle intro ───
   screen.resetDiff();
   await battleIntro(screen, matrix, nameA, nameB, fighterA, fighterB, w, h);
