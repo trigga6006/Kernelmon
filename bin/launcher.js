@@ -432,7 +432,7 @@ async function mainMenu(sessionState = {}) {
   let cardFighters = {};    // cache: buildIdx → fighter object
 
   // Load builds info
-  const { PARTS, getAllBuilds, getActiveBuildIndex, setActiveBuild, getBuild, applyBuildOverrides: applyOverrides, buildSpecsFromParts, isBuildComplete } = require('../src/parts');
+  const { PARTS, getAllBuilds, getActiveBuildIndex, setActiveBuild, getBuild, applyBuildOverrides: applyOverrides, buildSpecsFromParts, isBuildComplete, seedPartsFromHardware } = require('../src/parts');
   cardBuildIdx = getActiveBuildIndex();
 
   // Sparse rain for menu — evenly spaced columns with slight jitter for organic feel
@@ -450,6 +450,7 @@ async function mainMenu(sessionState = {}) {
   // Scan hardware once per app launch; reuse the same raw scan on subsequent menu returns.
   let rawSpecs = sessionState.rawSpecs ? JSON.parse(JSON.stringify(sessionState.rawSpecs)) : null;
   if (rawSpecs) {
+    seedPartsFromHardware(rawSpecs);
     myFighter = await buildFighter(rawSpecs);
     cardFighters[0] = await buildFighter(rawSpecs);
     cardFighters[getActiveBuildIndex()] = myFighter;
@@ -468,6 +469,7 @@ async function mainMenu(sessionState = {}) {
     }
     sessionState.scanPromise.then(async specs => {
       rawSpecs = specs;
+      seedPartsFromHardware(specs);
       myFighter = await buildFighter(specs);
       cardFighters[0] = await buildFighter(specs);
       cardFighters[getActiveBuildIndex()] = myFighter;

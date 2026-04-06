@@ -182,7 +182,14 @@ function openWorkshop(realSpecs, screen) {
           screen.text(infoX, y + 1, part.name, isCursor ? colors.white : rc);
           screen.text(infoX, y + 2, `(${part.rarity})`, colors.dimmer);
         } else if (build.main) {
-          screen.text(infoX, y + 1, 'Stock hardware', isCursor ? colors.dim : colors.dimmer);
+          // Show actual hardware name from scan instead of generic label
+          const hwNames = {
+            cpu: realSpecs.cpu?.brand || 'Unknown CPU',
+            gpu: realSpecs.gpu?.model || 'Unknown GPU',
+            ram: `${realSpecs.ram?.totalGB || '?'} GB`,
+            storage: `${realSpecs.storage?.sizeGB || '?'}GB ${realSpecs.storage?.type || 'Drive'}`,
+          };
+          screen.text(infoX, y + 1, hwNames[type] || 'Stock hardware', isCursor ? colors.dim : colors.dimmer);
           screen.text(infoX, y + 2, '(from scan)', colors.dimmer);
         } else {
           screen.text(infoX, y + 1, '— empty —', isCursor ? colors.rose : colors.dimmer);

@@ -247,20 +247,6 @@ function loadBuilds() {
     }
     if (!data.builds[0].main) data.builds[0].main = true;
 
-    // Older versions auto-equipped "closest match" seed parts onto the
-    // main rig after a workshop visit. That made real hardware scans look
-    // wrong in profile/multiplayer. Migrate those parts back into inventory
-    // once so the main rig reflects the live scan again.
-    if (data._seeded && !data._mainRigSeedMigrationDone) {
-      const mainBuild = data.builds[0];
-      if (mainBuild?.main && Object.keys(mainBuild.parts || {}).length > 0) {
-        refundEquippedPartsToInventory(mainBuild.parts);
-        mainBuild.parts = {};
-      }
-      data._mainRigSeedMigrationDone = true;
-      saveBuilds(data);
-    }
-
     return data;
   } catch { return JSON.parse(JSON.stringify(DEFAULT_BUILDS)); }
 }
@@ -599,159 +585,227 @@ function printOwnedParts() {
   console.log(`${cyan}  ╰──────────────────────────────────────────────────╯${RESET}`);
 }
 
-// ─── Seed inventory from hardware scan ───
-// Matches real hardware to the closest catalog part for each slot.
-// Only runs once — sets a flag in build.json so it doesn't duplicate.
+// ─── Hardware fingerprint & matching helpers ───
+
+function extractModelNumbers(text) {
+  return (text.match(/\d{3,5}[a-z]*/gi) || []).map(m => m.toLowerCase());
+}
+
+function hardwareFingerprint(specs) {
+  return JSON.stringify({
+    cpu: specs.cpu?.brand,
+    gpu: specs.gpu?.model,
+    ram: specs.ram?.totalGB,
+    storType: specs.storage?.type,
+    storSize: specs.storage?.sizeGB,
+  });
+}
+
+// isScannedPart kept as alias for isSeededPart (defined below SELL_PRICES)
+function isScannedPart(partId) {
+  return isSeededPart(partId);
+}
+
+// ─── Seed / reconcile hardware → parts ───
+// On first boot: matches real hardware to catalog, equips on main rig.
+// On subsequent boots: skips if hardware unchanged.
+// On hardware change: swaps in new matches, cleans up old scanned parts.
 
 const SEED_VERSION = 3; // bump to force re-seed when matching logic changes
 
 function seedPartsFromHardware(specs) {
   const data = loadBuilds();
+  const mainBuild = data.builds[0];
+  if (!mainBuild) return;
+
+  const fp = hardwareFingerprint(specs);
 
   // Re-seed if matching algorithm was updated (version bump)
   if (data._seeded && (data._seedVersion || 0) < SEED_VERSION) {
     const oldSeeded = data._seededParts || [];
-
-    if (oldSeeded.length > 0) {
-      // Tracked seeded parts: remove from inventory and unequip from main rig
-      for (const partId of oldSeeded) {
-        removePart(partId);
-      }
-      const mainBuild = data.builds[0];
-      if (mainBuild?.main) {
-        for (const [type, pid] of Object.entries(mainBuild.parts || {})) {
-          if (oldSeeded.includes(pid)) {
-            delete mainBuild.parts[type];
-          }
-        }
-      }
-    } else {
-      // Legacy data (no _seededParts tracking): clear all main rig parts
-      // back to inventory so the real hardware scan is authoritative again
-      const mainBuild = data.builds[0];
-      if (mainBuild?.main) {
-        refundEquippedPartsToInventory(mainBuild.parts);
-        mainBuild.parts = {};
+    // Remove old seeded parts from inventory and main rig
+    for (const partId of oldSeeded) {
+      removePart(partId);
+    }
+    if (mainBuild.main) {
+      for (const [type, pid] of Object.entries(mainBuild.parts || {})) {
+        if (oldSeeded.includes(pid)) delete mainBuild.parts[type];
       }
     }
-
     data._seeded = false;
     data._seededParts = [];
+    data._hwFingerprint = null;
     saveBuilds(data);
   }
 
-  if (data._seeded) return; // already seeded with current version
+  // Same hardware AND already seeded with current version → nothing to do
+  if (data._hwFingerprint === fp && data._seeded) return;
 
   const cpuBrand = (specs.cpu?.brand || '').toLowerCase();
   const gpuModel = (specs.gpu?.model || '').toLowerCase();
-  const ramGB = specs.ram?.totalGB || 0;
+  const ramGB    = specs.ram?.totalGB || 0;
   const storType = specs.storage?.type || 'SSD';
+  const storSize = specs.storage?.sizeGB || 500;
 
   const entries = Object.entries(PARTS);
+  const cpuModelNums = extractModelNumbers(cpuBrand);
+  const gpuModelNums = extractModelNumbers(gpuModel);
 
-  // Find best CPU match: mobile detection, multi-word brand matching, cores/speed proximity
-  const cpuParts = entries.filter(([, p]) => p.type === 'cpu');
-  const scannedSpeed = specs.cpu?.speedMax || 3;
-  // Detect mobile/low-power CPUs: low base clock + laptop flag or U/H/P/HX suffix
-  const mobileKeywords = ['u', 'h', 'p', 'hx', 'hs'];
-  const lastWord = cpuBrand.split(/[\s-]+/).slice(-1)[0] || '';
-  const isMobile = specs.isLaptop || (scannedSpeed <= 2.5 && mobileKeywords.includes(lastWord.replace(/[^a-z]/g, '')));
+  // ── CPU matching ──
+  let bestCpu = null, bestCpuScore = -Infinity;
+  for (const [id, p] of entries.filter(([, p]) => p.type === 'cpu')) {
+    const catalogBrand = p.cpu.brand.toLowerCase();
+    const catalogNums  = extractModelNumbers(catalogBrand);
+    let score = 0;
 
-  let bestCpu = null;
-  let bestCpuScore = -Infinity;
-  for (const [id, p] of cpuParts) {
-    const partBrand = p.cpu.brand.toLowerCase();
-    const pWords = partBrand.split(/\s+/);
-    const partIsMobile = !!p.cpu.mobile;
+    // Manufacturer (check both brand string and dedicated manufacturer field)
+    const mfg = (p.cpu.manufacturer || '').toLowerCase();
+    const scannedMfg = (specs.cpu?.manufacturer || '').toLowerCase();
+    if (mfg && (cpuBrand.includes(mfg) || scannedMfg === mfg)) score += 20;
+    else if (mfg) score -= 30;
 
-    // Strongly prefer mobile↔mobile and desktop↔desktop
-    const classMatch = (isMobile === partIsMobile) ? 200 : 0;
-
-    // Manufacturer match (Intel vs AMD vs Apple)
-    const mfgMatch = cpuBrand.includes((p.cpu.manufacturer || '').toLowerCase()) ? 50 : 0;
-
-    // Multi-word brand matching: count keyword hits
-    let wordHits = 0;
-    for (const w of pWords) {
-      if (w.length >= 2 && cpuBrand.includes(w)) wordHits++;
+    // Model number (strongest signal)
+    let hasModelMatch = false;
+    for (const cn of catalogNums) {
+      const cnDigits = cn.replace(/[a-z]/gi, '');
+      for (const sn of cpuModelNums) {
+        const snDigits = sn.replace(/[a-z]/gi, '');
+        if (cn === sn)                                  { score += 200; hasModelMatch = true; }
+        else if (cnDigits === snDigits && cnDigits.length >= 4) { score += 150; hasModelMatch = true; }
+      }
     }
-    const nameMatch = wordHits * 25;
 
-    const coreDiff = Math.abs((p.cpu.cores || 4) - (specs.cpu?.cores || 4));
-    const speedDiff = Math.abs((p.cpu.speedMax || 3) - scannedSpeed);
-    const score = classMatch + mfgMatch + nameMatch + 50 - coreDiff * 3 - speedDiff * 10;
+    // Family (ryzen / core / threadripper / xeon / epyc …)
+    for (const fam of ['ryzen','core','threadripper','xeon','celeron','pentium','athlon','epyc']) {
+      if (catalogBrand.includes(fam) && cpuBrand.includes(fam)) score += 30;
+      else if (catalogBrand.includes(fam) !== cpuBrand.includes(fam)) score -= 15;
+    }
+
+    // Tier (i3/i5/i7/i9, Ryzen 3/5/7/9)
+    for (const pat of [/\bi([3579])\b/i, /ryzen\s+([3579])/i]) {
+      const ct = catalogBrand.match(pat);
+      const st = cpuBrand.match(pat);
+      if (ct && st) {
+        if (ct[1] === st[1]) score += 40;
+        else score -= Math.abs(parseInt(ct[1]) - parseInt(st[1])) * 10;
+      }
+    }
+
+    // Core/speed tiebreaker (only when no model number matched)
+    if (!hasModelMatch) {
+      score -= Math.abs((p.cpu.cores || 4)    - (specs.cpu?.cores    || 4)) * 2;
+      score -= Math.abs((p.cpu.speedMax || 3) - (specs.cpu?.speedMax || 3)) * 5;
+    }
+
     if (score > bestCpuScore) { bestCpuScore = score; bestCpu = id; }
   }
 
-  // Find best GPU match: integrated detection, vendor, model keywords, VRAM proximity
-  const gpuParts = entries.filter(([, p]) => p.type === 'gpu');
-  const scannedVram = specs.gpu?.vramMB || 0;
-  // Detect if the scanned GPU is integrated (low VRAM + known integrated keywords)
-  const integratedKeywords = ['uhd', 'iris', 'vega', 'integrated', 'igpu'];
-  const isIntegrated = scannedVram <= 4096 && integratedKeywords.some(kw => gpuModel.includes(kw));
+  // ── GPU matching ──
+  let bestGpu = null, bestGpuScore = -Infinity;
+  for (const [id, p] of entries.filter(([, p]) => p.type === 'gpu')) {
+    const catalogModel = p.gpu.model.toLowerCase();
+    const catalogNums  = extractModelNumbers(catalogModel);
+    let score = 0;
 
-  let bestGpu = null;
-  let bestGpuScore = -Infinity;
-  for (const [id, p] of gpuParts) {
-    const pModel = p.gpu.model.toLowerCase();
-    const pWords = pModel.split(/\s+/);
-    const partIsIntegrated = !!p.gpu.integrated;
+    // Vendor (check both model string and dedicated vendor field)
+    const vendor = (p.gpu.vendor || '').toLowerCase();
+    const scannedVendor = (specs.gpu?.vendor || '').toLowerCase();
+    if (vendor && (gpuModel.includes(vendor) || scannedVendor === vendor)) score += 25;
+    else if (vendor) score -= 40;
 
-    // Strongly prefer integrated↔integrated and discrete↔discrete
-    const classMatch = (isIntegrated === partIsIntegrated) ? 200 : 0;
-
-    // Vendor match
-    const vendorMatch = gpuModel.includes(p.gpu.vendor.toLowerCase()) ? 40 : 0;
-
-    // Multi-word model matching: count how many model words appear in the scanned name
-    let wordHits = 0;
-    for (const w of pWords) {
-      if (w.length >= 2 && gpuModel.includes(w)) wordHits++;
+    // Series (rtx / gtx / rx / arc)
+    for (const s of ['rtx','gtx','rx','arc']) {
+      if (catalogModel.includes(s) && gpuModel.includes(s)) score += 30;
+      else if (catalogModel.includes(s) !== gpuModel.includes(s)) score -= 15;
     }
-    const nameMatch = wordHits * 30;
 
-    // VRAM proximity (heavily weighted — closer VRAM = better match)
-    const vramDiff = Math.abs((p.gpu.vramMB || 0) - scannedVram);
-    const vramPenalty = vramDiff / 200;
+    // Model number
+    for (const cn of catalogNums) {
+      const cnDigits = cn.replace(/[a-z]/gi, '');
+      for (const sn of gpuModelNums) {
+        const snDigits = sn.replace(/[a-z]/gi, '');
+        if (cnDigits === snDigits && cnDigits.length >= 3) score += 200;
+      }
+    }
 
-    const score = classMatch + nameMatch + vendorMatch + 50 - vramPenalty;
+    // Suffix (xtx / xt / ti super / ti / super)
+    for (const suf of ['xtx','xt','ti super','ti','super']) {
+      const cHas = catalogModel.includes(suf);
+      const sHas = gpuModel.includes(suf);
+      if (cHas && sHas) { score += 20; break; }
+      if (cHas !== sHas) { score -= 10; break; }
+    }
+
+    // VRAM tiebreaker
+    score -= Math.abs((p.gpu.vramMB || 0) - (specs.gpu?.vramMB || 0)) / 1000;
+
     if (score > bestGpuScore) { bestGpuScore = score; bestGpu = id; }
   }
 
-  // Find best RAM match: closest GB
-  const ramParts = entries.filter(([, p]) => p.type === 'ram');
-  let bestRam = null;
-  let bestRamDiff = Infinity;
-  for (const [id, p] of ramParts) {
+  // ── RAM matching ── closest GB
+  let bestRam = null, bestRamDiff = Infinity;
+  for (const [id, p] of entries.filter(([, p]) => p.type === 'ram')) {
     const diff = Math.abs((p.ram.totalGB || 8) - ramGB);
     if (diff < bestRamDiff) { bestRamDiff = diff; bestRam = id; }
   }
 
-  // Find best storage match: type first, then size
-  const storParts = entries.filter(([, p]) => p.type === 'storage');
-  let bestStor = null;
-  let bestStorScore = -1;
-  for (const [id, p] of storParts) {
+  // ── Storage matching ── type first, then size
+  let bestStor = null, bestStorScore = -Infinity;
+  for (const [id, p] of entries.filter(([, p]) => p.type === 'storage')) {
     const typeMatch = (p.storage.type || 'SSD') === storType ? 100 : 0;
-    const sizeDiff = Math.abs((p.storage.sizeGB || 500) - (specs.storage?.sizeGB || 500));
+    const sizeDiff  = Math.abs((p.storage.sizeGB || 500) - storSize);
     const score = typeMatch + 50 - (sizeDiff / 100);
     if (score > bestStorScore) { bestStorScore = score; bestStor = id; }
   }
 
-  // Add matched parts to inventory only.
-  // Do not auto-equip them onto the main rig: the real scanned hardware should
-  // stay authoritative unless the player explicitly equips an override.
-  const seeded = [];
-  for (const partId of [bestCpu, bestGpu, bestRam, bestStor]) {
-    if (partId) {
-      addPart(partId);
-      seeded.push(partId);
+  // ── Clean up old seeded parts from inventory ──
+  const oldSeeded = data._seededParts || [];
+  if (oldSeeded.length > 0) {
+    const inv = loadParts();
+    for (const oldId of oldSeeded) {
+      if (inv[oldId] && inv[oldId] > 0) {
+        inv[oldId]--;
+        if (inv[oldId] <= 0) delete inv[oldId];
+      }
+    }
+    saveParts(inv);
+  }
+
+  // Return any non-seeded parts on the main rig back to inventory
+  const mainParts = mainBuild.parts || {};
+  const oldSeededSet = new Set(oldSeeded);
+  for (const type of ['cpu', 'gpu', 'ram', 'storage']) {
+    const equipped = mainParts[type];
+    if (equipped && PARTS[equipped] && !oldSeededSet.has(equipped)) {
+      addPart(equipped);
     }
   }
 
+  // Equip matched parts on main rig
+  const matches = { cpu: bestCpu, gpu: bestGpu, ram: bestRam, storage: bestStor };
+  const newScannedIds = [];
+  mainBuild.parts = {};
+  for (const type of ['cpu', 'gpu', 'ram', 'storage']) {
+    if (matches[type]) {
+      mainBuild.parts[type] = matches[type];
+      newScannedIds.push(matches[type]);
+    }
+  }
+
+  // Remove newly equipped parts from inventory (clean up migration leftovers)
+  const inv = loadParts();
+  for (const partId of newScannedIds) {
+    if (inv[partId] && inv[partId] > 0) {
+      inv[partId]--;
+      if (inv[partId] <= 0) delete inv[partId];
+    }
+  }
+  saveParts(inv);
+
   data._seeded = true;
   data._seedVersion = SEED_VERSION;
-  data._seededParts = seeded; // track which parts came from the hardware scan
+  data._hwFingerprint = fp;
+  data._seededParts = newScannedIds; // track which parts came from the hardware scan
   saveBuilds(data);
 }
 
