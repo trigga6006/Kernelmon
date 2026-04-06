@@ -40,6 +40,12 @@ const PARTS = {
   // CPUs — affects STR and SPD
   // ══════════════════════════════════════
 
+  // Mobile / low-power (seed-only — match laptop hardware scans correctly; don't drop from battles)
+  i5_mobile:     { type: 'cpu', rarity: 'common',    name: 'Intel Core i5 (Mobile)',     icon: '▣', cpu: { brand: 'Intel Core i5',               manufacturer: 'Intel', cores: 10, threads: 12, speedMax: 1.8, mobile: true }, dropWeight: 0 },
+  i7_mobile:     { type: 'cpu', rarity: 'common',    name: 'Intel Core i7 (Mobile)',     icon: '▣', cpu: { brand: 'Intel Core i7',               manufacturer: 'Intel', cores: 14, threads: 20, speedMax: 2.0, mobile: true }, dropWeight: 0 },
+  r5_mobile:     { type: 'cpu', rarity: 'common',    name: 'AMD Ryzen 5 (Mobile)',       icon: '▣', cpu: { brand: 'AMD Ryzen 5',                 manufacturer: 'AMD',   cores: 6,  threads: 12, speedMax: 2.0, mobile: true }, dropWeight: 0 },
+  r7_mobile:     { type: 'cpu', rarity: 'common',    name: 'AMD Ryzen 7 (Mobile)',       icon: '▣', cpu: { brand: 'AMD Ryzen 7',                 manufacturer: 'AMD',   cores: 8,  threads: 16, speedMax: 2.2, mobile: true }, dropWeight: 0 },
+
   // Common
   i3_12100:      { type: 'cpu', rarity: 'common',    name: 'Intel Core i3-12100',        icon: '▣', cpu: { brand: 'Intel Core i3-12100',         manufacturer: 'Intel', cores: 4,  threads: 8,  speedMax: 4.3 }, dropWeight: 30 },
   r5_3600:       { type: 'cpu', rarity: 'common',    name: 'AMD Ryzen 5 3600',           icon: '▣', cpu: { brand: 'AMD Ryzen 5 3600',            manufacturer: 'AMD',   cores: 6,  threads: 12, speedMax: 4.2 }, dropWeight: 30 },
@@ -77,6 +83,11 @@ const PARTS = {
   // ══════════════════════════════════════
   // GPUs — affects MAG
   // ══════════════════════════════════════
+
+  // Integrated (seed-only — these exist so hardware scans match correctly; they don't drop from battles)
+  intel_uhd:     { type: 'gpu', rarity: 'common',    name: 'Intel UHD Graphics',          icon: '◈', gpu: { model: 'Intel UHD Graphics',        vramMB: 2048,  vendor: 'Intel',  integrated: true }, dropWeight: 0 },
+  intel_iris_xe: { type: 'gpu', rarity: 'common',    name: 'Intel Iris Xe',               icon: '◈', gpu: { model: 'Intel Iris Xe Graphics',    vramMB: 4096,  vendor: 'Intel',  integrated: true }, dropWeight: 0 },
+  amd_vega:      { type: 'gpu', rarity: 'common',    name: 'AMD Radeon Vega',             icon: '◈', gpu: { model: 'AMD Radeon Vega Graphics',  vramMB: 2048,  vendor: 'AMD',    integrated: true }, dropWeight: 0 },
 
   // Common
   gtx_1650:      { type: 'gpu', rarity: 'common',    name: 'GTX 1650',                   icon: '◈', gpu: { model: 'NVIDIA GeForce GTX 1650',   vramMB: 4096,  vendor: 'NVIDIA' }, dropWeight: 30 },
@@ -306,6 +317,32 @@ function deleteBuild(index) {
   else if (data.active > index) data.active--;
   saveBuilds(data);
   return true;
+}
+
+// ─── Sell prices by rarity ───
+// Slightly below "actual value" — selling is always a bit of a loss
+// Contextual: common crate costs 200, wins earn ~100-150
+
+const SELL_PRICES = {
+  common:       15,
+  uncommon:     35,
+  rare:         80,
+  epic:        180,
+  legendary:   450,
+  mythic:     1200,
+  transcendent: 3000,
+};
+
+function getSellPrice(partId) {
+  const part = PARTS[partId];
+  if (!part) return 0;
+  return SELL_PRICES[part.rarity] || 0;
+}
+
+// Check if a part is a seeded (initial hardware scan) part — these cannot be sold
+function isSeededPart(partId) {
+  const data = loadBuilds();
+  return (data._seededParts || []).includes(partId);
 }
 
 // ─── Inventory operations ───
@@ -566,9 +603,44 @@ function printOwnedParts() {
 // Matches real hardware to the closest catalog part for each slot.
 // Only runs once — sets a flag in build.json so it doesn't duplicate.
 
+const SEED_VERSION = 3; // bump to force re-seed when matching logic changes
+
 function seedPartsFromHardware(specs) {
   const data = loadBuilds();
-  if (data._seeded) return; // already seeded
+
+  // Re-seed if matching algorithm was updated (version bump)
+  if (data._seeded && (data._seedVersion || 0) < SEED_VERSION) {
+    const oldSeeded = data._seededParts || [];
+
+    if (oldSeeded.length > 0) {
+      // Tracked seeded parts: remove from inventory and unequip from main rig
+      for (const partId of oldSeeded) {
+        removePart(partId);
+      }
+      const mainBuild = data.builds[0];
+      if (mainBuild?.main) {
+        for (const [type, pid] of Object.entries(mainBuild.parts || {})) {
+          if (oldSeeded.includes(pid)) {
+            delete mainBuild.parts[type];
+          }
+        }
+      }
+    } else {
+      // Legacy data (no _seededParts tracking): clear all main rig parts
+      // back to inventory so the real hardware scan is authoritative again
+      const mainBuild = data.builds[0];
+      if (mainBuild?.main) {
+        refundEquippedPartsToInventory(mainBuild.parts);
+        mainBuild.parts = {};
+      }
+    }
+
+    data._seeded = false;
+    data._seededParts = [];
+    saveBuilds(data);
+  }
+
+  if (data._seeded) return; // already seeded with current version
 
   const cpuBrand = (specs.cpu?.brand || '').toLowerCase();
   const gpuModel = (specs.gpu?.model || '').toLowerCase();
@@ -577,30 +649,72 @@ function seedPartsFromHardware(specs) {
 
   const entries = Object.entries(PARTS);
 
-  // Find best CPU match: prefer exact brand substring, else closest cores×speed
+  // Find best CPU match: mobile detection, multi-word brand matching, cores/speed proximity
   const cpuParts = entries.filter(([, p]) => p.type === 'cpu');
+  const scannedSpeed = specs.cpu?.speedMax || 3;
+  // Detect mobile/low-power CPUs: low base clock + laptop flag or U/H/P/HX suffix
+  const mobileKeywords = ['u', 'h', 'p', 'hx', 'hs'];
+  const lastWord = cpuBrand.split(/[\s-]+/).slice(-1)[0] || '';
+  const isMobile = specs.isLaptop || (scannedSpeed <= 2.5 && mobileKeywords.includes(lastWord.replace(/[^a-z]/g, '')));
+
   let bestCpu = null;
-  let bestCpuScore = -1;
+  let bestCpuScore = -Infinity;
   for (const [id, p] of cpuParts) {
-    const name = p.cpu.brand.toLowerCase();
-    // Exact substring match gets huge bonus
-    const nameMatch = cpuBrand.includes(name.split(' ').slice(-1)[0]) ? 100 : 0;
+    const partBrand = p.cpu.brand.toLowerCase();
+    const pWords = partBrand.split(/\s+/);
+    const partIsMobile = !!p.cpu.mobile;
+
+    // Strongly prefer mobile↔mobile and desktop↔desktop
+    const classMatch = (isMobile === partIsMobile) ? 200 : 0;
+
+    // Manufacturer match (Intel vs AMD vs Apple)
+    const mfgMatch = cpuBrand.includes((p.cpu.manufacturer || '').toLowerCase()) ? 50 : 0;
+
+    // Multi-word brand matching: count keyword hits
+    let wordHits = 0;
+    for (const w of pWords) {
+      if (w.length >= 2 && cpuBrand.includes(w)) wordHits++;
+    }
+    const nameMatch = wordHits * 25;
+
     const coreDiff = Math.abs((p.cpu.cores || 4) - (specs.cpu?.cores || 4));
-    const speedDiff = Math.abs((p.cpu.speedMax || 3) - (specs.cpu?.speedMax || 3));
-    const score = nameMatch + 50 - coreDiff * 3 - speedDiff * 10;
+    const speedDiff = Math.abs((p.cpu.speedMax || 3) - scannedSpeed);
+    const score = classMatch + mfgMatch + nameMatch + 50 - coreDiff * 3 - speedDiff * 10;
     if (score > bestCpuScore) { bestCpuScore = score; bestCpu = id; }
   }
 
-  // Find best GPU match: prefer vendor + closest VRAM
+  // Find best GPU match: integrated detection, vendor, model keywords, VRAM proximity
   const gpuParts = entries.filter(([, p]) => p.type === 'gpu');
+  const scannedVram = specs.gpu?.vramMB || 0;
+  // Detect if the scanned GPU is integrated (low VRAM + known integrated keywords)
+  const integratedKeywords = ['uhd', 'iris', 'vega', 'integrated', 'igpu'];
+  const isIntegrated = scannedVram <= 4096 && integratedKeywords.some(kw => gpuModel.includes(kw));
+
   let bestGpu = null;
-  let bestGpuScore = -1;
+  let bestGpuScore = -Infinity;
   for (const [id, p] of gpuParts) {
     const pModel = p.gpu.model.toLowerCase();
-    const vendorMatch = gpuModel.includes(p.gpu.vendor.toLowerCase()) ? 30 : 0;
-    const nameMatch = gpuModel.includes(pModel.split(' ').slice(-1)[0]) ? 80 : 0;
-    const vramDiff = Math.abs((p.gpu.vramMB || 0) - (specs.gpu?.vramMB || 0));
-    const score = nameMatch + vendorMatch + 50 - (vramDiff / 500);
+    const pWords = pModel.split(/\s+/);
+    const partIsIntegrated = !!p.gpu.integrated;
+
+    // Strongly prefer integrated↔integrated and discrete↔discrete
+    const classMatch = (isIntegrated === partIsIntegrated) ? 200 : 0;
+
+    // Vendor match
+    const vendorMatch = gpuModel.includes(p.gpu.vendor.toLowerCase()) ? 40 : 0;
+
+    // Multi-word model matching: count how many model words appear in the scanned name
+    let wordHits = 0;
+    for (const w of pWords) {
+      if (w.length >= 2 && gpuModel.includes(w)) wordHits++;
+    }
+    const nameMatch = wordHits * 30;
+
+    // VRAM proximity (heavily weighted — closer VRAM = better match)
+    const vramDiff = Math.abs((p.gpu.vramMB || 0) - scannedVram);
+    const vramPenalty = vramDiff / 200;
+
+    const score = classMatch + nameMatch + vendorMatch + 50 - vramPenalty;
     if (score > bestGpuScore) { bestGpuScore = score; bestGpu = id; }
   }
 
@@ -624,16 +738,20 @@ function seedPartsFromHardware(specs) {
     if (score > bestStorScore) { bestStorScore = score; bestStor = id; }
   }
 
-// Add matched parts to inventory only.
-// Do not auto-equip them onto the main rig: the real scanned hardware should
-// stay authoritative unless the player explicitly equips an override.
+  // Add matched parts to inventory only.
+  // Do not auto-equip them onto the main rig: the real scanned hardware should
+  // stay authoritative unless the player explicitly equips an override.
+  const seeded = [];
   for (const partId of [bestCpu, bestGpu, bestRam, bestStor]) {
     if (partId) {
       addPart(partId);
+      seeded.push(partId);
     }
   }
 
   data._seeded = true;
+  data._seedVersion = SEED_VERSION;
+  data._seededParts = seeded; // track which parts came from the hardware scan
   saveBuilds(data);
 }
 
@@ -647,6 +765,7 @@ module.exports = {
   createBuild, deleteBuild,
   equipPartOnBuild, unequipPartOnBuild,
   isBuildComplete, applyBuildOverrides, buildSpecsFromParts,
+  SELL_PRICES, getSellPrice, isSeededPart,
   rollPartDrop, printPartDrop, printOwnedParts,
   seedPartsFromHardware,
 };

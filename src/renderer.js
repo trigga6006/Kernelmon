@@ -11,6 +11,7 @@ const { ProjectileManager } = require('./effects/projectile');
 const { createRNG } = require('./rng');
 const { getSprite } = require('./sprites');
 const { toneColor } = require('./benchmark');
+const { drawTitle } = require('./titles');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -372,6 +373,7 @@ async function renderBattle(fighterA, fighterB, events) {
 
     // ─── Opponent info (centered, above player — matches turn-based layout) ───
     const oppInfoY = 2;
+    if (fighterB.titleId) drawTitle(screen, oppBarX, oppInfoY - 1, fighterB.titleId, frameCount);
     screen.text(oppBarX, oppInfoY, fighterB.name.slice(0, 24), colors.p2, null, true);
     const oppArch = fighterB.archetype?.name || '';
     if (oppArch) screen.text(oppBarX + Math.min(fighterB.name.length, 24) + 1, oppInfoY, oppArch, colors.dimmer);
@@ -386,6 +388,7 @@ async function renderBattle(fighterA, fighterB, events) {
 
     // ─── Player info (centered, below opponent — matches turn-based layout) ───
     const plyInfoY = plyBarY;
+    if (fighterA.titleId) drawTitle(screen, plyBarX, plyInfoY - 1, fighterA.titleId, frameCount);
     screen.text(plyBarX, plyInfoY, fighterA.name.slice(0, 24), colors.p1, null, true);
     const plyArch = fighterA.archetype?.name || '';
     if (plyArch) screen.text(plyBarX + Math.min(fighterA.name.length, 24) + 1, plyInfoY, plyArch, colors.dimmer);

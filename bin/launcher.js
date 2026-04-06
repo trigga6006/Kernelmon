@@ -16,6 +16,7 @@ const { generateSignatureMoves, SIGNATURE_ICON } = require('../src/signature');
 const { registerSignatureAnims } = require('../src/effects/projectile');
 const { getOwnedItems, RARITY_COLORS } = require('../src/items');
 const { getEquippedSkinId, applySkinOverride } = require('../src/skins');
+const { getEquippedTitleId } = require('../src/titles');
 const { printHistory } = require('../src/history');
 const { simulate } = require('../src/battle');
 const { renderBattle } = require('../src/renderer');
@@ -94,6 +95,7 @@ const MENU_ITEMS = [
   { key: 'loadout',     label: 'LOADOUT',          desc: 'Configure equipped moves',   icon: '⚔' },
   { key: 'bag',         label: 'BAG',              desc: 'View collected items',       icon: '◰' },
   { key: 'workshop',    label: 'WORKSHOP',         desc: 'Swap parts on your build',   icon: '▣' },
+  { key: 'titles',      label: 'TITLES',            desc: 'View & equip title tags',         icon: '◈' },
   { key: 'skins',       label: 'SKIN LOCKER',      desc: 'View & equip Transcendent skins', icon: '✧' },
   { key: 'lootbox',     label: 'LOOT BOX',         desc: 'Spend credits on crates',    icon: '✦' },
   { key: 'market',      label: 'MARKET',            desc: 'Trade skins with players',   icon: '⇌' },
@@ -125,6 +127,7 @@ const ITEM_COLORS = {
   loadout:     colors.lavender,
   bag:         colors.mint,
   workshop:    rgb(255, 215, 0),
+  titles:      rgb(180, 200, 255),
   skins:       rgb(200, 120, 255),
   lootbox:     rgb(240, 170, 50),
   market:      rgb(180, 220, 140),
@@ -165,7 +168,7 @@ const MENU_GROUPS = [
     desc: 'Profile, moves, and fighter setup',
     icon: '*',
     defaultExpanded: false,
-    items: ['profile', 'loadout', 'skins', 'cards'],
+    items: ['titles', 'profile', 'loadout', 'skins', 'cards'],
   },
   { type: 'item', key: 'bag' },
   { type: 'item', key: 'workshop' },
@@ -235,7 +238,10 @@ async function buildFighter(rawSpecs) {
     } catch {}
   }
 
-  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId, equippedParts };
+  // Apply equipped title
+  const titleId = getEquippedTitleId(buildIdx);
+
+  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId, equippedParts, titleId };
 }
 
 async function ensureSessionSpecs(sessionState, loadingLabel = 'Scanning hardware') {
@@ -513,7 +519,8 @@ async function mainMenu(sessionState = {}) {
       const mGpu = gpuName(mainSpecs);
       const mSprite = getSprite(mainSpecs);
       const mArch = classifyArchetype(mStats, mainSpecs);
-      cardFighters[idx] = { id: rawSpecs.id, name: mName, gpu: mGpu, stats: mStats, specs: mainSpecs, sprite: mSprite, archetype: mArch };
+      const mTitleId = getEquippedTitleId(idx);
+      cardFighters[idx] = { id: rawSpecs.id, name: mName, gpu: mGpu, stats: mStats, specs: mainSpecs, sprite: mSprite, archetype: mArch, titleId: mTitleId };
     } else {
       // Custom build — construct specs from parts
       const customSpecs = buildSpecsFromParts(build.parts, rawSpecs.id);
@@ -522,7 +529,8 @@ async function mainMenu(sessionState = {}) {
       const cGpu = gpuName(customSpecs);
       const cSprite = getSprite(customSpecs);
       const cArch = classifyArchetype(cStats, customSpecs);
-      cardFighters[idx] = { id: rawSpecs.id, name: cName, gpu: cGpu, stats: cStats, specs: customSpecs, sprite: cSprite, archetype: cArch };
+      const cTitleId = getEquippedTitleId(idx);
+      cardFighters[idx] = { id: rawSpecs.id, name: cName, gpu: cGpu, stats: cStats, specs: customSpecs, sprite: cSprite, archetype: cArch, titleId: cTitleId };
     }
   }
 
@@ -1350,6 +1358,26 @@ async function handleGym(fighter, sessionState) {
       if (partDrop) addPart(partDrop.id);
     }
 
+    // Divine/Primordial card drop — gym leaders on 3rd round+
+    let cardDrop = null;
+    if (target.isLeader && totalClears >= 3) {
+      const { CARDS, CARD_RARITY_COLORS_RGB, addCard } = require('../src/cards');
+      const cardRng = createRNG(Date.now() + 2);
+      const divinePool = Object.entries(CARDS)
+        .filter(([, c]) => c.rarity === 'divine' || c.rarity === 'primordial')
+        .map(([id, c]) => ({ id, ...c }));
+      if (divinePool.length > 0) {
+        const totalW = divinePool.reduce((s, c) => s + (c.dropWeight || 0.001), 0);
+        let roll = cardRng.next() * totalW;
+        for (const card of divinePool) {
+          roll -= (card.dropWeight || 0.001);
+          if (roll <= 0) { cardDrop = card; break; }
+        }
+        if (!cardDrop) cardDrop = divinePool[divinePool.length - 1];
+        addCard(cardDrop.id);
+      }
+    }
+
     const scr = new Screen();
     scr.enter();
     const w = scr.width;
@@ -1380,6 +1408,13 @@ async function handleGym(fighter, sessionState) {
     if (partDrop) {
       const rc = RARITY_COLORS[partDrop.rarity] || colors.dim;
       scr.centerText(rewardLine, `▸ PART: ${partDrop.label || partDrop.id}  (${partDrop.rarity})`, rc, null, true);
+      rewardLine++;
+    }
+    if (cardDrop) {
+      const { CARD_RARITY_COLORS_RGB: CRC } = require('../src/cards');
+      const crc = CRC[cardDrop.rarity] || [255, 215, 100];
+      const cardColor = rgb(crc[0], crc[1], crc[2]);
+      scr.centerText(rewardLine, `▸ ♦ CARD: ${cardDrop.name}  (${cardDrop.rarity})`, cardColor, null, true);
       rewardLine++;
     }
 
@@ -2128,6 +2163,20 @@ async function handleLootBox() {
   } catch (e) {
     await showInfoScreen('LOOT BOX', (scr) => {
       scr.text(4, 4, 'Loot box not available.', colors.dim);
+    });
+  }
+}
+
+async function handleTitles(fighter, sessionState) {
+  try {
+    const { openTitleLocker } = require('../src/titlelocker');
+    const titleScreen = new Screen();
+    titleScreen.enter();
+    await openTitleLocker(titleScreen);
+    titleScreen.exit();
+  } catch (e) {
+    await showInfoScreen('TITLES', (scr) => {
+      scr.text(4, 4, 'Title locker not available.', colors.dim);
     });
   }
 }
@@ -3486,6 +3535,9 @@ async function run() {
         break;
       case 'workshop':
         await handleWorkshop(fighter, sessionState);
+        break;
+      case 'titles':
+        await handleTitles(fighter, sessionState);
         break;
       case 'skins':
         await handleSkins(fighter, sessionState);
