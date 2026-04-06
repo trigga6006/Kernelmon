@@ -494,8 +494,10 @@ function buildStats(specs) {
   // GPU Score: VRAM is the main differentiator
   const gpuRaw = specs.gpu.vramMB > 0 ? specs.gpu.vramMB : 512; // integrated = ~512MB equivalent
 
-  // Storage Score
-  const storageMultiplier = { NVMe: 3, SSD: 2, HDD: 1 }[specs.storage.type] || 1;
+  // Storage Score — parts can provide a custom speed multiplier for finer differentiation
+  const storageMultiplier = specs.storage.speed
+    || { NVMe: 3, SSD: 2, HDD: 1 }[specs.storage.type]
+    || 1;
   const storageRaw = storageMultiplier * 100;
 
   // RAM Score
@@ -509,13 +511,13 @@ function buildStats(specs) {
 
   const stats = {
     // STR: Raw processing power (CPU cores * speed)
-    str: normalize(cpuRaw, 2, 1000),
+    str: normalize(cpuRaw, 2, 5000),
     // VIT: Endurance / HP pool (RAM)
-    vit: normalize(ramRaw, 2, 1024),
+    vit: normalize(ramRaw, 2, 8192),
     // MAG: Special attack power (GPU)
-    mag: normalize(gpuRaw, 256, 98304),
+    mag: normalize(gpuRaw, 256, 300000),
     // SPD: Initiative and dodge (storage + single-thread CPU)
-    spd: normalize(specs.cpu.speedMax * storageMultiplier, 1, 20),
+    spd: normalize(specs.cpu.speedMax * storageMultiplier, 1, 80),
     // DEF: Derived — average of VIT and SPD
     def: 0,
   };

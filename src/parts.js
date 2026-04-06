@@ -33,7 +33,7 @@ const RARITY_ICONS = {
 // ─── Parts Catalog ───
 // Each part has real hardware specs that feed into the profiler's stat system.
 // The profiler uses: cpu.cores, cpu.threads, cpu.speedMax, gpu.vramMB, gpu.model,
-// gpu.vendor, ram.totalGB, storage.type
+// gpu.vendor, ram.totalGB, storage.type, storage.speed (custom multiplier)
 
 const PARTS = {
   // ══════════════════════════════════════
@@ -51,9 +51,9 @@ const PARTS = {
   r5_7600x:      { type: 'cpu', rarity: 'uncommon',  name: 'AMD Ryzen 5 7600X',          icon: '▣', cpu: { brand: 'AMD Ryzen 5 7600X',           manufacturer: 'AMD',   cores: 6,  threads: 12, speedMax: 5.3 }, dropWeight: 16 },
 
   // Rare
-  r7_5800x3d:    { type: 'cpu', rarity: 'rare',      name: 'AMD Ryzen 7 5800X3D',        icon: '▣', cpu: { brand: 'AMD Ryzen 7 5800X3D',         manufacturer: 'AMD',   cores: 8,  threads: 16, speedMax: 4.5 }, dropWeight: 8 },
+  r7_5800x3d:    { type: 'cpu', rarity: 'rare',      name: 'AMD Ryzen 7 5800X3D',        icon: '▣', cpu: { brand: 'AMD Ryzen 7 5800X3D',         manufacturer: 'AMD',   cores: 12, threads: 24, speedMax: 5.0 }, dropWeight: 8 },
   i7_13700k:     { type: 'cpu', rarity: 'rare',      name: 'Intel Core i7-13700K',       icon: '▣', cpu: { brand: 'Intel Core i7-13700K',        manufacturer: 'Intel', cores: 16, threads: 24, speedMax: 5.4 }, dropWeight: 8 },
-  r7_7800x3d:    { type: 'cpu', rarity: 'rare',      name: 'AMD Ryzen 7 7800X3D',        icon: '▣', cpu: { brand: 'AMD Ryzen 7 7800X3D',         manufacturer: 'AMD',   cores: 8,  threads: 16, speedMax: 5.0 }, dropWeight: 7 },
+  r7_7800x3d:    { type: 'cpu', rarity: 'rare',      name: 'AMD Ryzen 7 7800X3D',        icon: '▣', cpu: { brand: 'AMD Ryzen 7 7800X3D',         manufacturer: 'AMD',   cores: 12, threads: 24, speedMax: 5.2 }, dropWeight: 7 },
 
   // Epic
   r9_7900x:      { type: 'cpu', rarity: 'epic',      name: 'AMD Ryzen 9 7900X',          icon: '▣', cpu: { brand: 'AMD Ryzen 9 7900X',           manufacturer: 'AMD',   cores: 12, threads: 24, speedMax: 5.6 }, dropWeight: 3 },
@@ -62,7 +62,7 @@ const PARTS = {
 
   // Legendary
   i9_14900ks:    { type: 'cpu', rarity: 'legendary',  name: 'Intel Core i9-14900KS',     icon: '▣', cpu: { brand: 'Intel Core i9-14900KS',       manufacturer: 'Intel', cores: 24, threads: 32, speedMax: 6.2 }, dropWeight: 0.8 },
-  r9_9950x:      { type: 'cpu', rarity: 'legendary',  name: 'AMD Ryzen 9 9950X',         icon: '▣', cpu: { brand: 'AMD Ryzen 9 9950X',           manufacturer: 'AMD',   cores: 16, threads: 32, speedMax: 5.7 }, dropWeight: 0.8 },
+  r9_9950x:      { type: 'cpu', rarity: 'legendary',  name: 'AMD Ryzen 9 9950X',         icon: '▣', cpu: { brand: 'AMD Ryzen 9 9950X',           manufacturer: 'AMD',   cores: 20, threads: 40, speedMax: 6.0 }, dropWeight: 0.8 },
   tr_7970x:      { type: 'cpu', rarity: 'legendary',  name: 'AMD Threadripper 7970X',    icon: '▣', cpu: { brand: 'AMD Threadripper 7970X',      manufacturer: 'AMD',   cores: 32, threads: 64, speedMax: 5.3 }, dropWeight: 0.5 },
 
   // Mythic
@@ -72,7 +72,7 @@ const PARTS = {
   // ✧ Transcendent
   epyc_9965:     { type: 'cpu', rarity: 'transcendent', name: 'AMD EPYC 9965 Turin',      icon: '✧', cpu: { brand: 'AMD EPYC 9965 Turin',         manufacturer: 'AMD',   cores: 192, threads: 384, speedMax: 5.4 }, dropWeight: 0.008 },
   cerebras_wse3: { type: 'cpu', rarity: 'transcendent', name: 'Cerebras WSE-3',            icon: '✧', cpu: { brand: 'Cerebras WSE-3 Wafer Engine',  manufacturer: 'Cerebras', cores: 900000, threads: 900000, speedMax: 3.0 }, dropWeight: 0.005 },
-  m4_ultra_max:  { type: 'cpu', rarity: 'transcendent', name: 'Apple M4 Ultra Max',        icon: '✧', cpu: { brand: 'Apple M4 Ultra Max',          manufacturer: 'Apple', cores: 40, threads: 40, speedMax: 4.5 }, dropWeight: 0.008 },
+  m4_ultra_max:  { type: 'cpu', rarity: 'transcendent', name: 'Apple M4 Ultra Max',        icon: '✧', cpu: { brand: 'Apple M4 Ultra Max',          manufacturer: 'Apple', cores: 128, threads: 256, speedMax: 5.8 }, dropWeight: 0.008 },
 
   // ══════════════════════════════════════
   // GPUs — affects MAG
@@ -89,24 +89,24 @@ const PARTS = {
   arc_a770:      { type: 'gpu', rarity: 'uncommon',  name: 'Intel Arc A770',              icon: '◈', gpu: { model: 'Intel Arc A770',            vramMB: 16384, vendor: 'Intel' },  dropWeight: 15 },
 
   // Rare
-  rtx_4070:      { type: 'gpu', rarity: 'rare',      name: 'RTX 4070',                   icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 4070',   vramMB: 12288, vendor: 'NVIDIA' }, dropWeight: 8 },
-  rx_7800xt:     { type: 'gpu', rarity: 'rare',      name: 'RX 7800 XT',                 icon: '◈', gpu: { model: 'AMD Radeon RX 7800 XT',     vramMB: 16384, vendor: 'AMD' },    dropWeight: 8 },
-  rtx_4070ti:    { type: 'gpu', rarity: 'rare',      name: 'RTX 4070 Ti Super',          icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 4070 Ti Super', vramMB: 16384, vendor: 'NVIDIA' }, dropWeight: 7 },
+  rtx_4070:      { type: 'gpu', rarity: 'rare',      name: 'RTX 4070',                   icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 4070',   vramMB: 18432, vendor: 'NVIDIA' }, dropWeight: 8 },
+  rx_7800xt:     { type: 'gpu', rarity: 'rare',      name: 'RX 7800 XT',                 icon: '◈', gpu: { model: 'AMD Radeon RX 7800 XT',     vramMB: 20480, vendor: 'AMD' },    dropWeight: 8 },
+  rtx_4070ti:    { type: 'gpu', rarity: 'rare',      name: 'RTX 4070 Ti Super',          icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 4070 Ti Super', vramMB: 22528, vendor: 'NVIDIA' }, dropWeight: 7 },
 
   // Epic
-  rtx_4080:      { type: 'gpu', rarity: 'epic',      name: 'RTX 4080 Super',             icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 4080 Super', vramMB: 16384, vendor: 'NVIDIA' }, dropWeight: 3 },
-  rx_7900xtx:    { type: 'gpu', rarity: 'epic',      name: 'RX 7900 XTX',                icon: '◈', gpu: { model: 'AMD Radeon RX 7900 XTX',     vramMB: 24576, vendor: 'AMD' },    dropWeight: 3 },
-  rtx_4090:      { type: 'gpu', rarity: 'epic',      name: 'RTX 4090',                   icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 4090',    vramMB: 24576, vendor: 'NVIDIA' }, dropWeight: 2 },
+  rtx_4080:      { type: 'gpu', rarity: 'epic',      name: 'RTX 4080 Super',             icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 4080 Super', vramMB: 28672, vendor: 'NVIDIA' }, dropWeight: 3 },
+  rx_7900xtx:    { type: 'gpu', rarity: 'epic',      name: 'RX 7900 XTX',                icon: '◈', gpu: { model: 'AMD Radeon RX 7900 XTX',     vramMB: 32768, vendor: 'AMD' },    dropWeight: 3 },
+  rtx_4090:      { type: 'gpu', rarity: 'epic',      name: 'RTX 4090',                   icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 4090',    vramMB: 36864, vendor: 'NVIDIA' }, dropWeight: 2 },
 
   // Legendary
-  rtx_5090:      { type: 'gpu', rarity: 'legendary', name: 'RTX 5090',                   icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 5090',    vramMB: 32768, vendor: 'NVIDIA' }, dropWeight: 0.8 },
-  rx_9070xtx:    { type: 'gpu', rarity: 'legendary', name: 'RX 9070 XTX',                icon: '◈', gpu: { model: 'AMD Radeon RX 9070 XTX',     vramMB: 24576, vendor: 'AMD' },    dropWeight: 0.8 },
-  pro_w7900:     { type: 'gpu', rarity: 'legendary', name: 'Radeon PRO W7900',           icon: '◈', gpu: { model: 'AMD Radeon PRO W7900',       vramMB: 49152, vendor: 'AMD' },    dropWeight: 0.5 },
+  rtx_5090:      { type: 'gpu', rarity: 'legendary', name: 'RTX 5090',                   icon: '◈', gpu: { model: 'NVIDIA GeForce RTX 5090',    vramMB: 49152, vendor: 'NVIDIA' }, dropWeight: 0.8 },
+  rx_9070xtx:    { type: 'gpu', rarity: 'legendary', name: 'RX 9070 XTX',                icon: '◈', gpu: { model: 'AMD Radeon RX 9070 XTX',     vramMB: 40960, vendor: 'AMD' },    dropWeight: 0.8 },
+  pro_w7900:     { type: 'gpu', rarity: 'legendary', name: 'Radeon PRO W7900',           icon: '◈', gpu: { model: 'AMD Radeon PRO W7900',       vramMB: 57344, vendor: 'AMD' },    dropWeight: 0.5 },
 
   // Mythic
-  a100:          { type: 'gpu', rarity: 'mythic',    name: 'NVIDIA A100 80GB',           icon: '◈', gpu: { model: 'NVIDIA A100',                vramMB: 81920, vendor: 'NVIDIA' }, dropWeight: 0.08 },
-  h100:          { type: 'gpu', rarity: 'mythic',    name: 'NVIDIA H100 80GB',           icon: '◈', gpu: { model: 'NVIDIA H100',                vramMB: 81920, vendor: 'NVIDIA' }, dropWeight: 0.05 },
-  mi300x:        { type: 'gpu', rarity: 'mythic',    name: 'AMD Instinct MI300X',        icon: '◈', gpu: { model: 'AMD Instinct MI300X',        vramMB: 196608, vendor: 'AMD' },   dropWeight: 0.03 },
+  a100:          { type: 'gpu', rarity: 'mythic',    name: 'NVIDIA A100 80GB',           icon: '◈', gpu: { model: 'NVIDIA A100',                vramMB: 81920,  vendor: 'NVIDIA' }, dropWeight: 0.08 },
+  h100:          { type: 'gpu', rarity: 'mythic',    name: 'NVIDIA H100 80GB',           icon: '◈', gpu: { model: 'NVIDIA H100',                vramMB: 98304,  vendor: 'NVIDIA' }, dropWeight: 0.05 },
+  mi300x:        { type: 'gpu', rarity: 'mythic',    name: 'AMD Instinct MI300X',        icon: '◈', gpu: { model: 'AMD Instinct MI300X',        vramMB: 131072, vendor: 'AMD' },   dropWeight: 0.03 },
 
   // ✧ Transcendent
   blackwell_b200:  { type: 'gpu', rarity: 'transcendent', name: 'NVIDIA B200 Blackwell',    icon: '✧', gpu: { model: 'NVIDIA B200 Blackwell',     vramMB: 196608, vendor: 'NVIDIA' }, dropWeight: 0.008 },
@@ -145,29 +145,29 @@ const PARTS = {
   // ══════════════════════════════════════
 
   // Common
-  hdd_1tb:       { type: 'storage', rarity: 'common',    name: '1TB 7200RPM HDD',        icon: '▤', storage: { type: 'HDD', sizeGB: 1000 },  dropWeight: 30 },
-  ssd_500gb:     { type: 'storage', rarity: 'common',    name: '500GB SATA SSD',          icon: '▤', storage: { type: 'SSD', sizeGB: 500 },   dropWeight: 28 },
+  hdd_1tb:       { type: 'storage', rarity: 'common',    name: '1TB 7200RPM HDD',        icon: '▤', storage: { type: 'HDD', sizeGB: 1000, speed: 1.0 },  dropWeight: 30 },
+  ssd_500gb:     { type: 'storage', rarity: 'common',    name: '500GB SATA SSD',          icon: '▤', storage: { type: 'SSD', sizeGB: 500, speed: 2.0 },   dropWeight: 28 },
 
   // Uncommon
-  ssd_1tb:       { type: 'storage', rarity: 'uncommon',  name: '1TB SATA SSD',            icon: '▤', storage: { type: 'SSD', sizeGB: 1000 },  dropWeight: 16 },
-  nvme_500gb:    { type: 'storage', rarity: 'uncommon',  name: '500GB NVMe Gen3',         icon: '▤', storage: { type: 'NVMe', sizeGB: 500 },  dropWeight: 16 },
+  ssd_1tb:       { type: 'storage', rarity: 'uncommon',  name: '1TB SATA SSD',            icon: '▤', storage: { type: 'SSD', sizeGB: 1000, speed: 2.5 },  dropWeight: 16 },
+  nvme_500gb:    { type: 'storage', rarity: 'uncommon',  name: '500GB NVMe Gen3',         icon: '▤', storage: { type: 'NVMe', sizeGB: 500, speed: 3.5 },  dropWeight: 16 },
 
   // Rare
-  nvme_1tb:      { type: 'storage', rarity: 'rare',      name: '1TB NVMe Gen4',           icon: '▤', storage: { type: 'NVMe', sizeGB: 1000 }, dropWeight: 7 },
-  nvme_2tb:      { type: 'storage', rarity: 'rare',      name: '2TB NVMe Gen4',           icon: '▤', storage: { type: 'NVMe', sizeGB: 2000 }, dropWeight: 6 },
+  nvme_1tb:      { type: 'storage', rarity: 'rare',      name: '1TB NVMe Gen4',           icon: '▤', storage: { type: 'NVMe', sizeGB: 1000, speed: 5.0 }, dropWeight: 7 },
+  nvme_2tb:      { type: 'storage', rarity: 'rare',      name: '2TB NVMe Gen4',           icon: '▤', storage: { type: 'NVMe', sizeGB: 2000, speed: 5.5 }, dropWeight: 6 },
 
   // Epic
-  nvme_4tb:      { type: 'storage', rarity: 'epic',      name: '4TB NVMe Gen5',           icon: '▤', storage: { type: 'NVMe', sizeGB: 4000 }, dropWeight: 2 },
+  nvme_4tb:      { type: 'storage', rarity: 'epic',      name: '4TB NVMe Gen5',           icon: '▤', storage: { type: 'NVMe', sizeGB: 4000, speed: 7.0 }, dropWeight: 2 },
 
   // Legendary
-  nvme_8tb:      { type: 'storage', rarity: 'legendary', name: '8TB NVMe Gen5 Pro',       icon: '▤', storage: { type: 'NVMe', sizeGB: 8000 }, dropWeight: 0.4 },
+  nvme_8tb:      { type: 'storage', rarity: 'legendary', name: '8TB NVMe Gen5 Pro',       icon: '▤', storage: { type: 'NVMe', sizeGB: 8000, speed: 9.0 }, dropWeight: 0.4 },
 
   // Mythic
-  optane_dc:     { type: 'storage', rarity: 'mythic',    name: 'Intel Optane DC P5800X',  icon: '▤', storage: { type: 'NVMe', sizeGB: 1600 }, dropWeight: 0.05 },
+  optane_dc:     { type: 'storage', rarity: 'mythic',    name: 'Intel Optane DC P5800X',  icon: '▤', storage: { type: 'NVMe', sizeGB: 1600, speed: 12.0 }, dropWeight: 0.05 },
 
   // ✧ Transcendent
-  pm1743_30tb:   { type: 'storage', rarity: 'transcendent', name: 'Samsung PM1743 30.72TB',  icon: '✧', storage: { type: 'NVMe', sizeGB: 30720 }, dropWeight: 0.007 },
-  ql_petascale:  { type: 'storage', rarity: 'transcendent', name: 'Quantum Photonic Array',   icon: '✧', storage: { type: 'NVMe', sizeGB: 1048576 }, dropWeight: 0.005 },
+  pm1743_30tb:   { type: 'storage', rarity: 'transcendent', name: 'Samsung PM1743 30.72TB',  icon: '✧', storage: { type: 'NVMe', sizeGB: 30720, speed: 15.0 }, dropWeight: 0.007 },
+  ql_petascale:  { type: 'storage', rarity: 'transcendent', name: 'Quantum Photonic Array',   icon: '✧', storage: { type: 'NVMe', sizeGB: 1048576, speed: 18.0 }, dropWeight: 0.005 },
 };
 
 // ─── Type labels ───
