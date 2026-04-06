@@ -13,7 +13,9 @@ const {
   createBuild, deleteBuild,
   equipPartOnBuild, unequipPartOnBuild,
   isBuildComplete, applyBuildOverrides, buildSpecsFromParts,
+  removePart, getSellPrice,
 } = require('./parts');
+const { addCredits, getBalance } = require('./credits');
 const { drawArt, getPartArt } = require('./itemart');
 
 const SLOT_ORDER = ['cpu', 'gpu', 'ram', 'storage'];
@@ -39,6 +41,8 @@ function openWorkshop(realSpecs, screen) {
     let partCursor = 0;
     let partsList = [];
     let nameBuffer = '';
+    let confirmSell = false; // true when awaiting Y/N sell confirmation
+    let sellFeedback = null; // { text, color, expiry } for brief sale feedback
 
     const stdin = process.stdin;
     stdin.setRawMode(true);
@@ -254,9 +258,26 @@ function openWorkshop(realSpecs, screen) {
       } else if (mode === 'parts') {
         const type = SLOT_ORDER[slotCursor];
         screen.text(leftX, divY + 1, `SELECT ${TYPE_LABELS[type]}`, TYPE_COLORS[type], null, true);
-        screen.text(leftX + 18, divY + 1, 'Enter equip  Esc back', colors.dimmer);
 
-        const listY = divY + 2;
+        if (confirmSell && partsList.length > 0 && partCursor < partsList.length) {
+          const sp = partsList[partCursor];
+          const price = getSellPrice(sp.id);
+          screen.text(leftX + 18, divY + 1, `Sell ${sp.name} for ${price}◆? Y/N`, AMBER);
+        } else {
+          screen.text(leftX + 18, divY + 1, 'Enter equip  S sell  Esc back', colors.dimmer);
+        }
+
+        // Show balance in top-right of parts section
+        const bal = getBalance();
+        const balStr = `◆ ${bal.toLocaleString()}`;
+        screen.text(w - balStr.length - 3, divY + 1, balStr, GOLD);
+
+        // Sale feedback flash
+        if (sellFeedback && Date.now() < sellFeedback.expiry) {
+          screen.text(leftX + 18, divY + 2, sellFeedback.text, sellFeedback.color);
+        }
+
+        const listY = divY + (sellFeedback && Date.now() < sellFeedback.expiry ? 3 : 2);
         const maxVisible = Math.max(1, Math.floor((h - listY - 1) / 3)); // 3 lines per item (art + info, no gap)
         const startIdx = Math.max(0, partCursor - maxVisible + 1);
         const endIdx = Math.min(partsList.length, startIdx + maxVisible);
@@ -271,6 +292,7 @@ function openWorkshop(realSpecs, screen) {
           const y = listY + (i - startIdx) * 3; // 3 lines per item (no gap row)
           const isCur = i === partCursor;
           const rc = RARITY_COLORS[p.rarity] || colors.dim;
+          const price = getSellPrice(p.id);
 
           // Art sprite
           const partArt = getPartArt(p.type);
@@ -284,6 +306,7 @@ function openWorkshop(realSpecs, screen) {
             screen.text(leftX, y, '▸', colors.white, null, true);
             screen.text(infoX, y, p.name, colors.white, null, true);
             screen.text(infoX, y + 1, `x${p.count}  (${p.rarity})`, rc);
+            screen.text(infoX, y + 2, `Sell: ${price}◆`, GOLD);
           } else {
             screen.text(infoX, y, p.name, colors.dim);
             screen.text(infoX, y + 1, `x${p.count}  (${p.rarity})`, colors.dimmer);
@@ -385,6 +408,34 @@ function openWorkshop(realSpecs, screen) {
           process.exit(0);
         }
       } else if (mode === 'parts') {
+        // Sell confirmation takes priority
+        if (confirmSell) {
+          if (key === 'y' || key === 'Y') {
+            const part = partsList[partCursor];
+            if (part) {
+              const price = getSellPrice(part.id);
+              if (removePart(part.id)) {
+                const newBal = addCredits(price);
+                sellFeedback = {
+                  text: `Sold ${part.name} for ${price}◆  (balance: ${newBal.toLocaleString()})`,
+                  color: colors.mint,
+                  expiry: Date.now() + 2000,
+                };
+                // Refresh parts list
+                const type = SLOT_ORDER[slotCursor];
+                partsList = getOwnedPartsByType(type);
+                if (partCursor >= partsList.length) partCursor = Math.max(0, partsList.length - 1);
+              }
+            }
+            confirmSell = false;
+            render();
+          } else if (key === 'n' || key === 'N' || key === '\x1b') {
+            confirmSell = false;
+            render();
+          }
+          return;
+        }
+
         if (key === '\x1b[A' || key === 'k') {
           if (partsList.length > 0) partCursor = (partCursor - 1 + partsList.length) % partsList.length;
           render();
@@ -400,6 +451,9 @@ function openWorkshop(realSpecs, screen) {
             if (partCursor >= partsList.length) partCursor = Math.max(0, partsList.length - 1);
             mode = 'slots';
           }
+          render();
+        } else if ((key === 's' || key === 'S') && !isRecentEsc() && partsList.length > 0 && partCursor < partsList.length) {
+          confirmSell = true;
           render();
         } else if (key === '\x1b' || key === 'q') {
           mode = 'slots';

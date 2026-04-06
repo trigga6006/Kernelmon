@@ -308,6 +308,26 @@ function deleteBuild(index) {
   return true;
 }
 
+// ─── Sell prices by rarity ───
+// Slightly below "actual value" — selling is always a bit of a loss
+// Contextual: common crate costs 200, wins earn ~100-150
+
+const SELL_PRICES = {
+  common:       15,
+  uncommon:     35,
+  rare:         80,
+  epic:        180,
+  legendary:   450,
+  mythic:     1200,
+  transcendent: 3000,
+};
+
+function getSellPrice(partId) {
+  const part = PARTS[partId];
+  if (!part) return 0;
+  return SELL_PRICES[part.rarity] || 0;
+}
+
 // ─── Inventory operations ───
 
 function addPart(partId, count = 1) {
@@ -647,6 +667,7 @@ module.exports = {
   createBuild, deleteBuild,
   equipPartOnBuild, unequipPartOnBuild,
   isBuildComplete, applyBuildOverrides, buildSpecsFromParts,
+  SELL_PRICES, getSellPrice,
   rollPartDrop, printPartDrop, printOwnedParts,
   seedPartsFromHardware,
 };
