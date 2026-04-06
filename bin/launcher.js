@@ -3551,8 +3551,8 @@ async function handleCardBattle(fighter, sessionState) {
   fighter = await ensureSessionFighter(sessionState, fighter);
 
   const { Screen } = require('../src/screen');
-  const { selectOpponent } = require('../src/opponentselect');
-  const { grantStarterPack, getOwnedCards, selectAICards, addCard, rollCardDrop } = require('../src/cards');
+  const { selectRandomCardBattleOpponent } = require('../src/opponentselect');
+  const { grantStarterPack, getOwnedCards, selectRandomCards, addCard, rollCardDrop } = require('../src/cards');
   const { selectCards } = require('../src/cardselect');
   const { createRNG } = require('../src/rng');
 
@@ -3579,7 +3579,7 @@ async function handleCardBattle(fighter, sessionState) {
   // Step 1: Select opponent
   const selectScreen = new Screen();
   selectScreen.enter();
-  const opponent = await selectOpponent(selectScreen);
+  const opponent = await selectRandomCardBattleOpponent(selectScreen);
   selectScreen.exit();
   if (!opponent) return;
 
@@ -3607,9 +3607,7 @@ async function handleCardBattle(fighter, sessionState) {
 
   // Step 5: AI cards for opponent
   const rng = createRNG(Date.now());
-  const oppTier = opponent.sprite?.hw?.tier || 'mid';
-  const difficultyMap = { flagship: 'boss', high: 'elite', mid: 'hard', low: 'mid' };
-  const aiCards = selectAICards(rng, difficultyMap[oppTier] || 'mid', 3);
+  const aiCards = selectRandomCards(rng, 3);
 
   // Step 6: Battle with card mode enabled
   const winner = await renderTurnBattle(fighter, opponent, myMoves, oppMoves, {

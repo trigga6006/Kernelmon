@@ -658,6 +658,12 @@ function selectAICards(rng, difficulty = 'mid', count = 3) {
   return selected;
 }
 
+function selectRandomCards(rng, count = 3) {
+  const pool = Object.entries(CARDS).map(([id, card]) => ({ id, ...card }));
+  if (pool.length === 0) return [];
+  return rng.shuffle(pool).slice(0, Math.min(count, pool.length));
+}
+
 module.exports = {
   CARDS,
   CARD_RARITY_ORDER,
@@ -676,5 +682,6 @@ module.exports = {
   rollCardDrop,
   grantStarterPack,
   selectAICards,
+  selectRandomCards,
   STARTER_CARDS,
 };
