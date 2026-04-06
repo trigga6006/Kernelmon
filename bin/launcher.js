@@ -1649,24 +1649,120 @@ async function handleBag() {
       const scrollStart = Math.max(0, cursor - maxRows + 3);
       const scrollEnd = Math.min(items.length, scrollStart + maxRows);
 
+      // Item list (left side)
+      const listW = Math.min(40, Math.floor(w * 0.45));
       for (let i = scrollStart; i < scrollEnd; i++) {
         const item = items[i];
         const y = listY + (i - scrollStart);
         const sel = i === cursor;
         const rc = RARITY_COLORS[item.rarity] || colors.dim;
-        const price = SELL_PRICES[item.rarity] || 5;
 
         if (sel) {
           scr.text(2, y, '▸', colors.white, null, true);
           scr.text(4, y, item.icon, rc, null, true);
-          scr.text(6, y, `${item.name} x${item.count}`.padEnd(26), colors.white, null, true);
-          scr.text(33, y, item.desc.slice(0, 24), rc);
-          scr.text(58, y, `${price}cr ea`, colors.gold);
+          scr.text(6, y, `${item.name} x${item.count}`.padEnd(listW - 6), colors.white, null, true);
         } else {
           scr.text(4, y, item.icon, colors.dimmer);
-          scr.text(6, y, `${item.name} x${item.count}`.padEnd(26), colors.dim);
-          scr.text(33, y, item.desc.slice(0, 24), colors.dimmer);
+          scr.text(6, y, `${item.name} x${item.count}`.padEnd(listW - 6), colors.dim);
         }
+      }
+
+      // Detail panel (right side) for highlighted item
+      if (items.length > 0) {
+        const item = items[cursor];
+        const rc = RARITY_COLORS[item.rarity] || colors.dim;
+        const price = SELL_PRICES[item.rarity] || 5;
+        const panelX = listW + 4;
+        const panelW = w - panelX - 2;
+        const panelTop = listY;
+
+        // Panel border
+        scr.vline(panelX - 2, panelTop, Math.min(scrollEnd - scrollStart, maxRows), '│', colors.ghost);
+
+        // Item name + icon
+        scr.text(panelX, panelTop, `${item.icon}  ${item.name}`, colors.white, null, true);
+        scr.text(panelX, panelTop + 1, `(${item.rarity})`, rc, null, true);
+
+        // Separator
+        scr.hline(panelX, panelTop + 2, panelW, '─', colors.ghost);
+
+        // Description
+        scr.text(panelX, panelTop + 3, item.desc, colors.white);
+
+        // Effect details based on type
+        let detailY = panelTop + 5;
+        const effect = item.effect || '';
+        const dim = colors.dim;
+
+        if (effect === 'heal') {
+          scr.text(panelX, detailY, 'TYPE', dim);
+          scr.text(panelX + 7, detailY, 'Healing', colors.mint);
+          detailY++;
+          scr.text(panelX, detailY, 'HEALS', dim);
+          scr.text(panelX + 7, detailY, `${Math.round((item.value || 0) * 100)}% of max HP`, colors.mint);
+        } else if (effect.startsWith('boost_')) {
+          const stat = effect.replace('boost_', '').toUpperCase();
+          scr.text(panelX, detailY, 'TYPE', dim);
+          scr.text(panelX + 7, detailY, 'Stat Boost', colors.sky);
+          detailY++;
+          scr.text(panelX, detailY, 'BUFF', dim);
+          scr.text(panelX + 7, detailY, `${stat} +${Math.round((item.value || 0) * 100)}%`, colors.sky);
+          detailY++;
+          if (item.duration) {
+            scr.text(panelX, detailY, 'LASTS', dim);
+            scr.text(panelX + 7, detailY, `${item.duration} turns`, colors.sky);
+          }
+        } else if (effect === 'shield') {
+          scr.text(panelX, detailY, 'TYPE', dim);
+          scr.text(panelX + 7, detailY, 'Defensive', colors.lavender);
+          detailY++;
+          scr.text(panelX, detailY, 'Blocks the next incoming attack', colors.lavender);
+        } else if (effect === 'cleanse') {
+          scr.text(panelX, detailY, 'TYPE', dim);
+          scr.text(panelX + 7, detailY, 'Utility', colors.mint);
+          detailY++;
+          scr.text(panelX, detailY, 'Removes stun and debuffs', colors.mint);
+        } else if (effect === 'reflect') {
+          scr.text(panelX, detailY, 'TYPE', dim);
+          scr.text(panelX + 7, detailY, 'Defensive', colors.lavender);
+          detailY++;
+          scr.text(panelX, detailY, 'REFLECTS', dim);
+          scr.text(panelX + 10, detailY, `${Math.round((item.value || 0) * 100)}% of next hit`, colors.lavender);
+        } else if (effect === 'direct_damage') {
+          scr.text(panelX, detailY, 'TYPE', dim);
+          scr.text(panelX + 7, detailY, 'Offensive', colors.peach);
+          detailY++;
+          scr.text(panelX, detailY, 'DAMAGE', dim);
+          scr.text(panelX + 8, detailY, `${Math.round((item.value || 0) * 100)}% of opponent max HP`, colors.peach);
+        } else if (effect === 'stun') {
+          scr.text(panelX, detailY, 'TYPE', dim);
+          scr.text(panelX + 7, detailY, 'Offensive', colors.peach);
+          detailY++;
+          scr.text(panelX, detailY, 'Stuns opponent for 1 turn', colors.peach);
+        } else if (effect === 'nuke') {
+          scr.text(panelX, detailY, 'TYPE', dim);
+          scr.text(panelX + 7, detailY, 'Devastating', colors.rose);
+          detailY++;
+          scr.text(panelX, detailY, 'DAMAGE', dim);
+          scr.text(panelX + 8, detailY, `${Math.round((item.value || 0) * 100)}% of opponent max HP`, colors.rose);
+          detailY++;
+          scr.text(panelX, detailY, '+ Stuns for 1 turn', colors.rose);
+        } else if (effect.startsWith('special_')) {
+          scr.text(panelX, detailY, 'TYPE', dim);
+          scr.text(panelX + 7, detailY, 'Special Attack', colors.gold);
+          detailY++;
+          scr.text(panelX, detailY, 'DAMAGE', dim);
+          scr.text(panelX + 8, detailY, `${Math.round((item.value || 0) * 100)}% of opponent max HP`, colors.gold);
+          detailY++;
+          scr.text(panelX, detailY, '+ Additional effects', colors.gold);
+        }
+
+        // Sell value
+        detailY += 2;
+        scr.text(panelX, detailY, 'SELL', dim);
+        scr.text(panelX + 6, detailY, `${price} credits each`, colors.gold);
+        scr.text(panelX, detailY + 1, 'OWNED', dim);
+        scr.text(panelX + 7, detailY + 1, `${item.count}`, colors.white);
       }
 
       // Sell panel for selected item
