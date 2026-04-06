@@ -97,6 +97,7 @@ const MENU_ITEMS = [
   { key: 'kerneldex',   label: 'KERNELDEX',        desc: 'Rigs you\'ve scanned',       icon: '◈' },
   { key: 'guide',       label: 'GUIDE',            desc: 'Combat basics & matchups',   icon: '?' },
   { key: 'redeem',      label: 'REDEEM CODE',      desc: 'Enter a code for rewards',   icon: '▸' },
+  { key: 'casino',      label: 'CASINO',            desc: 'Gamble credits on card games', icon: '♠' },
   { key: 'history',     label: 'BATTLE LOG',       desc: 'Past match history',         icon: '▤' },
   { key: 'wager',       label: 'WAGER',             desc: 'Stake credits in online PvP', icon: '◆' },
   { key: 'host',        label: 'HOST GAME',        desc: 'Host a battle for others',   icon: '◎' },
@@ -122,6 +123,7 @@ const ITEM_COLORS = {
   kerneldex:   rgb(130, 220, 235),
   guide:       rgb(180, 210, 255),
   redeem:      rgb(130, 255, 180),
+  casino:      rgb(255, 215, 0),
   history:     colors.dim,
   wager:       rgb(255, 200, 50),
   host:        colors.coral,
@@ -164,7 +166,7 @@ const MENU_GROUPS = [
     desc: 'Loot, battle log, and future extras',
     icon: '.',
     defaultExpanded: false,
-    items: ['guide', 'demo', 'demo_turns', 'kerneldex', 'lootbox', 'market', 'redeem', 'history'],
+    items: ['guide', 'demo', 'demo_turns', 'kerneldex', 'lootbox', 'market', 'redeem', 'casino', 'history'],
   },
   { type: 'item', key: 'update' },
   { type: 'item', key: 'quit' },
@@ -1331,7 +1333,10 @@ async function handleGym(fighter, sessionState) {
     let partDrop = null;
     if (rewardInfo.partEligible) {
       const { rollPartDrop, addPart } = require('../src/parts');
-      partDrop = rollPartDrop(createRNG(Date.now() + 1), rewardInfo.itemTier);
+      partDrop = rollPartDrop(createRNG(Date.now() + 1), rewardInfo.itemTier, {
+        maxRarity: rewardInfo.partMaxRarity,
+        mythicBonus: rewardInfo.mythicBonus,
+      });
       if (partDrop) addPart(partDrop.id);
     }
 
@@ -2141,6 +2146,20 @@ async function handleMarket() {
   } catch (e) {
     await showInfoScreen('MARKET', (scr) => {
       scr.text(4, 4, 'Market not available.', colors.dim);
+    });
+  }
+}
+
+async function handleCasino() {
+  try {
+    const { openCasino } = require('../src/casino');
+    const casinoScreen = new Screen();
+    casinoScreen.enter();
+    await openCasino(casinoScreen);
+    casinoScreen.exit();
+  } catch (e) {
+    await showInfoScreen('CASINO', (scr) => {
+      scr.text(4, 4, 'Casino not available.', colors.dim);
     });
   }
 }
@@ -3330,6 +3349,9 @@ async function run() {
             scr.centerText(Math.floor(scr.height / 2), 'Redeem system unavailable', colors.rose);
           });
         }
+        break;
+      case 'casino':
+        await handleCasino();
         break;
       case 'wager':
         await handleWager(fighter, sessionState);

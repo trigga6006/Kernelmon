@@ -137,6 +137,12 @@ class Screen {
     }
   }
 
+  vline(x, y, length, char, fg) {
+    for (let i = 0; i < length; i++) {
+      this.set(x, y + i, char || '│', fg);
+    }
+  }
+
   bar(x, y, width, ratio, fgFull, fgEmpty) {
     const filled = Math.round(width * Math.max(0, Math.min(1, ratio)));
     for (let i = 0; i < width; i++) {

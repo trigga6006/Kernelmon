@@ -449,19 +449,34 @@ function buildSpecsFromParts(parts, fallbackId) {
 // ─── Drop rolling ───
 // Parts drop much rarer than items. Chance increases with opponent tier.
 
-function rollPartDrop(rng, opponentTier = 'mid') {
+function rollPartDrop(rng, opponentTier = 'mid', opts = {}) {
+  const { maxRarity = 'transcendent', mythicBonus = 0 } = opts;
+  const entries = Object.entries(PARTS);
+
+  // Mythic bonus: flat per-fight chance for a guaranteed mythic part
+  if (mythicBonus > 0 && rng.next() < mythicBonus) {
+    const mythics = entries.filter(([, p]) => p.rarity === 'mythic');
+    if (mythics.length > 0) {
+      const pick = mythics[Math.floor(rng.next() * mythics.length)];
+      return { id: pick[0], ...pick[1] };
+    }
+  }
+
   // Base chance to get ANY part at all
-  const baseChance = { flagship: 0.35, high: 0.25, mid: 0.15, low: 0.08 };
+  const baseChance = { apex: 0.50, elite: 0.40, flagship: 0.35, high: 0.25, mid: 0.15, low: 0.08 };
   const chance = baseChance[opponentTier] || 0.15;
 
   if (rng.next() >= chance) return null; // no part drop
 
-  // Weight-based selection from the catalog
-  const entries = Object.entries(PARTS);
-  const totalWeight = entries.reduce((s, [, p]) => s + p.dropWeight, 0);
+  // Weight-based selection from the catalog, filtered by max rarity
+  const maxIdx = RARITY_ORDER.indexOf(maxRarity);
+  const eligible = maxIdx >= 0
+    ? entries.filter(([, p]) => RARITY_ORDER.indexOf(p.rarity) <= maxIdx)
+    : entries;
+  const totalWeight = eligible.reduce((s, [, p]) => s + p.dropWeight, 0);
   let roll = rng.next() * totalWeight;
 
-  for (const [id, part] of entries) {
+  for (const [id, part] of eligible) {
     roll -= part.dropWeight;
     if (roll <= 0) {
       return { id, ...part };
@@ -469,7 +484,7 @@ function rollPartDrop(rng, opponentTier = 'mid') {
   }
 
   // Fallback: random common
-  const commons = entries.filter(([, p]) => p.rarity === 'common');
+  const commons = eligible.filter(([, p]) => p.rarity === 'common');
   const pick = commons[Math.floor(rng.next() * commons.length)];
   return pick ? { id: pick[0], ...pick[1] } : null;
 }

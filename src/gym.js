@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// GYM LADDER — 3 Gyms, each with a 5-fighter ladder
+// GYM LADDER — 5 Gyms, each with a 5-fighter ladder
 // Beat fighters in order to climb each gym. Clear all 5 to
 // unlock the next gym. Reclear for scaling difficulty & rewards.
 // ═══════════════════════════════════════════════════════════════
@@ -246,6 +246,158 @@ const GYMS = [
       },
     ],
   },
+  {
+    id: 'dead_signal',
+    name: 'DEAD SIGNAL',
+    icon: '◉',
+    iconColor: [255, 140, 40],
+    desc: 'State-sponsored warfare. No attribution. No mercy.',
+    mythicBonus: 0.01,
+    fighters: [
+      {
+        id: 'ds_spear_phisher',
+        name: 'SPEAR PHISHER',
+        title: 'The Social Engineer',
+        taunt: 'I don\'t need exploits when I have psychology.',
+        tier: 'flagship',
+        creditBase: 200,
+        dropParts: true,
+        // BLITZ — spd dominant, spd >= str+10 → Zero-Day Exploit (devastating opener)
+        specs: { id: 'gym-ds-01', cpu: { brand: 'AMD Ryzen 9 7950X', manufacturer: 'AMD', cores: 16, threads: 32, speed: 4.5, speedMax: 5.7 }, ram: { totalGB: 64 }, gpu: { model: 'NVIDIA GeForce RTX 4070 Ti Super', vramMB: 16384, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 2000 } },
+        stats: { str: 62, vit: 58, mag: 65, spd: 84, def: 55, hp: 1100, maxHp: 1100 },
+        displayName: 'Ryzen 9 7950X', displayGpu: 'RTX 4070 Ti S',
+      },
+      {
+        id: 'ds_logic_bomb',
+        name: 'LOGIC BOMB',
+        title: 'The Detonator',
+        taunt: 'You won\'t know I\'m here until it\'s too late.',
+        tier: 'flagship',
+        creditBase: 240,
+        dropParts: true,
+        // ARCMAGE — mag dominant, mag >= str & mag >= spd → Shader Burnout (high ceiling)
+        specs: { id: 'gym-ds-02', cpu: { brand: 'Intel Core i9-13900K', manufacturer: 'Intel', cores: 24, threads: 32, speed: 3.0, speedMax: 5.8 }, ram: { totalGB: 64 }, gpu: { model: 'NVIDIA GeForce RTX 4090', vramMB: 24576, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 4000 } },
+        stats: { str: 64, vit: 62, mag: 88, spd: 72, def: 60, hp: 1200, maxHp: 1200 },
+        displayName: 'i9-13900K', displayGpu: 'RTX 4090',
+      },
+      {
+        id: 'ds_darknet_crawler',
+        name: 'DARKNET CRAWLER',
+        title: 'The Deep Web Hunter',
+        taunt: 'There is no corner of the net I haven\'t mapped.',
+        tier: 'elite',
+        creditBase: 280,
+        dropParts: true,
+        // FORTRESS — def >= 55, RAM >= 32GB → Memory Wall (beefy tank)
+        specs: { id: 'gym-ds-03', cpu: { brand: 'AMD Ryzen 9 7900X', manufacturer: 'AMD', cores: 12, threads: 24, speed: 4.7, speedMax: 5.6 }, ram: { totalGB: 128 }, gpu: { model: 'AMD Radeon RX 7900 XTX', vramMB: 24576, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 4000 } },
+        stats: { str: 76, vit: 80, mag: 72, spd: 62, def: 78, hp: 1450, maxHp: 1450 },
+        displayName: 'Ryzen 9 7900X', displayGpu: 'RX 7900 XTX',
+      },
+      {
+        id: 'ds_rootkit_phantom',
+        name: 'ROOTKIT PHANTOM',
+        title: 'The Invisible Infection',
+        taunt: 'I was already inside before you powered on.',
+        tier: 'elite',
+        creditBase: 350,
+        dropParts: true,
+        // HIVEMIND — cores >= 16, str >= 65 → Thread Saturation (raw damage, slow)
+        specs: { id: 'gym-ds-04', cpu: { brand: 'AMD Threadripper 7970X', manufacturer: 'AMD', cores: 32, threads: 64, speed: 4.0, speedMax: 5.3 }, ram: { totalGB: 128 }, gpu: { model: 'NVIDIA GeForce RTX 5090', vramMB: 49152, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 8000 } },
+        stats: { str: 86, vit: 74, mag: 80, spd: 72, def: 65, hp: 1380, maxHp: 1380 },
+        displayName: 'TR 7970X', displayGpu: 'RTX 5090',
+      },
+      {
+        id: 'ds_blackout',
+        name: 'BLACKOUT',
+        title: 'Gym Boss — The Grid Killer',
+        taunt: 'When I\'m done, even the lights go dark.',
+        tier: 'elite',
+        creditBase: 500,
+        dropParts: true,
+        isLeader: true,
+        // TITAN — avg >= 76, minStat >= 68, but avg < 90 → Overheat (massive burst, stall risk)
+        specs: { id: 'gym-ds-05', cpu: { brand: 'AMD Threadripper PRO 7995WX', manufacturer: 'AMD', cores: 96, threads: 192, speed: 2.5, speedMax: 5.1 }, ram: { totalGB: 256 }, gpu: { model: 'NVIDIA H100', vramMB: 81920, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 8000 } },
+        stats: { str: 90, vit: 86, mag: 94, spd: 85, def: 82, hp: 1800, maxHp: 1800 },
+        displayName: 'TR PRO 7995WX', displayGpu: 'H100 80GB',
+      },
+    ],
+  },
+  {
+    id: 'silicon_throne',
+    name: 'SILICON THRONE',
+    icon: '⬡',
+    iconColor: [220, 180, 255],
+    desc: 'Beyond human. Beyond machine. Beyond hope.',
+    mythicBonus: 0.02,
+    fighters: [
+      {
+        id: 'st_neural_overseer',
+        name: 'NEURAL OVERSEER',
+        title: 'The Machine Learning Tyrant',
+        taunt: 'I\'ve trained on every battle you\'ve ever fought.',
+        tier: 'elite',
+        creditBase: 350,
+        dropParts: true,
+        // HIVEMIND — cores >= 16, str >= 65 → Thread Saturation (raw power, slow)
+        specs: { id: 'gym-st-01', cpu: { brand: 'Intel Xeon w9-3595X', manufacturer: 'Intel', cores: 60, threads: 120, speed: 3.2, speedMax: 4.8 }, ram: { totalGB: 128 }, gpu: { model: 'NVIDIA GeForce RTX 5090', vramMB: 49152, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 8000 } },
+        stats: { str: 86, vit: 70, mag: 80, spd: 76, def: 64, hp: 1400, maxHp: 1400 },
+        displayName: 'Xeon w9-3595X', displayGpu: 'RTX 5090',
+      },
+      {
+        id: 'st_quantum_ghost',
+        name: 'QUANTUM GHOST',
+        title: 'The Superposition',
+        taunt: 'I exist in every state until you observe me.',
+        tier: 'elite',
+        creditBase: 400,
+        dropParts: true,
+        // BLITZ — spd >= 65, spd >= str+10, spd >= mag → Zero-Day Exploit
+        specs: { id: 'gym-st-02', cpu: { brand: 'AMD Ryzen 9 7900X', manufacturer: 'AMD', cores: 12, threads: 24, speed: 4.7, speedMax: 5.6 }, ram: { totalGB: 64 }, gpu: { model: 'AMD Radeon RX 9070 XTX', vramMB: 40960, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 4000 } },
+        stats: { str: 72, vit: 70, mag: 82, spd: 96, def: 66, hp: 1350, maxHp: 1350 },
+        displayName: 'Ryzen 9 7900X', displayGpu: 'RX 9070 XTX',
+      },
+      {
+        id: 'st_tensor_beast',
+        name: 'TENSOR BEAST',
+        title: 'The Compute Monolith',
+        taunt: 'I process more in a cycle than you will in a lifetime.',
+        tier: 'elite',
+        creditBase: 450,
+        dropParts: true,
+        // ARCMAGE — mag dominant, mag >= str & mag >= spd → Shader Burnout (devastating)
+        specs: { id: 'gym-st-03', cpu: { brand: 'Intel Core i9-14900KS', manufacturer: 'Intel', cores: 24, threads: 32, speed: 3.2, speedMax: 6.2 }, ram: { totalGB: 256 }, gpu: { model: 'NVIDIA H100', vramMB: 81920, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 8000 } },
+        stats: { str: 62, vit: 82, mag: 95, spd: 78, def: 66, hp: 1600, maxHp: 1600 },
+        displayName: 'i9-14900KS', displayGpu: 'H100 80GB',
+      },
+      {
+        id: 'st_void_architect',
+        name: 'VOID ARCHITECT',
+        title: 'The Reality Compiler',
+        taunt: 'I don\'t break systems. I rewrite them.',
+        tier: 'apex',
+        creditBase: 550,
+        dropParts: true,
+        // TITAN — avg >= 76, minStat >= 68, avg < 90 → Overheat (colossal burst, stall risk)
+        specs: { id: 'gym-st-04', cpu: { brand: 'Intel Xeon w9-3595X', manufacturer: 'Intel', cores: 60, threads: 120, speed: 3.2, speedMax: 4.8 }, ram: { totalGB: 512 }, gpu: { model: 'AMD Instinct MI300X', vramMB: 131072, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 8000 } },
+        stats: { str: 92, vit: 88, mag: 94, spd: 86, def: 84, hp: 1750, maxHp: 1750 },
+        displayName: 'Xeon w9-3595X', displayGpu: 'MI300X',
+      },
+      {
+        id: 'st_omega_process',
+        name: 'OMEGA PROCESS',
+        title: 'Gym Boss — The Final Calculation',
+        taunt: 'I am the last thing any system ever computes.',
+        tier: 'apex',
+        creditBase: 700,
+        dropParts: true,
+        isLeader: true,
+        // APEX — avg >= 90, minStat >= 85 → Omniscience (god-tier consistency + regen)
+        specs: { id: 'gym-st-05', cpu: { brand: 'AMD Threadripper PRO 7995WX', manufacturer: 'AMD', cores: 96, threads: 192, speed: 2.5, speedMax: 5.1 }, ram: { totalGB: 1024 }, gpu: { model: 'NVIDIA H100', vramMB: 81920, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 16000 } },
+        stats: { str: 98, vit: 95, mag: 100, spd: 96, def: 92, hp: 2200, maxHp: 2200 },
+        displayName: 'TR PRO 7995WX', displayGpu: 'H100 80GB',
+      },
+    ],
+  },
 ];
 
 // ─── Persistence ───
@@ -355,26 +507,31 @@ function getGymMoves(fighterDef, clears = 0) {
 // ─── Reward calculation ───
 
 function calculateGymRewards(fighterDef, clears, won) {
-  if (!won) return { credits: 15, itemTier: null, partEligible: false };
+  if (!won) return { credits: 15, itemTier: null, partEligible: false, partMaxRarity: 'legendary', mythicBonus: 0 };
 
   const credits = Math.round(fighterDef.creditBase * (1 + 0.15 * clears));
 
   const tiers = ['low', 'mid', 'high', 'flagship'];
-  const baseTierIdx = tiers.indexOf(fighterDef.tier);
+  const itemTierMap = { low: 0, mid: 1, high: 2, flagship: 3, elite: 3, apex: 3 };
+  const baseTierIdx = itemTierMap[fighterDef.tier] ?? 3;
   const tierBoost = Math.floor(clears / 3);
   const itemTier = tiers[Math.min(baseTierIdx + tierBoost, tiers.length - 1)];
+
+  const gym = GYMS.find(g => g.fighters.some(f => f.id === fighterDef.id));
 
   return {
     credits,
     itemTier,
     partEligible: fighterDef.dropParts,
+    partMaxRarity: 'legendary',
+    mythicBonus: gym?.mythicBonus || 0,
   };
 }
 
 // ─── Difficulty label based on base tier + reclear count ───
 
 function getDifficultyLabel(fighterDef, clears) {
-  const tierBase = { low: 0, mid: 2, high: 4, flagship: 6 };
+  const tierBase = { low: 0, mid: 2, high: 4, flagship: 6, elite: 8, apex: 10 };
   const base = tierBase[fighterDef.tier] || 0;
   const level = base + Math.min(clears, 6); // cap scaling contribution
 
