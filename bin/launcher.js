@@ -95,6 +95,7 @@ const MENU_ITEMS = [
   { key: 'loadout',     label: 'LOADOUT',          desc: 'Configure equipped moves',   icon: '⚔' },
   { key: 'bag',         label: 'BAG',              desc: 'View collected items',       icon: '◰' },
   { key: 'workshop',    label: 'WORKSHOP',         desc: 'Swap parts on your build',   icon: '▣' },
+  { key: 'titles',      label: 'TITLES',            desc: 'View & equip title tags',         icon: '◈' },
   { key: 'skins',       label: 'SKIN LOCKER',      desc: 'View & equip Transcendent skins', icon: '✧' },
   { key: 'lootbox',     label: 'LOOT BOX',         desc: 'Spend credits on crates',    icon: '✦' },
   { key: 'market',      label: 'MARKET',            desc: 'Trade skins with players',   icon: '⇌' },
@@ -126,6 +127,7 @@ const ITEM_COLORS = {
   loadout:     colors.lavender,
   bag:         colors.mint,
   workshop:    rgb(255, 215, 0),
+  titles:      rgb(180, 200, 255),
   skins:       rgb(200, 120, 255),
   lootbox:     rgb(240, 170, 50),
   market:      rgb(180, 220, 140),
@@ -166,7 +168,7 @@ const MENU_GROUPS = [
     desc: 'Profile, moves, and fighter setup',
     icon: '*',
     defaultExpanded: false,
-    items: ['profile', 'loadout', 'skins', 'cards'],
+    items: ['titles', 'profile', 'loadout', 'skins', 'cards'],
   },
   { type: 'item', key: 'bag' },
   { type: 'item', key: 'workshop' },
@@ -2136,6 +2138,20 @@ async function handleLootBox() {
   }
 }
 
+async function handleTitles(fighter, sessionState) {
+  try {
+    const { openTitleLocker } = require('../src/titlelocker');
+    const titleScreen = new Screen();
+    titleScreen.enter();
+    await openTitleLocker(titleScreen);
+    titleScreen.exit();
+  } catch (e) {
+    await showInfoScreen('TITLES', (scr) => {
+      scr.text(4, 4, 'Title locker not available.', colors.dim);
+    });
+  }
+}
+
 async function handleSkins(fighter, sessionState) {
   try {
     const { openSkinLocker } = require('../src/market');
@@ -3490,6 +3506,9 @@ async function run() {
         break;
       case 'workshop':
         await handleWorkshop(fighter, sessionState);
+        break;
+      case 'titles':
+        await handleTitles(fighter, sessionState);
         break;
       case 'skins':
         await handleSkins(fighter, sessionState);
