@@ -204,6 +204,12 @@ function saveParts(inv) {
 
 const DEFAULT_BUILDS = { active: 0, builds: [{ name: 'My Rig', main: true, parts: {} }] };
 
+function refundEquippedPartsToInventory(parts) {
+  for (const partId of Object.values(parts || {})) {
+    if (partId && PARTS[partId]) addPart(partId);
+  }
+}
+
 function loadBuilds() {
   try {
     if (!fs.existsSync(BUILD_FILE)) {
@@ -229,6 +235,21 @@ function loadBuilds() {
       data.builds = [{ name: 'My Rig', main: true, parts: {} }];
     }
     if (!data.builds[0].main) data.builds[0].main = true;
+
+    // Older versions auto-equipped "closest match" seed parts onto the
+    // main rig after a workshop visit. That made real hardware scans look
+    // wrong in profile/multiplayer. Migrate those parts back into inventory
+    // once so the main rig reflects the live scan again.
+    if (data._seeded && !data._mainRigSeedMigrationDone) {
+      const mainBuild = data.builds[0];
+      if (mainBuild?.main && Object.keys(mainBuild.parts || {}).length > 0) {
+        refundEquippedPartsToInventory(mainBuild.parts);
+        mainBuild.parts = {};
+      }
+      data._mainRigSeedMigrationDone = true;
+      saveBuilds(data);
+    }
+
     return data;
   } catch { return JSON.parse(JSON.stringify(DEFAULT_BUILDS)); }
 }
@@ -588,18 +609,17 @@ function seedPartsFromHardware(specs) {
     if (score > bestStorScore) { bestStorScore = score; bestStor = id; }
   }
 
-  // Add matched parts to inventory, then equip on main rig (build 0)
+// Add matched parts to inventory only.
+// Do not auto-equip them onto the main rig: the real scanned hardware should
+// stay authoritative unless the player explicitly equips an override.
   for (const partId of [bestCpu, bestGpu, bestRam, bestStor]) {
     if (partId) {
       addPart(partId);
-      equipPartOnBuild(0, partId);
     }
   }
 
-  // Reload after equips (equipPartOnBuild writes its own saves), then mark seeded
-  const fresh = loadBuilds();
-  fresh._seeded = true;
-  saveBuilds(fresh);
+  data._seeded = true;
+  saveBuilds(data);
 }
 
 module.exports = {
