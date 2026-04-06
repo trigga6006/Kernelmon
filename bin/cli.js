@@ -476,26 +476,14 @@ async function main() {
           console.log('\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m');
           const specs = await getSpecs();
           const myFighter = await prepareBenchToBattle(await buildFighter(specs));
-
-          // Peek at room to learn wager amount
           const relayUrl = getFlag('--relay', DEFAULT_RELAY_URL);
-          const base = relayUrl.replace(/\/$/, '');
-          const http = require('node:http');
-          const https = require('node:https');
-          const peekParsed = new URL(`${base}/rooms/${wagerCode.toUpperCase()}`);
-          const peekMod = peekParsed.protocol === 'https:' ? https : http;
-          const roomInfo = await new Promise((resolve, reject) => {
-            const req = peekMod.request(peekParsed, { method: 'GET', timeout: 10000 }, (res) => {
-              let data = '';
-              res.on('data', c => { data += c; });
-              res.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid response')); } });
-            });
-            req.on('error', reject);
-            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-            req.end();
-          });
 
-          const wagerAmt = roomInfo.wager || 0;
+          // Join room first, then read wager from host's fighter data
+          const result = await joinOnline(myFighter, wagerCode, relayUrl);
+          const opponent = result.opponent;
+          const matchSeed = result.matchSeed || 0;
+
+          const wagerAmt = opponent.wager || 0;
           if (wagerAmt <= 0) {
             console.error('\x1b[38;2;240;150;170m  ✗ This room is not a wager lobby.\x1b[0m');
             process.exit(1);
@@ -517,10 +505,6 @@ async function main() {
           }
 
           try {
-            const result = await joinOnline(myFighter, wagerCode, relayUrl);
-            const opponent = result.opponent;
-            const matchSeed = result.matchSeed || 0;
-
             if (opponent.specs) opponent.sprite = getSprite(opponent.specs);
             console.log('\x1b[38;2;130;220;235m  ◆ Opponent found!\x1b[0m');
             printFighter(opponent, '\x1b[38;2;130;220;235m', true);
@@ -596,6 +580,7 @@ async function main() {
           console.log('\x1b[38;2;130;220;235m  ◆ Scanning hardware...\x1b[0m');
           const specs = await getSpecs();
           const myFighter = await prepareBenchToBattle(await buildFighter(specs));
+          myFighter.wager = wagerAmt; // embed so joiner can read it from fighter data
           printFighter(myFighter, '\x1b[38;2;130;220;235m');
 
           // Deduct wager

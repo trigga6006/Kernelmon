@@ -2363,6 +2363,9 @@ async function handleWagerHost(fighter, sessionState) {
 
     myFighter = await ensureSessionFighter(sessionState, myFighter);
 
+    // Embed wager in fighter so relay passes it through to joiner
+    myFighter.wager = wagerAmount;
+
     // Create wager room
     let createResult;
     await withLoadingScreen('Creating wager lobby', async () => {
@@ -2606,39 +2609,18 @@ async function handleWagerJoin(fighter, sessionState) {
   try {
     myFighter = await ensureSessionFighter(sessionState, myFighter);
 
-    // Peek at the room to learn the wager amount before joining
-    let roomInfo;
-    await withLoadingScreen(`Checking room ${roomCode}`, async () => {
-      const base = DEFAULT_RELAY_URL.replace(/\/$/, '');
-      const http = require('node:http');
-      const https = require('node:https');
-      const parsed = new URL(`${base}/rooms/${roomCode}`);
-      const mod = parsed.protocol === 'https:' ? https : http;
-      roomInfo = await new Promise((resolve, reject) => {
-        const req = mod.request(parsed, { method: 'GET', timeout: 10000 }, (res) => {
-          let data = '';
-          res.on('data', c => { data += c; });
-          res.on('end', () => {
-            try { resolve(JSON.parse(data)); }
-            catch { reject(new Error('Invalid relay response')); }
-          });
-        });
-        req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-        req.end();
-      });
+    // Join the room first — read wager from the host's fighter data
+    // (wager is embedded in the fighter object so it works with any relay server)
+    await withLoadingScreen(`Joining room ${roomCode}`, async () => {
+      const result = await joinOnline(myFighter, roomCode, DEFAULT_RELAY_URL);
+      opponent = result.opponent;
+      matchSeed = result.matchSeed || 0;
     });
 
     console.log = origLog;
 
-    if (roomInfo.error) {
-      await showInfoScreen('WAGER', (scr) => {
-        scr.centerText(Math.floor(scr.height / 2), `Room error: ${roomInfo.error}`, colors.rose);
-      });
-      return;
-    }
-
-    wagerAmount = roomInfo.wager || 0;
+    // Read wager from host's fighter (embedded by handleWagerHost)
+    wagerAmount = opponent.wager || 0;
     if (wagerAmount <= 0) {
       await showInfoScreen('WAGER', (scr) => {
         scr.centerText(Math.floor(scr.height / 2), 'This room is not a wager lobby.', colors.rose);
@@ -2670,15 +2652,6 @@ async function handleWagerJoin(fighter, sessionState) {
       });
       return;
     }
-
-    // Join the room
-    console.log = () => {};
-
-    await withLoadingScreen(`Joining wager room ${roomCode}`, async () => {
-      const result = await joinOnline(myFighter, roomCode, DEFAULT_RELAY_URL);
-      opponent = result.opponent;
-      matchSeed = result.matchSeed || 0;
-    });
 
     // Rebuild opponent sprite
     if (opponent.specs) {
