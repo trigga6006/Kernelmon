@@ -9,13 +9,20 @@ const { createRNG } = require('./rng');
 const { getCombatModifiers, effectiveStat } = require('./balance');
 const { normalizeBenchmarkProfile } = require('./benchmark');
 
+// Card mode imports — lazy-loaded to avoid overhead in non-card battles
+let _cardBalance = null;
+function cardBalance() {
+  if (!_cardBalance) _cardBalance = require('./cardbalance');
+  return _cardBalance;
+}
+
 function cloneStateSlice(value) {
   return value ? JSON.parse(JSON.stringify(value)) : value;
 }
 
-function createBattleState(fighterA, fighterB, seed) {
+function createBattleState(fighterA, fighterB, seed, options = {}) {
   const rng = createRNG(seed);
-  return {
+  const state = {
     rng,
     a: {
       ...fighterA.stats, hp: fighterA.stats.hp, maxHp: fighterA.stats.maxHp,
@@ -39,6 +46,30 @@ function createBattleState(fighterA, fighterB, seed) {
     },
     turn: 0,
   };
+
+  // Card mode extension — isolated from normal battles
+  if (options.cardMode) {
+    state.cardMode = true;
+    state.a.cards = (options.cardsA || []).map(c => ({
+      ...c, used: false, cooldown: 0,
+    }));
+    state.b.cards = (options.cardsB || []).map(c => ({
+      ...c, used: false, cooldown: 0,
+    }));
+    // Card-specific state
+    state.a._cardBoosts = [];
+    state.a._cardDebuffs = [];
+    state.a._shield = 0;
+    state.a._invulnerable = 0;
+    state.a._silenced = 0;
+    state.b._cardBoosts = [];
+    state.b._cardDebuffs = [];
+    state.b._shield = 0;
+    state.b._invulnerable = 0;
+    state.b._silenced = 0;
+  }
+
+  return state;
 }
 
 // Process a single turn: both players chose a move
@@ -52,6 +83,18 @@ function processTurn(state, moveA, moveB) {
     for (const name of Object.keys(fighter.cooldowns)) {
       fighter.cooldowns[name]--;
       if (fighter.cooldowns[name] <= 0) delete fighter.cooldowns[name];
+    }
+  }
+
+  // ── Card mode: tick card boosts/debuffs/cooldowns ──
+  if (state.cardMode) {
+    const cb = cardBalance();
+    cb.tickCardEffects(state.a);
+    cb.tickCardEffects(state.b);
+    // Check turn-start reactive triggers (e.g. adaptive_firmware every N turns)
+    for (const who of ['a', 'b']) {
+      const reactiveEvents = cb.checkReactiveCards(state, who, 'turn_start');
+      events.push(...reactiveEvents);
     }
   }
 
@@ -72,16 +115,24 @@ function processTurn(state, moveA, moveB) {
   }
 
   // Determine attack order by SPD (with archetype modifiers)
-  const modsA = getCombatModifiers({
+  // Card mode uses isolated balance layer; normal mode uses standard balance
+  const getModsFn = state.cardMode ? cardBalance().getCardCombatModifiers : getCombatModifiers;
+  const ctxA = {
     atkArchetype: state.a.archetype, defArchetype: state.b.archetype,
     atk: state.a, def: state.b, rng, turn: state.turn,
     consecutiveAttacks: state.a.consecutiveAttacks, move: moveA,
-  });
-  const modsB = getCombatModifiers({
+  };
+  const ctxB = {
     atkArchetype: state.b.archetype, defArchetype: state.a.archetype,
     atk: state.b, def: state.a, rng, turn: state.turn,
     consecutiveAttacks: state.b.consecutiveAttacks, move: moveB,
-  });
+  };
+  const modsA = state.cardMode
+    ? getModsFn(ctxA, state.a.cards || [], state.b.cards || [])
+    : getModsFn(ctxA);
+  const modsB = state.cardMode
+    ? getModsFn(ctxB, state.b.cards || [], state.a.cards || [])
+    : getModsFn(ctxB);
 
   const spdA = state.a.spd + (modsA.initiativeBonus || 0) - (modsA.spdPenalty || 0) + rng.int(-5, 5);
   const spdB = state.b.spd + (modsB.initiativeBonus || 0) - (modsB.spdPenalty || 0) + rng.int(-5, 5);
@@ -107,11 +158,21 @@ function processTurn(state, moveA, moveB) {
     if (mods.skipChance > 0 && rng.chance(mods.skipChance)) {
       events.push({ type: 'stall', who, turn: state.turn, passive: atk.archetype });
       atk.consecutiveAttacks = 0;
+      // Card mode: stall triggers (thermal_throttle_guard)
+      if (state.cardMode) {
+        const stallEvents = cardBalance().checkReactiveCards(state, who, 'on_stall');
+        events.push(...stallEvents);
+      }
       continue;
     }
 
-    // Stunned — skip turn
+    // Stunned — skip turn (card mode: reactive may auto-cleanse)
     if (atk.stunned) {
+      if (state.cardMode) {
+        const stunEvents = cardBalance().checkReactiveCards(state, who, 'on_stun');
+        events.push(...stunEvents);
+        if (!atk.stunned) continue; // cleansed by card
+      }
       events.push({ type: 'stunned', who, turn: state.turn });
       atk.stunned = false;
       atk.consecutiveAttacks = 0;
@@ -187,7 +248,24 @@ function processTurn(state, moveA, moveB) {
         move: move.name, label: move.label, flavor: move.desc,
         hpA: state.a.hp, hpB: state.b.hp,
       });
+      // Card mode: dodge triggers (counterstrike_matrix)
+      if (state.cardMode) {
+        const dodgeEvents = cardBalance().checkReactiveCards(state, defender, 'on_dodge');
+        events.push(...dodgeEvents);
+      }
       continue;
+    }
+
+    // Card mode: shield blocks damage
+    if (state.cardMode && def._shield > 0) {
+      def._shield--;
+      damage = 0;
+      events.push({ type: 'card_shield', who: defender, turn: state.turn, hpA: state.a.hp, hpB: state.b.hp });
+    }
+    // Card mode: invulnerability negates damage
+    if (state.cardMode && def._invulnerable > 0) {
+      damage = 0;
+      events.push({ type: 'card_invulnerable', who: defender, turn: state.turn, hpA: state.a.hp, hpB: state.b.hp });
     }
 
     // Apply damage
@@ -255,7 +333,35 @@ function processTurn(state, moveA, moveB) {
 
     events.push(attackEvent);
 
+    // ── Card mode: reactive triggers after damage ──
+    if (state.cardMode && damage > 0) {
+      const cb = cardBalance();
+      const damageRatio = damage / def.maxHp;
+      // Defender reactive triggers
+      const defEvents = cb.checkReactiveCards(state, defender, 'after_damage', { damageRatio });
+      events.push(...defEvents);
+      if (isCrit) {
+        const critEvents = cb.checkReactiveCards(state, defender, 'on_crit_received');
+        events.push(...critEvents);
+      }
+      // Attacker dodge triggers (handled above in dodge block, but counter-check here)
+    }
+
     if (def.hp <= 0) {
+      // Card mode: check for revive/survive reactive triggers before KO
+      if (state.cardMode) {
+        const cb = cardBalance();
+        const koEvents = cb.checkReactiveCards(state, defender, 'on_ko');
+        events.push(...koEvents);
+        // Also check lethal-prevention (causality_anchor)
+        const lethalEvents = cb.checkReactiveCards(state, defender, 'on_lethal');
+        events.push(...lethalEvents);
+        // If defender was revived by a card, don't KO
+        if (def.hp > 0) continue;
+        // Check deadman's switch on the dying fighter
+        const deathEvents = cb.checkReactiveCards(state, defender, 'on_ko');
+        events.push(...deathEvents);
+      }
       events.push({
         type: 'ko', winner: who, loser: defender,
         finalHpA: state.a.hp, finalHpB: state.b.hp,
@@ -298,6 +404,12 @@ function applyBattleStateSnapshot(state, snapshot) {
   return state;
 }
 
+// ─── Card mode: activate an active card (passthrough to cardbalance) ───
+function activateCard(state, who, cardIdx) {
+  if (!state.cardMode) return null;
+  return cardBalance().applyActiveCard(state, who, cardIdx);
+}
+
 module.exports = {
   createBattleState,
   processTurn,
@@ -305,4 +417,5 @@ module.exports = {
   getWinner,
   serializeBattleState,
   applyBattleStateSnapshot,
+  activateCard,
 };

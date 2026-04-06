@@ -30,6 +30,8 @@ const { preBattleLobby } = require('./prebattle');
 const { getBenchmarkLogEntries } = require('./benchmark');
 const { getCategoryMultiplier } = require('./balance');
 const { SIGNATURE_COLOR, SIGNATURE_ACCENT, SIGNATURE_ICON } = require('./signature');
+const { drawCard: drawFullCard, drawCollapsedCard, drawCardHand, CARD_W, CARD_H, COLLAPSED_W } = require('./cardart');
+const { CARD_RARITY_COLORS_RGB, CARD_RARITY_ICONS, CARD_TYPE_LABELS, CARD_TYPE_COLORS_RGB } = require('./cards');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -85,7 +87,7 @@ function getCallsign(fighter) {
 }
 
 async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options = {}) {
-  const { role, roomCode, relayUrl, seed, autoPlay } = options;
+  const { role, roomCode, relayUrl, seed, autoPlay, cardMode, cardsA, cardsB } = options;
   const isOnline = !!roomCode;
   const isHost = role === 'host' || !isOnline;
 
@@ -170,7 +172,12 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   const battleState = createBattleState(
     isHost ? fighterA : fighterB,
     isHost ? fighterB : fighterA,
-    seed || 42
+    seed || 42,
+    cardMode ? {
+      cardMode: true,
+      cardsA: isHost ? (cardsA || []) : (cardsB || []),
+      cardsB: isHost ? (cardsB || []) : (cardsA || []),
+    } : {}
   );
   let hpA = fighterA.stats.maxHp;
   let hpB = fighterB.stats.maxHp;
@@ -186,6 +193,12 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   let itemRing = null; // { cx, cy, startFrame, duration }
   // Bag cooldown — can't use items two turns in a row
   let lastItemTurn = 0;
+
+  // Card mode state
+  const myCards = cardMode ? (battleState[meSlot].cards || []) : [];
+  let cardCursor = 0;          // which card in hand is selected
+  let cardPopup = false;       // whether the full card popup is showing
+  let lastCardTurn = -10;      // turn when last active card was used
   // Special attack effects — full-screen animations (black hole, maelstrom)
   let specialEffect = null; // BlackHoleEffect | MaelstromEffect instance
   let frameCount = 0;
@@ -481,7 +494,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   let phase = 'idle'; // 'select' | 'waiting' | 'animating' | 'idle' | 'quicktime'
   let cursorRow = 0;   // 0-2 = move rows, 3 = BAG
   let cursorCol = 0;   // 0 = left column, 1 = right column
-  let selectMode = 'moves'; // 'moves' | 'bag'
+  let selectMode = 'moves'; // 'moves' | 'bag' | 'cards'
   let bagItems = [];
   let bagScroll = 0; // scroll offset for bag list
   // Helper: get linear move index from row/col
@@ -772,15 +785,36 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         if (movesetA.length > 0) cursor = (cursor - 1 + movesetA.length) % movesetA.length;
       } else if (key === '\x1b[B' || key === 'j') {
         if (movesetA.length > 0) cursor = (cursor + 1) % movesetA.length;
+      } else if (key === '\x1b[D' || key === 'h' || key === 'a') {
+        // Left → open bag (card mode: bag is on the left)
+        if (cardMode) {
+          if (lastItemTurn > 0 && turnNum - lastItemTurn < 2) {
+            addLog(`Bag on cooldown (1 turn)`, colors.dim);
+          } else {
+            bagItems = getOwnedItems();
+            selectMode = 'bag';
+            cursor = 0;
+            bagScroll = 0;
+          }
+        }
       } else if (key === '\x1b[C' || key === 'l' || key === 'd') {
-        // Right → open bag (blocked if item used last turn)
-        if (lastItemTurn > 0 && turnNum - lastItemTurn < 2) {
-          addLog(`Bag on cooldown (1 turn)`, colors.dim);
+        if (cardMode) {
+          // Right → open cards
+          if (myCards.length > 0) {
+            selectMode = 'cards';
+            cardCursor = 0;
+            cardPopup = false;
+          }
         } else {
-          bagItems = getOwnedItems();
-          selectMode = 'bag';
-          cursor = 0;
-          bagScroll = 0;
+          // Non-card mode: Right → open bag (original behavior)
+          if (lastItemTurn > 0 && turnNum - lastItemTurn < 2) {
+            addLog(`Bag on cooldown (1 turn)`, colors.dim);
+          } else {
+            bagItems = getOwnedItems();
+            selectMode = 'bag';
+            cursor = 0;
+            bagScroll = 0;
+          }
         }
       } else if (key === '\r' || key === '\n' || key === ' ') {
         if (cursor < movesetA.length) {
@@ -813,6 +847,52 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         selectMode = 'moves';
         cursorRow = 0;
         cursorCol = 0;
+      } else if (key === '\x1b[C' || key === 'l' || key === 'd') {
+        // Right from bag → back to moves
+        selectMode = 'moves';
+        cursorRow = 0;
+        cursorCol = 0;
+      }
+    } else if (selectMode === 'cards') {
+      // Card hand navigation
+      if (key === '\x1b[D' || key === 'h' || key === 'a') {
+        if (cardCursor > 0) {
+          cardCursor--;
+          cardPopup = false;
+        } else {
+          // Leftmost card → back to moves
+          selectMode = 'moves';
+          cardPopup = false;
+        }
+      } else if (key === '\x1b[C' || key === 'l' || key === 'd') {
+        if (cardCursor < myCards.length - 1) {
+          cardCursor++;
+          cardPopup = false;
+        }
+      } else if (key === '\x1b[A' || key === 'k') {
+        // Up → show popup
+        cardPopup = true;
+      } else if (key === '\x1b[B' || key === 'j') {
+        // Down → hide popup
+        cardPopup = false;
+      } else if (key === '\r' || key === '\n' || key === ' ') {
+        // Enter → activate active card
+        const card = myCards[cardCursor];
+        if (card && card.type === 'active' && card.cooldown <= 0 && !(battleState[meSlot]._silenced > 0)) {
+          if (moveResolve) {
+            const r = moveResolve; moveResolve = null;
+            r({ type: 'card', cardIdx: cardCursor });
+          }
+        } else if (card && card.type === 'active' && card.cooldown > 0) {
+          addLog(`${card.name} on cooldown (${card.cooldown} turns)`, colors.dim);
+        } else if (card && card.type !== 'active') {
+          addLog(`${card.name} is ${card.type} (auto-triggers)`, colors.dim);
+        } else if (battleState[meSlot]._silenced > 0) {
+          addLog(`Cards silenced! (${battleState[meSlot]._silenced} turns)`, colors.rose);
+        }
+      } else if (key === '\x1b' || key === 'q') {
+        selectMode = 'moves';
+        cardPopup = false;
       }
     }
   }
@@ -1036,6 +1116,34 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
           addLog(`Used: ${item.name}`, colors.mint);
         }
         myMove = null; // item use consumes the turn — no attack
+      } else if (choice.type === 'card' && cardMode) {
+        // Active card activation — applies effect immediately, still pick a move
+        const { activateCard } = require('./turnbattle');
+        const cardEvent = activateCard(battleState, meSlot, choice.cardIdx);
+        if (cardEvent) {
+          const card = myCards[choice.cardIdx];
+          addLog(`♦ Activated: ${card.name}`, rgb(...(CARD_TYPE_COLORS_RGB.active)));
+          lastCardTurn = turnNum;
+          // Card activation doesn't consume the turn — player still picks a move
+          // Go back to move selection for this turn
+          const moveChoice = await waitForMove();
+          if (moveChoice.type === 'move') {
+            myMove = moveChoice.move;
+            const moveIcon = myMove.signature ? SIGNATURE_ICON : (CAT_ICONS[myMove.cat] || '·');
+            addLog(`${moveIcon} You chose: ${myMove.label}`, colors.p1);
+          } else if (moveChoice.type === 'forfeit') {
+            forfeited = true;
+          } else {
+            myMove = null;
+          }
+          syncDisplayHpFromState();
+        } else {
+          addLog('Card activation failed!', colors.rose);
+          // Let player retry
+          const retryChoice = await waitForMove();
+          if (retryChoice.type === 'move') myMove = retryChoice.move;
+          else if (retryChoice.type === 'forfeit') forfeited = true;
+        }
       } else {
         myMove = choice.move;
         const moveIcon = myMove.signature ? SIGNATURE_ICON : (CAT_ICONS[myMove.cat] || '·');
@@ -1451,63 +1559,135 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       }
     }
 
-    if (selectMode === 'moves') {
-      screen.text(logX + 1, logY, '╸ SELECT YOUR MOVE ╺', colors.gold, null, true);
+    if (selectMode === 'moves' || (selectMode === 'cards' && cardMode)) {
+      // ── Card mode layout: [BAG] [MOVES] [CARDS] ──
+      // ── Normal mode layout: [MOVES] [BAG] ──
+      const moveOffsetX = cardMode ? 8 : 0; // shift moves right when bag is on left
+      const moveLabelW = cardMode
+        ? Math.min(18, Math.floor((logW - 28) * 0.4))
+        : Math.min(22, Math.floor(logW * 0.4));
+
+      screen.text(logX + moveOffsetX + 1, logY, '╸ SELECT YOUR MOVE ╺', colors.gold, null, true);
 
       const myCooldowns = battleState[meSlot].cooldowns || {};
       const oppArchetype = battleState[oppSlot].archetype;
-      const labelW = Math.min(22, Math.floor(logW * 0.4));
 
       // Single-column list of all 6 moves
       for (let i = 0; i < movesetA.length; i++) {
         const m = movesetA[i];
         const y = logY + 1 + i;
-        const selected = cursor === i;
+        const selected = selectMode === 'moves' && cursor === i;
         const onCooldown = myCooldowns[m.name] && myCooldowns[m.name] > 0;
         const cdText = onCooldown ? `[${myCooldowns[m.name]}]` : '';
         const isSig = m.signature;
         const icon = isSig ? SIGNATURE_ICON : (CAT_ICONS[m.cat] || '·');
         const baseColor = isSig ? SIGNATURE_COLOR : (CAT_COLORS[m.cat] || colors.dim);
         const dimColor = isSig ? SIGNATURE_ACCENT : colors.dimmer;
+        const mx = logX + moveOffsetX;
 
         if (onCooldown) {
-          if (selected) screen.text(logX + 1, y, '▸', colors.dim, null, true);
-          screen.text(logX + 3, y, icon, colors.dimmer);
-          screen.text(logX + 5, y, m.label.slice(0, labelW).padEnd(labelW), colors.dimmer);
-          screen.text(logX + 5 + labelW + 1, y, cdText, colors.rose);
+          if (selected) screen.text(mx + 1, y, '▸', colors.dim, null, true);
+          screen.text(mx + 3, y, icon, colors.dimmer);
+          screen.text(mx + 5, y, m.label.slice(0, moveLabelW).padEnd(moveLabelW), colors.dimmer);
+          screen.text(mx + 5 + moveLabelW + 1, y, cdText, colors.rose);
         } else if (selected) {
-          screen.text(logX + 1, y, '▸', colors.white, null, true);
-          screen.text(logX + 3, y, icon, baseColor, null, true);
-          screen.text(logX + 5, y, m.label.slice(0, labelW).padEnd(labelW), colors.white, null, true);
-          screen.text(logX + 5 + labelW + 1, y, m.desc.slice(0, 20), baseColor);
+          screen.text(mx + 1, y, '▸', colors.white, null, true);
+          screen.text(mx + 3, y, icon, baseColor, null, true);
+          screen.text(mx + 5, y, m.label.slice(0, moveLabelW).padEnd(moveLabelW), colors.white, null, true);
+          screen.text(mx + 5 + moveLabelW + 1, y, m.desc.slice(0, 20), baseColor);
           const catMult = getCategoryMultiplier(m.cat, oppArchetype);
-          if (catMult > 1.0) screen.text(logX + 5 + labelW + 22, y, '!!', colors.mint, null, true);
-          else if (catMult < 1.0) screen.text(logX + 5 + labelW + 22, y, '..', colors.rose);
+          if (catMult > 1.0) screen.text(mx + 5 + moveLabelW + 22, y, '!!', colors.mint, null, true);
+          else if (catMult < 1.0) screen.text(mx + 5 + moveLabelW + 22, y, '..', colors.rose);
         } else {
-          screen.text(logX + 3, y, icon, dimColor);
-          screen.text(logX + 5, y, m.label.slice(0, labelW).padEnd(labelW), isSig ? SIGNATURE_ACCENT : colors.dim);
+          screen.text(mx + 3, y, icon, selectMode === 'cards' ? colors.dimmer : dimColor);
+          screen.text(mx + 5, y, m.label.slice(0, moveLabelW).padEnd(moveLabelW),
+            selectMode === 'cards' ? colors.dimmer : (isSig ? SIGNATURE_ACCENT : colors.dim));
         }
       }
 
-      // BAG box in the center-right area
-      const bagX = logX + Math.floor(logW / 2) + 2;
-      const bagCenterY = logY + 3;
-      const ownedCount = getOwnedItems().reduce((s, i) => s + i.count, 0);
-      const bagOnCooldown = lastItemTurn > 0 && turnNum - lastItemTurn < 2;
-      const bagColor = bagOnCooldown ? colors.dim : colors.mint;
-      screen.text(bagX, bagCenterY - 1, '┌──────────┐', bagColor);
-      screen.text(bagX, bagCenterY,     '│ ◰ BAG    │', bagColor);
-      screen.text(bagX, bagCenterY + 1, `│ ${String(ownedCount).padStart(3)} items│`, bagOnCooldown ? colors.dimmer : colors.dim);
-      screen.text(bagX, bagCenterY + 2, '└──────────┘', bagColor);
-      if (bagOnCooldown) {
-        screen.text(bagX + 1, bagCenterY + 3, 'COOLDOWN', colors.rose);
+      if (cardMode) {
+        // ── BAG: compact box on the far left ──
+        const bagOnCooldown = lastItemTurn > 0 && turnNum - lastItemTurn < 2;
+        const ownedCount = getOwnedItems().reduce((s, i) => s + i.count, 0);
+        const bagColor = bagOnCooldown ? colors.dim : colors.mint;
+        screen.text(logX, logY + 1, '┌────┐', bagColor);
+        screen.text(logX, logY + 2, '│◰BAG│', bagColor);
+        screen.text(logX, logY + 3, `│ ${String(ownedCount).padStart(2)} │`, bagOnCooldown ? colors.dimmer : colors.dim);
+        screen.text(logX, logY + 4, '└────┘', bagColor);
+        if (bagOnCooldown) {
+          screen.text(logX, logY + 5, ' CD  ', colors.rose);
+        } else {
+          screen.text(logX, logY + 5, '◂ bag', colors.dimmer);
+        }
+
+        // ── CARD HAND: collapsed cards on the right ──
+        const cardHandX = logX + logW - (myCards.length * (COLLAPSED_W + 1));
+        for (let i = 0; i < myCards.length; i++) {
+          const card = myCards[i];
+          const cx = cardHandX + i * (COLLAPSED_W + 1);
+          const isCardSelected = selectMode === 'cards' && cardCursor === i;
+          drawCollapsedCard(screen, cx, logY + 1, card, {
+            selected: isCardSelected,
+            frameCounter: frameCount,
+          });
+        }
+        // Card hand label
+        const silenced = battleState[meSlot]._silenced > 0;
+        if (silenced) {
+          screen.text(cardHandX, logY + 6, 'SILENCED', colors.rose);
+        } else if (selectMode === 'moves') {
+          screen.text(cardHandX, logY + 6, 'cards ▸', colors.dimmer);
+        }
+
+        // ── CARD POPUP: full card above the panel when hovering ──
+        if (selectMode === 'cards' && cardPopup && myCards[cardCursor]) {
+          const popCard = myCards[cardCursor];
+          const popX = Math.max(1, Math.min(w - CARD_W - 1,
+            cardHandX + cardCursor * (COLLAPSED_W + 1) - Math.floor(CARD_W / 2) + 2));
+          const popY = Math.max(0, logY - CARD_H - 1);
+          drawFullCard(screen, popX, popY, popCard, { frameCounter: frameCount });
+        }
+
+        // Selected card info text (when in cards mode but no popup)
+        if (selectMode === 'cards' && !cardPopup && myCards[cardCursor]) {
+          const card = myCards[cardCursor];
+          const rc = CARD_RARITY_COLORS_RGB[card.rarity] || [160, 165, 180];
+          const infoX = cardHandX - 20;
+          screen.text(infoX, logY + 1, card.name.slice(0, 18), rgb(rc[0], rc[1], rc[2]), null, true);
+          screen.text(infoX, logY + 2, `${CARD_TYPE_LABELS[card.type] || 'CARD'}`, rgb(...(CARD_TYPE_COLORS_RGB[card.type] || [180,180,180])));
+          screen.text(infoX, logY + 3, card.desc.slice(0, 18), colors.dim);
+          if (card.type === 'active') {
+            if (card.cooldown > 0) {
+              screen.text(infoX, logY + 4, `CD: ${card.cooldown}`, colors.rose);
+            } else {
+              screen.text(infoX, logY + 4, 'ENTER activate', colors.mint);
+            }
+          } else {
+            screen.text(infoX, logY + 4, 'auto-triggers', colors.dimmer);
+          }
+          screen.text(infoX, logY + 5, '▲ expand', colors.dimmer);
+        }
       } else {
-        screen.text(bagX + 2, bagCenterY + 3, '▸ to open', colors.dimmer);
+        // ── Normal mode: BAG box in the center-right area ──
+        const bagX = logX + Math.floor(logW / 2) + 2;
+        const bagCenterY = logY + 3;
+        const ownedCount = getOwnedItems().reduce((s, i) => s + i.count, 0);
+        const bagOnCooldown = lastItemTurn > 0 && turnNum - lastItemTurn < 2;
+        const bagColor = bagOnCooldown ? colors.dim : colors.mint;
+        screen.text(bagX, bagCenterY - 1, '┌──────────┐', bagColor);
+        screen.text(bagX, bagCenterY,     '│ ◰ BAG    │', bagColor);
+        screen.text(bagX, bagCenterY + 1, `│ ${String(ownedCount).padStart(3)} items│`, bagOnCooldown ? colors.dimmer : colors.dim);
+        screen.text(bagX, bagCenterY + 2, '└──────────┘', bagColor);
+        if (bagOnCooldown) {
+          screen.text(bagX + 1, bagCenterY + 3, 'COOLDOWN', colors.rose);
+        } else {
+          screen.text(bagX + 2, bagCenterY + 3, '▸ to open', colors.dimmer);
+        }
       }
 
     } else if (selectMode === 'bag') {
       screen.text(logX + 1, logY, '╸ USE AN ITEM ╺', colors.mint, null, true);
-      screen.text(logX + logW - 10, logY, '◂ MOVES', colors.dim);
+      screen.text(logX + logW - 10, logY, cardMode ? '▸ MOVES' : '◂ MOVES', colors.dim);
 
       if (bagItems.length === 0) {
         screen.text(logX + 3, logY + 1, 'Bag is empty! Win battles to earn items.', colors.dim);
@@ -1723,6 +1903,63 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         glitch.screenTear(w, 5);
         glitch.scatter(w / 2, h / 2, w, h, 12, 8);
       }, 400);
+
+    // ── Card events ──
+    } else if (event.type === 'card_trigger') {
+      const dWho = toDisplay(event.who);
+      const whoLabel = dWho === 'a' ? nameA : nameB;
+      const cx = dWho === 'a' ? plyCenterX : oppCenterX;
+      const cy = dWho === 'a' ? plyCenterY - 3 : oppCenterY - 2;
+      // Update HP display
+      if (event.hpA != null) { targetHpA = isHost ? event.hpA : event.hpB; }
+      if (event.hpB != null) { targetHpB = isHost ? event.hpB : event.hpA; }
+
+      const cardColor = rgb(230, 180, 140);
+      addLog(`♦ ${whoLabel.slice(0, 10)}: ${event.card} triggered!`, cardColor);
+      if (event.subtype === 'heal') {
+        floats.add(cx, cy, `+${event.amount}`, colors.mint, 14);
+      } else if (event.subtype === 'revive' || event.subtype === 'rewind') {
+        floats.add(cx - 1, cy, 'REVIVE', colors.gold, 20);
+        glitch.burst(cx, cy, 6, 6);
+      } else if (event.subtype === 'reflect' || event.subtype === 'counter') {
+        floats.add(cx, cy, `↩${event.damage}`, colors.rose, 14);
+      } else if (event.subtype === 'damage') {
+        const oppCx = dWho === 'a' ? oppCenterX : plyCenterX;
+        const oppCy = dWho === 'a' ? oppCenterY - 2 : plyCenterY - 3;
+        floats.add(oppCx, oppCy, `-${event.damage}`, colors.rose, 14);
+      } else if (event.subtype === 'survive') {
+        floats.add(cx - 1, cy, 'SURVIVE', colors.gold, 18);
+      } else if (event.subtype === 'invulnerable') {
+        floats.add(cx - 2, cy, 'INVULNERABLE', colors.gold, 18);
+      } else if (event.subtype === 'boost' || event.subtype === 'cleanse_boost' || event.subtype === 'mega_boost') {
+        const statLabel = event.stat ? event.stat.toUpperCase() : 'BUFF';
+        floats.add(cx, cy, `+${statLabel}`, colors.sky, 14);
+      } else if (event.subtype === 'cleanse' || event.subtype === 'cleanse_all') {
+        floats.add(cx - 1, cy, 'CLEANSE', colors.mint, 12);
+      }
+
+    } else if (event.type === 'card_activate') {
+      const dWho = toDisplay(event.who);
+      const whoLabel = dWho === 'a' ? nameA : nameB;
+      const cx = dWho === 'a' ? plyCenterX : oppCenterX;
+      const cy = dWho === 'a' ? plyCenterY - 3 : oppCenterY - 2;
+      if (event.hpA != null) { targetHpA = isHost ? event.hpA : event.hpB; }
+      if (event.hpB != null) { targetHpB = isHost ? event.hpB : event.hpA; }
+      addLog(`♦ ${whoLabel.slice(0, 10)} activates ${event.card}!`, rgb(230, 140, 170));
+      glitch.burst(cx, cy, 4, 4);
+
+    } else if (event.type === 'card_shield') {
+      const dWho = toDisplay(event.who);
+      const cx = dWho === 'a' ? plyCenterX : oppCenterX;
+      const cy = dWho === 'a' ? plyCenterY - 3 : oppCenterY - 2;
+      floats.add(cx - 1, cy, 'SHIELD', colors.sky, 14);
+      addLog(`Shield absorbed the attack!`, colors.sky);
+
+    } else if (event.type === 'card_invulnerable') {
+      const dWho = toDisplay(event.who);
+      const cx = dWho === 'a' ? plyCenterX : oppCenterX;
+      const cy = dWho === 'a' ? plyCenterY - 3 : oppCenterY - 2;
+      floats.add(cx - 2, cy, 'INVULNERABLE', colors.gold, 16);
     }
   }
 }

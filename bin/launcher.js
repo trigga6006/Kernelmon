@@ -81,6 +81,9 @@ const LOGO_SMALL = [
 const SUBTITLE = '◄ YOUR KERNEL. YOUR FIGHTER. ►';
 
 const MENU_ITEMS = [
+  { key: 'local',       label: 'LOCAL',            desc: 'Solo battles & gym ladder',   icon: '◉' },
+  { key: 'online',      label: 'ONLINE',           desc: 'Host, join & wager matches',  icon: '◎' },
+  { key: 'minigame',    label: 'MINIGAME',         desc: 'Dash, hack & more',           icon: '▸' },
   { key: 'demo',        label: 'QUICK BATTLE',    desc: 'Auto-battle vs Chromebook',  icon: '⚡' },
   { key: 'demo_turns',  label: 'TURN BATTLE',     desc: 'Turn-based vs Chromebook',   icon: '◆' },
   { key: 'dash',        label: 'DASH MODE',       desc: 'Side-scroll obstacle runner', icon: '▸' },
@@ -102,11 +105,16 @@ const MENU_ITEMS = [
   { key: 'wager',       label: 'WAGER',             desc: 'Stake credits in online PvP', icon: '◆' },
   { key: 'host',        label: 'HOST GAME',        desc: 'Host a battle for others',   icon: '◎' },
   { key: 'join',        label: 'JOIN BATTLE',      desc: 'Enter a room code to join',  icon: '↗' },
+  { key: 'cardbattle',  label: 'CARD BATTLE',       desc: 'Battle with equipped cards',  icon: '♦' },
+  { key: 'cards',       label: 'CARD BINDER',      desc: 'View your card collection',  icon: '♠' },
   { key: 'update',      label: 'UPDATE',            desc: 'Pull latest and restart',    icon: '↻' },
   { key: 'quit',        label: 'EXIT',             desc: 'Disconnect',                 icon: '×' },
 ];
 
 const ITEM_COLORS = {
+  local:       colors.coral,
+  online:      colors.lilac,
+  minigame:    rgb(0, 255, 180),
   demo:        colors.peach,
   demo_turns:  colors.gold,
   dash:        colors.coral,
@@ -126,6 +134,8 @@ const ITEM_COLORS = {
   casino:      rgb(255, 215, 0),
   history:     colors.dim,
   wager:       rgb(255, 200, 50),
+  cardbattle:  rgb(255, 180, 100),
+  cards:       rgb(230, 180, 140),
   host:        colors.coral,
   join:        colors.lilac,
   update:      colors.cyan,
@@ -146,7 +156,7 @@ const MENU_GROUPS = [
     desc: 'Modes, multiplayer, and match types',
     icon: '>',
     defaultExpanded: true,
-    items: ['rogue', 'gym', 'wager', 'host', 'join', 'dash', 'hackgrid'],
+    items: ['local', 'online', 'minigame', 'cardbattle'],
   },
   {
     type: 'section',
@@ -155,7 +165,7 @@ const MENU_GROUPS = [
     desc: 'Profile, moves, and fighter setup',
     icon: '*',
     defaultExpanded: false,
-    items: ['profile', 'loadout', 'skins'],
+    items: ['profile', 'loadout', 'skins', 'cards'],
   },
   { type: 'item', key: 'bag' },
   { type: 'item', key: 'workshop' },
@@ -3271,6 +3281,141 @@ async function withLoadingScreen(label, asyncFn) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PLAY SUBMENU SCREENS — LOCAL / ONLINE / MINIGAME
+// ═══════════════════════════════════════════════════════════════
+
+function openPlaySubmenu(title, titleColor, options) {
+  return new Promise((resolve) => {
+    const scr = new Screen();
+    scr.enter();
+    const w = scr.width;
+    const h = scr.height;
+    let cursor = 0;
+
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    function render() {
+      scr.clear();
+
+      // Top border
+      scr.hline(0, 0, w, '─', colors.dimmer);
+      scr.centerText(0, ` ${title} `, titleColor, null, true);
+
+      // Centered card layout
+      const cardW = Math.min(48, w - 8);
+      const cardX = Math.floor((w - cardW) / 2);
+      const cardH = 5;
+      const gap = 1;
+      const totalH = options.length * (cardH + gap) - gap;
+      const startY = Math.max(3, Math.floor((h - totalH) / 2));
+
+      for (let i = 0; i < options.length; i++) {
+        const opt = options[i];
+        const sel = i === cursor;
+        const accent = sel ? opt.color : colors.ghost;
+        const textColor = sel ? colors.white : colors.dim;
+        const descColor = sel ? colors.dim : colors.dimmer;
+        const y = startY + i * (cardH + gap);
+
+        // Card border
+        scr.set(cardX, y, '╭', accent);
+        scr.hline(cardX + 1, y, cardW - 2, '─', accent);
+        scr.set(cardX + cardW - 1, y, '╮', accent);
+
+        for (let row = 1; row <= 3; row++) {
+          scr.set(cardX, y + row, '│', accent);
+          scr.set(cardX + cardW - 1, y + row, '│', accent);
+          for (let col = cardX + 1; col < cardX + cardW - 1; col++) {
+            scr.set(col, y + row, ' ');
+          }
+        }
+
+        scr.set(cardX, y + 4, '╰', accent);
+        scr.hline(cardX + 1, y + 4, cardW - 2, '─', accent);
+        scr.set(cardX + cardW - 1, y + 4, '╯', accent);
+
+        // Selection indicator
+        if (sel) {
+          scr.text(cardX + 2, y + 1, '▸', colors.white, null, true);
+        }
+
+        // Icon + label
+        const labelX = cardX + (sel ? 5 : 3);
+        scr.text(labelX, y + 1, opt.icon, sel ? opt.color : colors.dimmer, null, true);
+        scr.text(labelX + 3, y + 1, opt.label, textColor, null, true);
+
+        // Description
+        scr.text(cardX + (sel ? 5 : 3), y + 2, opt.desc, descColor);
+
+        // Sub-info line
+        if (opt.sub) {
+          scr.text(cardX + (sel ? 5 : 3), y + 3, opt.sub, colors.dimmer);
+        }
+      }
+
+      // Footer
+      scr.hline(2, h - 3, w - 4, '─', colors.ghost);
+      scr.centerText(h - 2, '↑↓ Select   Enter Choose   Esc Back', colors.dimmer);
+
+      scr.render();
+    }
+
+    function onKey(key) {
+      if (key === '\x03') {
+        cleanup(); scr.exit(); process.exit(0);
+      }
+      if (key === '\x1b[A' || key === 'w' || key === 'k') {
+        cursor = (cursor - 1 + options.length) % options.length;
+        render();
+      } else if (key === '\x1b[B' || key === 's' || key === 'j') {
+        cursor = (cursor + 1) % options.length;
+        render();
+      } else if (key === '\r' || key === '\n' || key === ' ') {
+        cleanup(); scr.exit();
+        resolve(options[cursor].key);
+      } else if (key === '\x1b' || key === 'q') {
+        cleanup(); scr.exit();
+        resolve(null);
+      }
+    }
+
+    function cleanup() {
+      stdin.removeListener('data', onKey);
+      stdin.setRawMode(false);
+      stdin.pause();
+    }
+
+    stdin.on('data', onKey);
+    render();
+  });
+}
+
+async function handleLocalMenu() {
+  return openPlaySubmenu('L O C A L', colors.coral, [
+    { key: 'rogue', label: 'SOLO MODE', desc: 'Explore the void, find battles', sub: 'Roguelike single-player adventure', icon: '◉', color: rgb(75, 150, 90) },
+    { key: 'gym',   label: 'GYM LADDER', desc: 'Fight gym leaders in order', sub: 'Climb the ranks, earn badges', icon: '▲', color: rgb(255, 180, 60) },
+  ]);
+}
+
+async function handleOnlineMenu() {
+  return openPlaySubmenu('O N L I N E', colors.lilac, [
+    { key: 'host',       label: 'HOST GAME', desc: 'Host a battle for others to join', sub: 'Create a room and share the code', icon: '◎', color: colors.coral },
+    { key: 'join',       label: 'JOIN BATTLE', desc: 'Enter a room code to fight', sub: 'Connect to an existing match', icon: '↗', color: colors.lilac },
+    { key: 'wager',      label: 'WAGER', desc: 'Stake credits in online PvP', sub: 'Winner takes the pot', icon: '◆', color: rgb(255, 200, 50) },
+  ]);
+}
+
+async function handleMinigameMenu() {
+  return openPlaySubmenu('M I N I G A M E', rgb(0, 255, 180), [
+    { key: 'dash',     label: 'DASH MODE', desc: 'Side-scroll obstacle runner', sub: 'Dodge and dash to survive', icon: '▸', color: colors.coral },
+    { key: 'hackgrid', label: 'HACK THE GRID', desc: 'Dodge sentries, grab data', sub: 'Stealth grid infiltration', icon: '⌬', color: rgb(0, 255, 180) },
+  ]);
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN LOOP — returns to menu after each action
 // ═══════════════════════════════════════════════════════════════
 
@@ -3292,6 +3437,26 @@ async function run() {
     const { choice, fighter } = await mainMenu(sessionState);
 
     switch (choice) {
+      case 'local': {
+        const sub = await handleLocalMenu();
+        if (sub === 'rogue') await handleRogue(fighter, sessionState);
+        else if (sub === 'gym') await handleGym(fighter, sessionState);
+        break;
+      }
+      case 'online': {
+        const sub = await handleOnlineMenu();
+        if (sub === 'host') await handleHost(fighter, sessionState);
+        else if (sub === 'join') await handleJoin(fighter, sessionState);
+        else if (sub === 'wager') await handleWager(fighter, sessionState);
+        else if (sub === 'cardbattle') await handleCardBattle(fighter, sessionState);
+        break;
+      }
+      case 'minigame': {
+        const sub = await handleMinigameMenu();
+        if (sub === 'dash') await handleDash(fighter, sessionState);
+        else if (sub === 'hackgrid') await handleHackGrid(fighter, sessionState);
+        break;
+      }
       case 'demo':
         await handleDemo(fighter, false, sessionState);
         break;
@@ -3362,6 +3527,12 @@ async function run() {
       case 'join':
         await handleJoin(fighter, sessionState);
         break;
+      case 'cardbattle':
+        await handleCardBattle(fighter, sessionState);
+        break;
+      case 'cards':
+        await handleCardBinder(fighter, sessionState);
+        break;
       case 'update':
         await handleUpdate();
         break;
@@ -3370,6 +3541,114 @@ async function run() {
     }
     // Each handler uses showInfoScreen which waits for key — loop back to menu
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD BATTLE & CARD BINDER
+// ═══════════════════════════════════════════════════════════════
+
+async function handleCardBattle(fighter, sessionState) {
+  fighter = await ensureSessionFighter(sessionState, fighter);
+
+  const { Screen } = require('../src/screen');
+  const { selectOpponent } = require('../src/opponentselect');
+  const { grantStarterPack, getOwnedCards, selectAICards, addCard, rollCardDrop } = require('../src/cards');
+  const { selectCards } = require('../src/cardselect');
+  const { createRNG } = require('../src/rng');
+
+  // Grant starter pack if no cards
+  const starterGranted = grantStarterPack();
+  if (starterGranted) {
+    await showInfoScreen('STARTER PACK', (scr, w, h) => {
+      const cy = Math.floor(h / 2);
+      scr.centerText(cy - 2, '♦ WELCOME TO CARD BATTLE ♦', colors.gold, null, true);
+      scr.centerText(cy, 'You received 3 starter cards!', colors.mint);
+      scr.centerText(cy + 1, 'Efficient Cooling + Fail-Safe Boot + Overclock Burst', colors.dim);
+      scr.centerText(cy + 3, 'Win battles to earn more cards.', colors.dim);
+    });
+  }
+
+  const owned = getOwnedCards();
+  if (owned.length === 0) {
+    await showInfoScreen('CARD BATTLE', (scr, w, h) => {
+      scr.centerText(Math.floor(h / 2), 'No cards available! Win battles to earn cards.', colors.rose);
+    });
+    return;
+  }
+
+  // Step 1: Select opponent
+  const selectScreen = new Screen();
+  selectScreen.enter();
+  const opponent = await selectOpponent(selectScreen);
+  selectScreen.exit();
+  if (!opponent) return;
+
+  // Step 2: Select cards (up to 3)
+  const cardScreen = new Screen();
+  cardScreen.enter();
+  const hand = await selectCards(cardScreen);
+  cardScreen.exit();
+  if (!hand || hand.length === 0) return;
+
+  // Step 3: Prebattle benchmark transition
+  await prepareBenchToBattle(fighter, opponent);
+
+  // Step 4: Build movesets
+  let myMoves, oppMoves, seed;
+  await withLoadingScreen('Preparing card battle', async () => {
+    seed = combinedSeed(fighter.id || 0, opponent.id || 0);
+    myMoves = getEquippedMoves(fighter.stats, fighter.specs, fighter.archetype);
+    try {
+      const { registerSignatureAnims } = require('../src/effects/projectile');
+      registerSignatureAnims(myMoves.filter(m => m.signature));
+    } catch (e) {}
+    oppMoves = assignMoveset(opponent.stats, opponent.specs, opponent.archetype);
+  });
+
+  // Step 5: AI cards for opponent
+  const rng = createRNG(Date.now());
+  const oppTier = opponent.sprite?.hw?.tier || 'mid';
+  const difficultyMap = { flagship: 'boss', high: 'elite', mid: 'hard', low: 'mid' };
+  const aiCards = selectAICards(rng, difficultyMap[oppTier] || 'mid', 3);
+
+  // Step 6: Battle with card mode enabled
+  const winner = await renderTurnBattle(fighter, opponent, myMoves, oppMoves, {
+    role: 'host',
+    seed,
+    cardMode: true,
+    cardsA: hand,
+    cardsB: aiCards,
+  });
+
+  // Step 7: Post-battle rewards
+  const rewards = postBattle(fighter, opponent, winner, 'cardbattle');
+  const oppName = opponent.name || 'the opponent';
+
+  // Card drop on win
+  if (winner === 'a') {
+    const droppedCard = rollCardDrop(createRNG(seed + 1));
+    if (droppedCard) {
+      addCard(droppedCard.id);
+    }
+  }
+
+  await showBattleRewards(winner, rewards,
+    `Your rig crushed ${oppName} in Card Battle!`,
+    `...${oppName} won the Card Battle.`);
+}
+
+async function handleCardBinder(fighter, sessionState) {
+  const { Screen } = require('../src/screen');
+  const { openCardCollection } = require('../src/cardcollection');
+  const { grantStarterPack } = require('../src/cards');
+
+  // Grant starter pack if no cards
+  grantStarterPack();
+
+  const screen = new Screen();
+  screen.enter();
+  await openCardCollection(screen);
+  screen.exit();
 }
 
 async function handleUpdate() {
