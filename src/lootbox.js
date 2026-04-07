@@ -6,7 +6,7 @@
 const { Screen } = require('./screen');
 const { colors, rgb, RESET } = require('./palette');
 const { createRNG } = require('./rng');
-const { getBalance, spendCredits, formatBalance } = require('./credits');
+const { getBalance, spendCredits, formatBalance, getCardKeys, spendCardKey } = require('./credits');
 const { ITEMS, addItem } = require('./items');
 const { PARTS, RARITY_COLORS, RARITY_ICONS, TYPE_LABELS, TYPE_COLORS, addPart } = require('./parts');
 const { drawArt, getItemArt, getPartArt } = require('./itemart');
@@ -52,6 +52,17 @@ const BOXES = [
     color: rgb(200, 120, 255),
     desc: 'Ultra-rare Transcendent chance',
     weights: { common: 0, uncommon: 0, rare: 14, epic: 35, legendary: 45, mythic: 5, transcendent: 1 },
+  },
+  {
+    key: 'card_crate',
+    name: 'Card Crate',
+    cost: 1,
+    keyType: 'card_key',
+    icon: '♦',
+    color: rgb(255, 180, 100),
+    desc: 'Cards only — divine & primordial possible',
+    weights: { common: 30, uncommon: 28, rare: 20, epic: 12, legendary: 5, mythic: 3, transcendent: 1.5, divine: 0.4, primordial: 0.1 },
+    cardOnly: true,
   },
 ];
 
@@ -104,10 +115,8 @@ function buildRewardPool() {
     });
   }
 
-  // Add cards (excluding divine & primordial — those are gym-leader-only on 3rd round+)
-  const EXCLUDED_CARD_RARITIES = new Set(['divine', 'primordial']);
+  // Add all cards (divine & primordial only reachable via Card Crate weights)
   for (const [id, card] of Object.entries(CARDS)) {
-    if (EXCLUDED_CARD_RARITIES.has(card.rarity)) continue;
     const icon = CARD_RARITY_ICONS[card.rarity] || '·';
     pool.push({
       type: 'card', id, rarity: card.rarity, name: card.name, icon,
@@ -145,13 +154,16 @@ function rollReward(box, rng) {
     if (roll <= 0) { chosenRarity = rarity; break; }
   }
 
-  // Filter pool by rarity (and skin-only if flagged)
+  // Filter pool by rarity (and type restrictions if flagged)
   let candidates = pool.filter(r => r.rarity === chosenRarity);
   if (box.skinOnly) candidates = candidates.filter(r => r.type === 'skin');
+  if (box.cardOnly) candidates = candidates.filter(r => r.type === 'card');
   if (candidates.length === 0) {
     const fallback = box.skinOnly
       ? pool.filter(r => r.type === 'skin')
-      : pool.filter(r => r.rarity === 'common');
+      : box.cardOnly
+        ? pool.filter(r => r.type === 'card' && r.rarity === 'common')
+        : pool.filter(r => r.rarity === 'common');
     return fallback[Math.floor(rng.next() * fallback.length)];
   }
 
@@ -192,7 +204,8 @@ async function openLootBoxAnimated(box, screen) {
   const h = screen.height;
   const cy = Math.floor(h / 2);
   const cx = Math.floor(w / 2);
-  const pool = buildRewardPool();
+  let pool = buildRewardPool();
+  if (box.cardOnly) pool = pool.filter(r => r.type === 'card');
 
   // Phase 1: Spinning reel (1.5s)
   const SPIN_FRAMES = 30;
@@ -213,8 +226,9 @@ async function openLootBoxAnimated(box, screen) {
       const entry = pool[idx];
       const y = cy - 2 + i;
       const isCenter = i === Math.floor(visibleCount / 2);
-      const rc = RARITY_COLORS[entry.rarity] || colors.dim;
-      const icon = RARITY_ICONS[entry.rarity] || '·';
+      const crgb = CARD_RARITY_COLORS_RGB[entry.rarity];
+      const rc = RARITY_COLORS[entry.rarity] || (crgb ? rgb(crgb[0], crgb[1], crgb[2]) : colors.dim);
+      const icon = RARITY_ICONS[entry.rarity] || CARD_RARITY_ICONS[entry.rarity] || '·';
 
       if (isCenter) {
         // Selection highlight
@@ -258,8 +272,9 @@ async function openLootBoxAnimated(box, screen) {
   // Phase 3: Reward display (hold for keypress)
   screen.clear();
 
-  const rc = RARITY_COLORS[reward.rarity] || colors.dim;
-  const icon = RARITY_ICONS[reward.rarity] || '·';
+  const _crgb = CARD_RARITY_COLORS_RGB[reward.rarity];
+  const rc = RARITY_COLORS[reward.rarity] || (_crgb ? rgb(_crgb[0], _crgb[1], _crgb[2]) : colors.dim);
+  const icon = RARITY_ICONS[reward.rarity] || CARD_RARITY_ICONS[reward.rarity] || '·';
 
   screen.centerText(1, `${box.icon}  ${box.name}  ${box.icon}`, box.color, null, true);
   screen.hline(4, 2, w - 8, '─', colors.dimmer);
@@ -330,8 +345,12 @@ async function openLootBoxAnimated(box, screen) {
   screen.centerText(cy + 3, '║                                ║', rc);
   screen.centerText(cy + 4, '╚════════════════════════════════╝', rc);
 
-  screen.centerText(cy + 6, 'Added to your inventory!', colors.mint);
-  screen.centerText(h - 3, `Balance: ${formatBalance(getBalance())} credits`, colors.dim);
+  screen.centerText(cy + 6, 'Added to your collection!', colors.mint);
+  if (box.keyType) {
+    screen.centerText(h - 3, `Card Keys: ${getCardKeys()}`, rgb(255, 180, 100));
+  } else {
+    screen.centerText(h - 3, `Balance: ${formatBalance(getBalance())} credits`, colors.dim);
+  }
   screen.centerText(h - 2, 'Press any key to continue', colors.dimmer);
 
   screen.render();
@@ -359,26 +378,30 @@ function openLootShop(screen) {
       screen.centerText(0, '─'.repeat(w), colors.dimmer);
       screen.centerText(0, ' L O O T   B O X ', rgb(255, 215, 0), null, true);
 
+      const cardKeys = getCardKeys();
       screen.text(4, 2, `Balance: ${formatBalance(balance)} credits`, colors.white, null, true);
+      screen.text(4, 3, `Card Keys: ${cardKeys}`, rgb(255, 180, 100), null, true);
 
-      const startY = 4;
+      const startY = 5;
 
       for (let i = 0; i < BOXES.length; i++) {
         const box = BOXES[i];
         const y = startY + i * 5;
         const isCursor = i === cursor;
-        const canAfford = balance >= box.cost;
+        const isKeyBox = !!box.keyType;
+        const canAfford = isKeyBox ? cardKeys >= box.cost : balance >= box.cost;
+        const costLabel = isKeyBox ? `${box.cost} Key` : `${box.cost} credits`;
 
         // Box frame
         if (isCursor) {
           screen.text(3, y, '▸', colors.white, null, true);
           screen.text(5, y, box.icon, box.color, null, true);
           screen.text(7, y, box.name, box.color, null, true);
-          screen.text(7 + box.name.length + 2, y, `${box.cost} credits`, canAfford ? colors.mint : colors.rose, null, true);
+          screen.text(7 + box.name.length + 2, y, costLabel, canAfford ? colors.mint : colors.rose, null, true);
         } else {
           screen.text(5, y, box.icon, colors.dim);
           screen.text(7, y, box.name, colors.dim);
-          screen.text(7 + box.name.length + 2, y, `${box.cost} credits`, colors.dimmer);
+          screen.text(7 + box.name.length + 2, y, costLabel, colors.dimmer);
         }
 
         screen.text(7, y + 1, box.desc, isCursor ? colors.dim : colors.dimmer);
@@ -387,7 +410,8 @@ function openLootShop(screen) {
         const odds = Object.entries(box.weights)
           .filter(([, w]) => w > 0)
           .map(([r, w]) => {
-            const rc = RARITY_COLORS[r] || colors.dim;
+            const crgb = CARD_RARITY_COLORS_RGB[r];
+            const rc = RARITY_COLORS[r] || (crgb ? rgb(crgb[0], crgb[1], crgb[2]) : colors.dim);
             return { r, w, rc };
           });
         let ox = 7;
@@ -407,11 +431,15 @@ function openLootShop(screen) {
 
     async function handleOpen() {
       const box = BOXES[cursor];
-      const balance = getBalance();
 
-      if (balance < box.cost) return; // can't afford
-
-      if (!spendCredits(box.cost)) return;
+      if (box.keyType) {
+        if (getCardKeys() < box.cost) return; // no keys
+        if (!spendCardKey()) return;
+      } else {
+        const balance = getBalance();
+        if (balance < box.cost) return; // can't afford
+        if (!spendCredits(box.cost)) return;
+      }
 
       // Clean up input handler temporarily
       stdin.removeListener('data', onKey);
@@ -462,6 +490,37 @@ function openLootShop(screen) {
   });
 }
 
+// ─── Card Crate drop roller (shared with battle rewards) ───
+
+const CARD_CRATE_WEIGHTS = BOXES.find(b => b.key === 'card_crate').weights;
+
+function rollCardCrateCard(rng) {
+  const totalWeight = Object.values(CARD_CRATE_WEIGHTS).reduce((s, w) => s + w, 0);
+  let roll = rng.next() * totalWeight;
+  let chosenRarity = 'common';
+  for (const [rarity, weight] of Object.entries(CARD_CRATE_WEIGHTS)) {
+    roll -= weight;
+    if (roll <= 0) { chosenRarity = rarity; break; }
+  }
+
+  const candidates = Object.entries(CARDS).filter(([, c]) => c.rarity === chosenRarity);
+  if (candidates.length === 0) {
+    const commons = Object.entries(CARDS).filter(([, c]) => c.rarity === 'common');
+    const pick = commons[Math.floor(rng.next() * commons.length)];
+    return pick ? { id: pick[0], ...pick[1] } : null;
+  }
+
+  // Weighted by dropWeight within the rarity tier
+  const totalDW = candidates.reduce((s, [, c]) => s + (c.dropWeight || 1), 0);
+  let dwRoll = rng.next() * totalDW;
+  for (const [id, card] of candidates) {
+    dwRoll -= (card.dropWeight || 1);
+    if (dwRoll <= 0) return { id, ...card };
+  }
+  const last = candidates[candidates.length - 1];
+  return { id: last[0], ...last[1] };
+}
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-module.exports = { BOXES, SPECIAL_BOXES, openLootShop, openLootBoxAnimated, rollReward };
+module.exports = { BOXES, SPECIAL_BOXES, openLootShop, openLootBoxAnimated, rollReward, rollCardCrateCard };

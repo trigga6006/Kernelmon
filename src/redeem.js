@@ -78,6 +78,7 @@ function isRedeemed(code) {
 async function openRedeemScreen() {
   const screen = new Screen();
   screen.enter();
+  screen.padded();
   const w = screen.width;
   const h = screen.height;
 
@@ -237,6 +238,7 @@ async function openRedeemScreen() {
           screen.exit();
           const lootScreen = new Screen();
           lootScreen.enter();
+          lootScreen.padded();
           await openLootBoxAnimated(box, lootScreen);
 
           // Wait for keypress so the player can see their reward

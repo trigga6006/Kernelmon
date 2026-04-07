@@ -83,7 +83,7 @@ const SUBTITLE = '◄ YOUR KERNEL. YOUR FIGHTER. ►';
 
 const MENU_ITEMS = [
   { key: 'local',       label: 'LOCAL',            desc: 'Solo battles & gym ladder',   icon: '◉' },
-  { key: 'online',      label: 'ONLINE',           desc: 'Host, join & wager matches',  icon: '◎' },
+  { key: 'online',      label: 'ONLINE',           desc: 'Host or join online matches', icon: '◎' },
   { key: 'minigame',    label: 'MINIGAME',         desc: 'Dash, hack & more',           icon: '▸' },
   { key: 'demo',        label: 'QUICK BATTLE',    desc: 'Auto-battle vs Chromebook',  icon: '⚡' },
   { key: 'demo_turns',  label: 'TURN BATTLE',     desc: 'Turn-based vs Chromebook',   icon: '◆' },
@@ -159,7 +159,7 @@ const MENU_GROUPS = [
     desc: 'Modes, multiplayer, and match types',
     icon: '>',
     defaultExpanded: true,
-    items: ['local', 'online', 'minigame', 'cardbattle'],
+    items: ['local', 'online', 'minigame'],
   },
   {
     type: 'section',
@@ -309,9 +309,9 @@ function postBattle(myFighter, opponent, winner, mode) {
   const earned = calculateBattleCredits(winner, myFighter, opponent, mode);
   const newBal = addCredits(earned);
 
-  // 8% chance to drop a bag item on win
+  // 8% chance to drop a bag item on win (not in card battles — cards only there)
   let itemDrop = null;
-  if (winner === 'a') {
+  if (winner === 'a' && mode !== 'cardbattle') {
     const rng = createRNG(Date.now());
     if (rng.next() < 0.08) {
       const { ITEMS } = require('../src/items');
@@ -339,6 +339,7 @@ function postBattle(myFighter, opponent, winner, mode) {
 async function showBattleRewards(winner, rewards, winMsg, loseMsg) {
   const scr = new Screen();
   scr.enter();
+  scr.padded();
   const w = scr.width;
   const h = scr.height;
   const cy = Math.floor(h / 2);
@@ -387,6 +388,39 @@ async function showBattleRewards(winner, rewards, winMsg, loseMsg) {
     await sleep(500);
   }
 
+  // Phase 3b: Card Crate Key drop
+  if (rewards.keyDrop) {
+    const keyColor = rgb(255, 180, 100);
+    for (let f = 0; f < 4; f++) {
+      scr.centerText(nextLine, f % 2 === 0 ? '♦ CARD KEY ♦' : '            ', keyColor, null, true);
+      scr.render();
+      await sleep(100);
+    }
+    scr.centerText(nextLine, '♦ CARD KEY ♦', keyColor, null, true);
+    scr.centerText(nextLine + 1, `+${rewards.keyDrop} Card Crate Key`, keyColor, null, true);
+    nextLine += 3;
+    scr.render();
+    await sleep(500);
+  }
+
+  // Phase 3c: Card drop from battle
+  if (rewards.cardDrop) {
+    const { CARD_RARITY_COLORS_RGB, CARD_RARITY_ICONS } = require('../src/cards');
+    const crgb = CARD_RARITY_COLORS_RGB[rewards.cardDrop.rarity] || [160, 165, 180];
+    const cardColor = rgb(crgb[0], crgb[1], crgb[2]);
+    const cardIcon = CARD_RARITY_ICONS[rewards.cardDrop.rarity] || '·';
+    for (let f = 0; f < 4; f++) {
+      scr.centerText(nextLine, f % 2 === 0 ? '▸ CARD DROP ◂' : '             ', cardColor, null, true);
+      scr.render();
+      await sleep(100);
+    }
+    scr.centerText(nextLine, '▸ CARD DROP ◂', cardColor, null, true);
+    scr.centerText(nextLine + 1, `${cardIcon}  ${rewards.cardDrop.name}  (${rewards.cardDrop.rarity})`, cardColor, null, true);
+    nextLine += 3;
+    scr.render();
+    await sleep(500);
+  }
+
   // Phase 4: Kerneldex scan notification
   if (rewards.newRigScanned) {
     const { getDexCount } = require('../src/rigdex');
@@ -414,9 +448,6 @@ async function mainMenu(sessionState = {}) {
   const screen = new Screen();
   const rng = createRNG(42);
   const matrix = new MatrixRain(screen.width, screen.height, rng);
-  const w = screen.width;
-  const h = screen.height;
-
   let cursor = 0;
   let frameCount = 0;
   let scanning = !sessionState.rawSpecs;
@@ -627,28 +658,54 @@ async function mainMenu(sessionState = {}) {
   }
   stdin.on('data', onKey);
 
-  // ─── Layout constants (shared across draw functions) ───
-  const useSmall = w < 65;
-  const logo = useSmall ? LOGO_SMALL : LOGO;
-  const menuX = 4;
-  const menuY = logo.length + 5;
-  const menuW = Math.min(50, w - 8);
-  const menuH = MENU_GROUPS.reduce((total, group) => {
-    if (group.type === 'section') return total + 1 + group.items.length;
-    return total + 1;
-  }, 0) + 2; // max border height with every section open
-  const menuBottom = menuY + menuH;
+  // ─── Layout helpers (recomputed each frame for resize support) ───
+  function getLayout(w, h) {
+    const useSmall = w < 65;
+    const logo = useSmall ? LOGO_SMALL : LOGO;
+    const menuX = 4;
+    const menuY = logo.length + 5;
+    const menuW = Math.min(50, w - 8);
+    const boxW = Math.min(35, w - 8);
+    const cardX = w - boxW - 4;
+    const cardY = menuY;
+    return { useSmall, logo, menuX, menuY, menuW, boxW, cardX, cardY };
+  }
 
-  const boxW = Math.min(35, w - 8);
-  const cardX = w - boxW - 4;
-  const cardY = menuY;
+  // Apply sparse rain pattern to current matrix columns
+  function applyRainPattern() {
+    const spacing = 7;
+    for (const col of matrix.columns) {
+      col.active = false;
+      col.speed = rng.float(0.15, 0.6);
+    }
+    for (let base = 0; base < matrix.columns.length; base += spacing) {
+      const jitter = rng.int(-1, 1);
+      const x = Math.max(0, Math.min(matrix.columns.length - 1, base + jitter));
+      matrix.columns[x].active = true;
+    }
+  }
+  applyRainPattern();
 
-  // Exclusion zone: keep rain out of the entire UI band (menu through card)
-  matrix.exclusionZone = { x: 0, y: menuY - 1, w, h: (h - 2) - (menuY - 1) };
+  let prevW = screen.width;
+  let prevH = screen.height;
 
   // ─── Single render interval ───
   const renderLoop = setInterval(() => {
     frameCount++;
+
+    // Detect resize — Screen.handleResize() already rebuilt the buffers
+    const w = screen.width;
+    const h = screen.height;
+    if (w !== prevW || h !== prevH) {
+      matrix.resize(w, h);
+      applyRainPattern();
+      prevW = w;
+      prevH = h;
+    }
+
+    const layout = getLayout(w, h);
+    matrix.exclusionZone = { x: 0, y: layout.menuY - 1, w, h: (h - 2) - (layout.menuY - 1) };
+
     screen.clear();
     matrix.update();
     matrix.draw(screen);
@@ -676,16 +733,18 @@ async function mainMenu(sessionState = {}) {
 
   for (let i = 0; i < 8; i++) {
     screen.clear();
+    const tw = screen.width;
+    const th = screen.height;
 
-    const cy = Math.floor(h / 2);
+    const cy = Math.floor(th / 2);
     const dots = '.'.repeat((i % 3) + 1);
     screen.centerText(cy - 1, '─'.repeat(30), colors.dimmer);
     screen.centerText(cy, `${label}${dots}`, accent, null, true);
     screen.centerText(cy + 1, '─'.repeat(30), colors.dimmer);
 
-    const spread = Math.floor((i / 8) * (w / 2));
-    for (let x = Math.floor(w / 2) - spread; x <= Math.floor(w / 2) + spread; x++) {
-      if (x >= 0 && x < w) screen.set(x, cy + 2, '━', i < 4 ? accent : colors.dimmer);
+    const spread = Math.floor((i / 8) * (tw / 2));
+    for (let x = Math.floor(tw / 2) - spread; x <= Math.floor(tw / 2) + spread; x++) {
+      if (x >= 0 && x < tw) screen.set(x, cy + 2, '━', i < 4 ? accent : colors.dimmer);
     }
 
     screen.render();
@@ -700,6 +759,7 @@ async function mainMenu(sessionState = {}) {
 
   function drawLogo(screen, w, h, frame) {
     const logoY = 1;
+    const { useSmall, logo } = getLayout(w, h);
 
     // Column boundaries for each letter: K E R N E L M O N
     const bigBounds =  [[0,7],[8,15],[16,23],[24,33],[34,41],[42,49],[50,61],[62,69],[70,85]];
@@ -762,6 +822,7 @@ async function mainMenu(sessionState = {}) {
   }
 
   function drawMenu(screen, w, h, frame, entries, cursor) {
+    const { menuX, menuY, menuW } = getLayout(w, h);
     const menuFocused = focus === 'menu';
     const borderCol = menuFocused ? colors.dimmer : colors.ghost;
     const innerRows = Math.max(entries.length, 1);
@@ -824,6 +885,7 @@ async function mainMenu(sessionState = {}) {
   }
 
   function drawProfileCard(screen, w, h, frame, scanning) {
+    const { boxW, cardX, cardY } = getLayout(w, h);
     const focused = focus === 'card';
     const borderColor = focused ? colors.cyan : colors.dimmer;
     const builds = getAllBuilds();
@@ -1092,6 +1154,7 @@ async function handleGuide() {
   return new Promise((resolve) => {
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     const w = scr.width;
     const h = scr.height;
     let scroll = 0;
@@ -1162,6 +1225,7 @@ async function handleGuide() {
 async function showInfoScreen(title, renderFn) {
   const infoScreen = new Screen();
   infoScreen.enter();
+  infoScreen.padded();
 
   const w = infoScreen.width;
   const h = infoScreen.height;
@@ -1197,6 +1261,7 @@ async function handleProfile(fighter, sessionState) {
 
   const profScreen = new Screen();
   profScreen.enter();
+  profScreen.padded();
   await openProfile(fighter, profScreen, { passive, credits: creditsStr });
   profScreen.exit();
 }
@@ -1208,6 +1273,7 @@ async function handleDemo(fighter, turnMode, sessionState) {
   const { selectOpponent } = require('../src/opponentselect');
   const selectScreen = new Screen();
   selectScreen.enter();
+  selectScreen.padded();
   const opponent = await selectOpponent(selectScreen);
   selectScreen.exit();
 
@@ -1382,6 +1448,7 @@ async function handleGym(fighter, sessionState) {
 
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     const w = scr.width;
     const h = scr.height;
     const cy = Math.floor(h / 2);
@@ -1475,6 +1542,7 @@ async function handleDash(fighter, sessionState) {
     // Show result screen with retry / quit options
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     const w = scr.width;
     const h = scr.height;
     const cy = Math.floor(h / 2);
@@ -1551,6 +1619,7 @@ async function handleHackGrid(fighter, sessionState) {
 
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     const w = scr.width;
     const h = scr.height;
     const cy = Math.floor(h / 2);
@@ -1616,6 +1685,7 @@ async function handleRogue(fighter, sessionState) {
   // Show result screen
   const scr = new Screen();
   scr.enter();
+  scr.padded();
   const w = scr.width;
   const h = scr.height;
   const cy = Math.floor(h / 2);
@@ -1665,6 +1735,7 @@ async function handleBag() {
   return new Promise((resolve) => {
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     const w = scr.width;
     const h = scr.height;
     let cursor = 0;
@@ -1949,6 +2020,7 @@ async function handleKerneldex() {
   return new Promise((resolve) => {
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     const w = scr.width;
     const h = scr.height;
     let cursor = 0;
@@ -2145,6 +2217,7 @@ async function handleWorkshop(fighter, sessionState) {
     const { openWorkshop } = require('../src/workshop');
     const workshopScreen = new Screen();
     workshopScreen.enter();
+    workshopScreen.padded();
     await openWorkshop(specs, workshopScreen);
     workshopScreen.exit();
   } catch (e) {
@@ -2160,6 +2233,7 @@ async function handleLootBox() {
     const { openLootShop } = require('../src/lootbox');
     const lootScreen = new Screen();
     lootScreen.enter();
+    lootScreen.padded();
     await openLootShop(lootScreen);
     lootScreen.exit();
   } catch (e) {
@@ -2174,6 +2248,7 @@ async function handleTitles(fighter, sessionState) {
     const { openTitleLocker } = require('../src/titlelocker');
     const titleScreen = new Screen();
     titleScreen.enter();
+    titleScreen.padded();
     await openTitleLocker(titleScreen);
     titleScreen.exit();
   } catch (e) {
@@ -2188,6 +2263,7 @@ async function handleSkins(fighter, sessionState) {
     const { openSkinLocker } = require('../src/market');
     const skinScreen = new Screen();
     skinScreen.enter();
+    skinScreen.padded();
     await openSkinLocker(skinScreen);
     skinScreen.exit();
   } catch (e) {
@@ -2202,6 +2278,7 @@ async function handleMarket() {
     const { openMarket } = require('../src/market');
     const marketScreen = new Screen();
     marketScreen.enter();
+    marketScreen.padded();
     await openMarket(marketScreen);
     marketScreen.exit();
   } catch (e) {
@@ -2216,6 +2293,7 @@ async function handleCasino() {
     const { openCasino } = require('../src/casino');
     const casinoScreen = new Screen();
     casinoScreen.enter();
+    casinoScreen.padded();
     await openCasino(casinoScreen);
     casinoScreen.exit();
   } catch (e) {
@@ -2234,6 +2312,7 @@ function pickOption(title, options) {
   return new Promise((resolve) => {
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     enableMouseInput();
     const w = scr.width;
     const h = scr.height;
@@ -2312,6 +2391,7 @@ function textInput(title, prompt) {
   return new Promise((resolve) => {
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     const w = scr.width;
     const h = scr.height;
     let buf = '';
@@ -2377,6 +2457,7 @@ function numberInput(title, prompt, minVal = 1, maxVal = Infinity, currentBalanc
   return new Promise((resolve) => {
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     const w = scr.width;
     const h = scr.height;
     let buf = '';
@@ -2912,6 +2993,7 @@ async function showWagerResults(won, pot, currentBalance, myFighter, opponent) {
   const { formatBalance } = require('../src/credits');
   const scr = new Screen();
   scr.enter();
+  scr.padded();
   const w = scr.width;
   const h = scr.height;
   const cy = Math.floor(h / 2);
@@ -2951,24 +3033,93 @@ async function showWagerResults(won, pot, currentBalance, myFighter, opponent) {
 
 async function handleHost(fighter, sessionState) {
   // Step 1: Pick battle mode
-  const mode = await pickOption('HOST GAME', [
-    { key: 'turns', label: 'TURN-BASED', desc: 'Take turns choosing moves' },
+  const mode = await pickOption('HOST GAME — MODE', [
     { key: 'auto',  label: 'QUICK BATTLE', desc: 'Auto-simulated fight' },
+    { key: 'turns', label: 'TURN-BASED',   desc: 'Take turns choosing moves' },
+    { key: 'cards', label: 'CARD BATTLE',  desc: 'Turn-based combat with card effects' },
   ]);
   if (!mode) return;
 
-  const turnMode = mode === 'turns';
+  const turnMode = mode === 'turns' || mode === 'cards';
 
-  // Step 2: Pick connection type
+  // Step 2: Wager option
+  const { getBalance, deductWager, awardWager, formatBalance } = require('../src/credits');
+  let wagerAmount = 0;
+
+  const wagerChoice = await pickOption('WAGER?', [
+    { key: 'no',  label: 'NO WAGER',  desc: 'Play for fun and rewards' },
+    { key: 'yes', label: 'SET WAGER', desc: 'Stake credits — winner takes the pot' },
+  ]);
+  if (!wagerChoice) return;
+
+  if (wagerChoice === 'yes') {
+    const balance = getBalance();
+    if (balance < 100) {
+      await showInfoScreen('WAGER', (scr) => {
+        scr.centerText(Math.floor(scr.height / 2) - 1, 'Not enough credits to wager!', colors.rose);
+        scr.centerText(Math.floor(scr.height / 2) + 1, `Balance: ${formatBalance(balance)} credits (minimum: 100)`, colors.dim);
+      });
+      return;
+    }
+
+    wagerAmount = await numberInput('SET WAGER AMOUNT', 'How many credits to wager?', 100, balance, balance);
+    if (!wagerAmount) return;
+
+    const confirm = await pickOption('CONFIRM WAGER', [
+      { key: 'yes', label: `STAKE ${wagerAmount.toLocaleString()} CREDITS`, desc: `Winner takes ${(wagerAmount * 2).toLocaleString()} credits total` },
+      { key: 'no',  label: 'CANCEL', desc: 'Go back to menu' },
+    ]);
+    if (confirm !== 'yes') return;
+
+    if (!deductWager(wagerAmount)) {
+      await showInfoScreen('WAGER', (scr) => {
+        scr.centerText(Math.floor(scr.height / 2), 'Insufficient credits!', colors.rose);
+      });
+      return;
+    }
+  }
+
+  // Step 3: Card selection (if card battle mode)
+  let myCards = null;
+  if (mode === 'cards') {
+    const { grantStarterPack, getOwnedCards } = require('../src/cards');
+    const { selectCards } = require('../src/cardselect');
+
+    grantStarterPack();
+    const owned = getOwnedCards();
+    if (owned.length === 0) {
+      await showInfoScreen('CARD BATTLE', (scr) => {
+        scr.centerText(Math.floor(scr.height / 2), 'No cards available! Win battles to earn cards.', colors.rose);
+      });
+      if (wagerAmount > 0) awardWager(wagerAmount);
+      return;
+    }
+
+    const cardScreen = new Screen();
+    cardScreen.enter();
+    cardScreen.padded();
+    myCards = await selectCards(cardScreen);
+    cardScreen.exit();
+    if (!myCards || myCards.length === 0) {
+      if (wagerAmount > 0) awardWager(wagerAmount);
+      return;
+    }
+  }
+
+  // Step 4: Pick connection type
   const connType = await pickOption('CONNECTION', [
     { key: 'online', label: 'ONLINE', desc: 'Host via relay server (share room code)' },
-    { key: 'lan',    label: 'LAN', desc: 'Host on local network (share your IP)' },
+    { key: 'lan',    label: 'LAN',    desc: 'Host on local network (share your IP)' },
   ]);
-  if (!connType) return;
+  if (!connType) {
+    if (wagerAmount > 0) awardWager(wagerAmount);
+    return;
+  }
 
   const online = connType === 'online';
+  const modeLabel = mode === 'cards' ? 'Card Battle' : mode === 'turns' ? 'Turn-Based' : 'Quick Battle';
 
-  // Step 3: Scan hardware and connect
+  // Step 5: Connect and battle
   let myFighter = fighter;
   let opponent, matchSeed = 0, roomCode, seed;
 
@@ -2979,12 +3130,16 @@ async function handleHost(fighter, sessionState) {
 
   try {
     if (online) {
-      // Host online — show waiting screen with room code
-      const { hostOnline, DEFAULT_RELAY_URL } = require('../src/relay');
+      const { DEFAULT_RELAY_URL } = require('../src/relay');
 
       myFighter = await ensureSessionFighter(sessionState, myFighter);
 
-      // Create room (briefly suppress logs)
+      // Embed battle metadata in fighter for the joiner to detect
+      myFighter.battleMode = mode;
+      if (wagerAmount > 0) myFighter.wager = wagerAmount;
+      if (myCards) myFighter.cardIds = myCards.map(c => c.id);
+
+      // Create room
       let createResult;
       await withLoadingScreen('Creating room', async () => {
         const base = DEFAULT_RELAY_URL.replace(/\/$/, '');
@@ -2992,7 +3147,7 @@ async function handleHost(fighter, sessionState) {
         const https = require('node:https');
         const parsed = new URL(`${base}/rooms`);
         const mod = parsed.protocol === 'https:' ? https : http;
-        const payload = JSON.stringify({ fighter: myFighter });
+        const payload = JSON.stringify({ fighter: myFighter, wager: wagerAmount || undefined });
 
         createResult = await new Promise((resolve, reject) => {
           const req = mod.request(parsed, {
@@ -3064,7 +3219,9 @@ async function handleHost(fighter, sessionState) {
             if (err.message.includes('429')) await new Promise(r => setTimeout(r, 2000));
           }
         }
-        if (!matched) waitError = 'Timed out waiting for opponent.';
+        if (!matched) waitError = wagerAmount > 0
+          ? 'Timed out waiting for opponent. Wager refunded.'
+          : 'Timed out waiting for opponent.';
       })();
 
       // Render waiting screen
@@ -3075,18 +3232,23 @@ async function handleHost(fighter, sessionState) {
         waitScreen.centerText(0, '─'.repeat(ww), colors.dimmer);
         waitScreen.centerText(0, ' HOST GAME ', colors.coral, null, true);
 
-        waitScreen.centerText(cy - 4, 'Share this room code with your opponent:', colors.dim);
-        waitScreen.centerText(cy - 2, `╔═══════════════════╗`, colors.cyan);
-        waitScreen.centerText(cy - 1, `║    ${roomCode}     ║`, colors.white, null, true);
-        waitScreen.centerText(cy,     `╚═══════════════════╝`, colors.cyan);
+        waitScreen.centerText(cy - 5, 'Share this room code with your opponent:', colors.dim);
+        waitScreen.centerText(cy - 3, '╔═══════════════════╗', colors.cyan);
+        waitScreen.centerText(cy - 2, `║    ${roomCode}     ║`, colors.white, null, true);
+        waitScreen.centerText(cy - 1, '╚═══════════════════╝', colors.cyan);
 
-        waitScreen.centerText(cy + 2, `Mode: ${turnMode ? 'Turn-Based' : 'Quick Battle'}`, colors.dim);
+        waitScreen.centerText(cy + 1, `Mode: ${modeLabel}`, colors.dim);
+        if (wagerAmount > 0) {
+          waitScreen.centerText(cy + 2, `Wager: ${wagerAmount.toLocaleString()} credits each`, rgb(255, 200, 50), null, true);
+          waitScreen.centerText(cy + 3, `Winner takes: ${(wagerAmount * 2).toLocaleString()} credits`, colors.gold);
+        }
 
         const spin = spinChars[waitFrame % spinChars.length];
-        waitScreen.centerText(cy + 4, `${spin}  Waiting for opponent...`, colors.cyan);
+        const spinY = wagerAmount > 0 ? cy + 5 : cy + 3;
+        waitScreen.centerText(spinY, `${spin}  Waiting for opponent...`, colors.cyan);
 
         waitScreen.hline(2, wh - 2, ww - 4, '─', colors.ghost);
-        waitScreen.text(4, wh - 2, ' Esc to cancel ', colors.dim);
+        waitScreen.text(4, wh - 2, wagerAmount > 0 ? ' Esc to cancel (wager refunded) ' : ' Esc to cancel ', colors.dim);
 
         waitScreen.render();
       }, 50);
@@ -3118,6 +3280,7 @@ async function handleHost(fighter, sessionState) {
           clearInterval(waitInterval);
           waitScreen.exit();
           console.log = origLog;
+          if (wagerAmount > 0) awardWager(wagerAmount);
           return;
         }
       }
@@ -3127,6 +3290,7 @@ async function handleHost(fighter, sessionState) {
 
       if (waitError) {
         console.log = origLog;
+        if (wagerAmount > 0) awardWager(wagerAmount);
         await showInfoScreen('ERROR', (scr) => {
           scr.text(4, 4, waitError, colors.rose);
         });
@@ -3139,7 +3303,6 @@ async function handleHost(fighter, sessionState) {
 
       myFighter = await ensureSessionFighter(sessionState, myFighter);
 
-      // Start server and wait
       const result = await hostLAN(myFighter);
       opponent = result.opponent;
     }
@@ -3165,26 +3328,60 @@ async function handleHost(fighter, sessionState) {
 
     // Run battle
     let winner;
-    if (turnMode && renderTurnBattle) {
+    if (mode === 'cards' && renderTurnBattle) {
+      // Card battle — opponent's cards exchanged via turn relay inside renderTurnBattle
+      const myMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
+      try { registerSignatureAnims(myMoves.filter(m => m.signature)); } catch {}
+      const oppMoves = assignMoveset(opponent.stats, opponent.specs, opponent.archetype);
+
+      // For online: opponent's cards arrive via card exchange in renderTurnBattle
+      // For LAN: use random cards as fallback
+      let oppCards = [];
+      if (!online) {
+        const { selectRandomCards } = require('../src/cards');
+        const { createRNG } = require('../src/rng');
+        oppCards = selectRandomCards(createRNG(Date.now()), 3);
+      }
+
+      winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, {
+        role: 'host', roomCode, relayUrl: online ? require('../src/relay').DEFAULT_RELAY_URL : undefined, seed,
+        cardMode: true, cardsA: myCards, cardsB: oppCards,
+      });
+    } else if (turnMode && renderTurnBattle) {
       const myMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
       try { registerSignatureAnims(myMoves.filter(m => m.signature)); } catch {}
       const oppMoves = assignMoveset(opponent.stats, opponent.specs, opponent.archetype);
       winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, {
-        role: 'host', roomCode, relayUrl: require('../src/relay').DEFAULT_RELAY_URL, seed,
+        role: 'host', roomCode, relayUrl: online ? require('../src/relay').DEFAULT_RELAY_URL : undefined, seed,
       });
     } else {
       const events = simulate(myFighter, opponent, seed);
       winner = await renderBattle(myFighter, opponent, events);
     }
 
-    const rewards = postBattle(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
-    await showBattleRewards(winner, rewards, 'Your rig wins the online battle!', 'Opponent\'s rig wins.');
+    // Post-battle: wager payout or normal rewards
+    if (wagerAmount > 0) {
+      const won = winner === 'a';
+      const pot = wagerAmount * 2;
+      if (won) {
+        const newBal = awardWager(pot);
+        await showWagerResults(true, pot, newBal, myFighter, opponent);
+      } else {
+        await showWagerResults(false, pot, getBalance(), myFighter, opponent);
+      }
+      saveMatch(myFighter, opponent, winner, mode === 'cards' ? 'cards' : turnMode ? 'turns' : 'auto');
+    } else {
+      const rewards = postBattle(myFighter, opponent, winner, mode === 'cards' ? 'cardbattle' : turnMode ? 'turns' : 'auto');
+      await showBattleRewards(winner, rewards, 'Your rig wins the online battle!', 'Opponent\'s rig wins.');
+    }
 
   } catch (err) {
     console.log = origLog;
+    if (wagerAmount > 0) awardWager(wagerAmount);
     await showInfoScreen('ERROR', (scr) => {
       scr.text(4, 4, `Connection error: ${err.message}`, colors.rose);
-      scr.text(4, 6, 'Press any key to return to menu.', colors.dim);
+      scr.text(4, 6, wagerAmount > 0 ? 'Your wager has been refunded.' : '', colors.gold);
+      scr.text(4, 8, 'Press any key to return to menu.', colors.dim);
     });
   } finally {
     console.log = origLog;
@@ -3193,7 +3390,7 @@ async function handleHost(fighter, sessionState) {
 
 async function handleJoin(fighter, sessionState) {
   // Step 1: Get room code / IP
-  const code = await textInput('JOIN BATTLE', 'Enter room code or IP address:');
+  const code = await textInput('JOIN GAME', 'Enter room code or IP address:');
   if (!code) return;
 
   const { ROOM_CODE_PATTERN, joinOnline, DEFAULT_RELAY_URL } = require('../src/relay');
@@ -3203,6 +3400,9 @@ async function handleJoin(fighter, sessionState) {
   // Suppress console.log from network modules
   const origLog = console.log;
   console.log = () => {};
+
+  const { getBalance, deductWager, awardWager, formatBalance } = require('../src/credits');
+  let wagerAmount = 0;
 
   try {
     let myFighter = fighter;
@@ -3222,6 +3422,66 @@ async function handleJoin(fighter, sessionState) {
       }
     });
 
+    console.log = origLog;
+
+    // Auto-detect mode and wager from host's fighter data
+    const mode = opponent.battleMode || 'turns';
+    const turnMode = mode === 'turns' || mode === 'cards';
+    wagerAmount = opponent.wager || 0;
+
+    // Handle wager confirmation
+    if (wagerAmount > 0) {
+      const balance = getBalance();
+      if (balance < wagerAmount) {
+        await showInfoScreen('WAGER', (scr) => {
+          const cy = Math.floor(scr.height / 2);
+          scr.centerText(cy - 1, `This match requires a ${wagerAmount.toLocaleString()} credit wager`, colors.rose);
+          scr.centerText(cy + 1, `Your balance: ${formatBalance(balance)} credits`, colors.dim);
+        });
+        return;
+      }
+
+      const confirm = await pickOption('ACCEPT WAGER?', [
+        { key: 'yes', label: `STAKE ${wagerAmount.toLocaleString()} CREDITS`, desc: `Winner takes ${(wagerAmount * 2).toLocaleString()} credits total` },
+        { key: 'no',  label: 'DECLINE', desc: 'Go back to menu' },
+      ]);
+      if (confirm !== 'yes') return;
+
+      if (!deductWager(wagerAmount)) {
+        await showInfoScreen('WAGER', (scr) => {
+          scr.centerText(Math.floor(scr.height / 2), 'Insufficient credits!', colors.rose);
+        });
+        return;
+      }
+    }
+
+    // Handle card selection for card battle mode
+    let myCards = null;
+    if (mode === 'cards') {
+      const { grantStarterPack, getOwnedCards } = require('../src/cards');
+      const { selectCards } = require('../src/cardselect');
+
+      grantStarterPack();
+      const owned = getOwnedCards();
+      if (owned.length === 0) {
+        await showInfoScreen('CARD BATTLE', (scr) => {
+          scr.centerText(Math.floor(scr.height / 2), 'No cards available! Win battles to earn cards.', colors.rose);
+        });
+        if (wagerAmount > 0) awardWager(wagerAmount);
+        return;
+      }
+
+      const cardScreen = new Screen();
+      cardScreen.enter();
+      myCards = await selectCards(cardScreen);
+      cardScreen.exit();
+      if (!myCards || myCards.length === 0) {
+        if (wagerAmount > 0) awardWager(wagerAmount);
+        return;
+      }
+    }
+
+    // Rebuild opponent sprite
     if (opponent.specs) {
       opponent.sprite = getSprite(opponent.specs);
       if (opponent.skinId) {
@@ -3235,15 +3495,27 @@ async function handleJoin(fighter, sessionState) {
     }
     await prepareBenchToBattle(myFighter, opponent);
 
-    console.log = origLog;
-
-    // Auto-detect turn mode: default to turns since that's the richer experience
-    const turnMode = !!renderTurnBattle;
-
     const seed = combinedSeed(opponent.id, myFighter.id) ^ matchSeed;
     let winner;
 
-    if (turnMode) {
+    if (mode === 'cards' && renderTurnBattle) {
+      // Card battle — host's cards from their fighter data, exchanged via turn relay
+      const myMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
+      try { registerSignatureAnims(myMoves.filter(m => m.signature)); } catch {}
+      const oppMoves = assignMoveset(opponent.stats, opponent.specs, opponent.archetype);
+
+      // Host's cards from their embedded cardIds (definitive exchange via turn relay)
+      let hostCards = [];
+      if (opponent.cardIds) {
+        const { CARDS: CARD_DB } = require('../src/cards');
+        hostCards = opponent.cardIds.map(id => ({ id, ...CARD_DB[id] })).filter(c => c.name);
+      }
+
+      winner = await renderTurnBattle(myFighter, opponent, myMoves, oppMoves, {
+        role: 'joiner', roomCode, relayUrl: DEFAULT_RELAY_URL, seed,
+        cardMode: true, cardsA: myCards, cardsB: hostCards,
+      });
+    } else if (turnMode && renderTurnBattle) {
       const myMoves = getEquippedMoves(myFighter.stats, myFighter.specs, myFighter.archetype);
       try { registerSignatureAnims(myMoves.filter(m => m.signature)); } catch {}
       const oppMoves = assignMoveset(opponent.stats, opponent.specs, opponent.archetype);
@@ -3251,6 +3523,7 @@ async function handleJoin(fighter, sessionState) {
         role: 'joiner', roomCode, relayUrl: DEFAULT_RELAY_URL, seed,
       });
     } else {
+      // Auto mode — simulate and swap perspective for joiner
       const events = simulate(opponent, myFighter, seed);
       const swapped = events.map(e => {
         const s = { ...e };
@@ -3268,14 +3541,29 @@ async function handleJoin(fighter, sessionState) {
       winner = await renderBattle(myFighter, opponent, swapped);
     }
 
-    const rewards = postBattle(myFighter, opponent, winner, turnMode ? 'turns' : 'auto');
-    await showBattleRewards(winner, rewards, 'Your rig wins!', 'Opponent\'s rig wins.');
+    // Post-battle: wager payout or normal rewards
+    if (wagerAmount > 0) {
+      const won = winner === 'a';
+      const pot = wagerAmount * 2;
+      if (won) {
+        const newBal = awardWager(pot);
+        await showWagerResults(true, pot, newBal, myFighter, opponent);
+      } else {
+        await showWagerResults(false, pot, getBalance(), myFighter, opponent);
+      }
+      saveMatch(myFighter, opponent, winner, mode === 'cards' ? 'cards' : turnMode ? 'turns' : 'auto');
+    } else {
+      const rewards = postBattle(myFighter, opponent, winner, mode === 'cards' ? 'cardbattle' : turnMode ? 'turns' : 'auto');
+      await showBattleRewards(winner, rewards, 'Your rig wins!', 'Opponent\'s rig wins.');
+    }
 
   } catch (err) {
     console.log = origLog;
+    if (wagerAmount > 0) awardWager(wagerAmount);
     await showInfoScreen('ERROR', (scr) => {
       scr.text(4, 4, `Connection error: ${err.message}`, colors.rose);
-      scr.text(4, 6, 'Press any key to return to menu.', colors.dim);
+      scr.text(4, 6, wagerAmount > 0 ? 'Your wager has been refunded.' : '', colors.gold);
+      scr.text(4, 8, 'Press any key to return to menu.', colors.dim);
     });
   } finally {
     console.log = origLog;
@@ -3339,6 +3627,7 @@ function openPlaySubmenu(title, titleColor, options) {
   return new Promise((resolve) => {
     const scr = new Screen();
     scr.enter();
+    scr.padded();
     const w = scr.width;
     const h = scr.height;
     let cursor = 0;
@@ -3446,16 +3735,16 @@ function openPlaySubmenu(title, titleColor, options) {
 
 async function handleLocalMenu() {
   return openPlaySubmenu('L O C A L', colors.coral, [
-    { key: 'rogue', label: 'SOLO MODE', desc: 'Explore the void, find battles', sub: 'Roguelike single-player adventure', icon: '◉', color: rgb(75, 150, 90) },
-    { key: 'gym',   label: 'GYM LADDER', desc: 'Fight gym leaders in order', sub: 'Climb the ranks, earn badges', icon: '▲', color: rgb(255, 180, 60) },
+    { key: 'rogue',      label: 'SOLO MODE',    desc: 'Explore the void, find battles',  sub: 'Roguelike single-player adventure',  icon: '◉', color: rgb(75, 150, 90) },
+    { key: 'gym',        label: 'GYM LADDER',   desc: 'Fight gym leaders in order',      sub: 'Climb the ranks, earn badges',       icon: '▲', color: rgb(255, 180, 60) },
+    { key: 'cardbattle', label: 'CARD BATTLE',   desc: 'Battle with equipped cards',      sub: 'Turn-based combat with card effects', icon: '♦', color: rgb(255, 180, 100) },
   ]);
 }
 
 async function handleOnlineMenu() {
   return openPlaySubmenu('O N L I N E', colors.lilac, [
-    { key: 'host',       label: 'HOST GAME', desc: 'Host a battle for others to join', sub: 'Create a room and share the code', icon: '◎', color: colors.coral },
-    { key: 'join',       label: 'JOIN BATTLE', desc: 'Enter a room code to fight', sub: 'Connect to an existing match', icon: '↗', color: colors.lilac },
-    { key: 'wager',      label: 'WAGER', desc: 'Stake credits in online PvP', sub: 'Winner takes the pot', icon: '◆', color: rgb(255, 200, 50) },
+    { key: 'host', label: 'HOST GAME', desc: 'Create a room and share the code', sub: 'Choose your game mode and options', icon: '◎', color: colors.coral },
+    { key: 'join', label: 'JOIN GAME', desc: 'Enter a room code to fight',      sub: 'Connect to an existing match',    icon: '↗', color: colors.lilac },
   ]);
 }
 
@@ -3492,14 +3781,13 @@ async function run() {
         const sub = await handleLocalMenu();
         if (sub === 'rogue') await handleRogue(fighter, sessionState);
         else if (sub === 'gym') await handleGym(fighter, sessionState);
+        else if (sub === 'cardbattle') await handleCardBattle(fighter, sessionState);
         break;
       }
       case 'online': {
         const sub = await handleOnlineMenu();
         if (sub === 'host') await handleHost(fighter, sessionState);
         else if (sub === 'join') await handleJoin(fighter, sessionState);
-        else if (sub === 'wager') await handleWager(fighter, sessionState);
-        else if (sub === 'cardbattle') await handleCardBattle(fighter, sessionState);
         break;
       }
       case 'minigame': {
@@ -3606,7 +3894,7 @@ async function handleCardBattle(fighter, sessionState) {
 
   const { Screen } = require('../src/screen');
   const { selectRandomCardBattleOpponent } = require('../src/opponentselect');
-  const { grantStarterPack, getOwnedCards, selectRandomCards, addCard, rollCardDrop } = require('../src/cards');
+  const { grantStarterPack, getOwnedCards, selectRandomCards, addCard } = require('../src/cards');
   const { selectCards } = require('../src/cardselect');
   const { createRNG } = require('../src/rng');
 
@@ -3633,6 +3921,7 @@ async function handleCardBattle(fighter, sessionState) {
   // Step 1: Select opponent
   const selectScreen = new Screen();
   selectScreen.enter();
+  selectScreen.padded();
   const opponent = await selectRandomCardBattleOpponent(selectScreen);
   selectScreen.exit();
   if (!opponent) return;
@@ -3640,6 +3929,7 @@ async function handleCardBattle(fighter, sessionState) {
   // Step 2: Select cards (up to 3)
   const cardScreen = new Screen();
   cardScreen.enter();
+  cardScreen.padded();
   const hand = await selectCards(cardScreen);
   cardScreen.exit();
   if (!hand || hand.length === 0) return;
@@ -3676,11 +3966,20 @@ async function handleCardBattle(fighter, sessionState) {
   const rewards = postBattle(fighter, opponent, winner, 'cardbattle');
   const oppName = opponent.name || 'the opponent';
 
-  // Card drop on win
+  // Card battle win rewards: key + chance at card drop (same odds as Card Crate)
   if (winner === 'a') {
-    const droppedCard = rollCardDrop(createRNG(seed + 1));
-    if (droppedCard) {
-      addCard(droppedCard.id);
+    const { addCardKeys } = require('../src/credits');
+    const { rollCardCrateCard } = require('../src/lootbox');
+    addCardKeys(1);
+    rewards.keyDrop = 1;
+
+    const dropRng = createRNG(seed + 1);
+    if (dropRng.next() < 0.35) {
+      const droppedCard = rollCardCrateCard(dropRng);
+      if (droppedCard) {
+        addCard(droppedCard.id);
+        rewards.cardDrop = droppedCard;
+      }
     }
   }
 
@@ -3699,6 +3998,7 @@ async function handleCardBinder(fighter, sessionState) {
 
   const screen = new Screen();
   screen.enter();
+  screen.padded();
   await openCardCollection(screen);
   screen.exit();
 }

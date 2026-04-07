@@ -16,23 +16,43 @@ process.on('exit', () => {
 
 class Screen {
   constructor() {
-    this.width = Math.min(process.stdout.columns || 120, 200);
-    this.height = Math.min(process.stdout.rows || 30, 50);
-    if (this.width < 60) this.width = 60;
-    if (this.height < 20) this.height = 20;
+    this._bufW = Math.min(process.stdout.columns || 120, 200);
+    this._bufH = Math.min(process.stdout.rows || 30, 50);
+    if (this._bufW < 60) this._bufW = 60;
+    if (this._bufH < 20) this._bufH = 20;
+
+    // Logical content area — equals buffer size by default
+    this._ox = 0;
+    this._oy = 0;
+    this.width = this._bufW;
+    this.height = this._bufH;
+    this._isPadded = false;
 
     this.buffer = this._createBuffer();
     this.prev = this._createBuffer();
     this.active = false;
     this._firstRender = true;
     this._writePending = false;
+    this._onResize = null;
+  }
+
+  // Opt-in fullscreen padding — shrinks the logical content area and offsets
+  // all drawing inward so content doesn't hug the terminal edges.
+  // Screens designed for small terminals automatically gain breathing room
+  // in fullscreen without changing any of their layout code.
+  padded() {
+    this._isPadded = true;
+    this._ox = this._bufW > 90 ? Math.min(Math.floor((this._bufW - 80) / 6), 6) : 0;
+    this._oy = this._bufH > 35 ? Math.min(Math.floor((this._bufH - 28) / 4), 4) : 0;
+    this.width = this._bufW - this._ox * 2;
+    this.height = this._bufH - this._oy * 2;
   }
 
   _createBuffer() {
     const buf = [];
-    for (let y = 0; y < this.height; y++) {
+    for (let y = 0; y < this._bufH; y++) {
       const row = [];
-      for (let x = 0; x < this.width; x++) {
+      for (let x = 0; x < this._bufW; x++) {
         row.push({ char: ' ', fg: null, bg: null, bold: false });
       }
       buf.push(row);
@@ -48,6 +68,10 @@ class Screen {
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
     this._cleanup = cleanup;
+
+    // Listen for terminal resize
+    this._onResize = () => this.handleResize();
+    process.stdout.on('resize', this._onResize);
   }
 
   exit() {
@@ -57,6 +81,10 @@ class Screen {
     if (this._cleanup) {
       process.removeListener('SIGINT', this._cleanup);
       process.removeListener('SIGTERM', this._cleanup);
+    }
+    if (this._onResize) {
+      process.stdout.removeListener('resize', this._onResize);
+      this._onResize = null;
     }
   }
 
@@ -70,24 +98,49 @@ class Screen {
       process.removeListener('SIGINT', this._cleanup);
       process.removeListener('SIGTERM', this._cleanup);
     }
+    if (this._onResize) {
+      process.stdout.removeListener('resize', this._onResize);
+      this._onResize = null;
+    }
   }
 
   clear() {
-    for (let y = 0; y < this.height; y++) {
+    for (let y = 0; y < this._bufH; y++) {
       const row = this.buffer[y];
-      for (let x = 0; x < this.width; x++) {
+      for (let x = 0; x < this._bufW; x++) {
         const c = row[x];
         c.char = ' '; c.fg = null; c.bg = null; c.bold = false;
       }
     }
   }
 
+  handleResize() {
+    const newW = Math.min(process.stdout.columns || 120, 200);
+    const newH = Math.min(process.stdout.rows || 30, 50);
+    const bw = Math.max(60, newW);
+    const bh = Math.max(20, newH);
+    if (bw === this._bufW && bh === this._bufH) return;
+
+    this._bufW = bw;
+    this._bufH = bh;
+    if (this._isPadded) {
+      this.padded();
+    } else {
+      this.width = bw;
+      this.height = bh;
+    }
+    this.buffer = this._createBuffer();
+    this.prev = this._createBuffer();
+    this._firstRender = true;
+    process.stdout.write(CLEAR_SCREEN);
+  }
+
   // Force next render() to redraw every cell (clears diff state)
   resetDiff() {
     this._firstRender = true;
-    for (let y = 0; y < this.height; y++) {
+    for (let y = 0; y < this._bufH; y++) {
       const prow = this.prev[y];
-      for (let x = 0; x < this.width; x++) {
+      for (let x = 0; x < this._bufW; x++) {
         const p = prow[x];
         p.char = '\x00'; p.fg = '\x00'; p.bg = null; p.bold = false;
       }
@@ -95,9 +148,9 @@ class Screen {
   }
 
   set(x, y, char, fg, bg, bold) {
-    x = Math.floor(x);
-    y = Math.floor(y);
-    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+    x = Math.floor(x) + this._ox;
+    y = Math.floor(y) + this._oy;
+    if (x < 0 || x >= this._bufW || y < 0 || y >= this._bufH) return;
     const c = this.buffer[y][x];
     c.char = char;
     c.fg = fg || null;
@@ -164,16 +217,16 @@ class Screen {
     const full = this._firstRender;
     const MERGE_GAP = 4; // merge changed segments separated by ≤4 unchanged cells
 
-    for (let y = 0; y < this.height; y++) {
+    for (let y = 0; y < this._bufH; y++) {
       const row = this.buffer[y];
       const prow = this.prev[y];
 
       let segStart = -1; // start of current changed segment
       let segEnd = -1;   // end of current changed segment
 
-      for (let x = 0; x <= this.width; x++) {
+      for (let x = 0; x <= this._bufW; x++) {
         let changed = false;
-        if (x < this.width) {
+        if (x < this._bufW) {
           const c = row[x]; const p = prow[x];
           changed = full || c.char !== p.char || c.fg !== p.fg || c.bg !== p.bg || c.bold !== p.bold;
         }
@@ -219,8 +272,17 @@ class Screen {
     let lastBold = false;
 
     for (let x = startX; x <= endX; x++) {
-      parts.push(`${ESC}${y + 1};${x + 1}H`);
       const c = row[x];
+
+      // Never write the bottom-right cell — the cursor advance after
+      // writing there triggers a terminal scroll, causing progressive drift
+      if (x === this._bufW - 1 && y === this._bufH - 1) {
+        const p = prow[x];
+        p.char = c.char; p.fg = c.fg; p.bg = c.bg; p.bold = c.bold;
+        continue;
+      }
+
+      parts.push(`${ESC}${y + 1};${x + 1}H`);
       const needFg = c.fg !== lastFg;
       const needBg = c.bg !== lastBg;
       const needBold = c.bold !== lastBold;

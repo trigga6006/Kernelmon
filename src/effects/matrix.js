@@ -32,6 +32,31 @@ class MatrixRain {
     }
   }
 
+  resize(width, height) {
+    const rng = this.rng;
+    // Add new columns if wider
+    while (this.columns.length < width) {
+      const col = {
+        y: rng.int(-height, 0),
+        speed: rng.float(0.2, 0.8),
+        length: rng.int(4, 10),
+        accumulator: 0,
+        active: false,
+        chars: [],
+      };
+      for (let i = 0; i < height + 20; i++) {
+        col.chars.push(MATRIX_CHARS[Math.floor(rng.next() * MATRIX_CHARS.length)]);
+      }
+      this.columns.push(col);
+    }
+    // Trim if narrower
+    if (this.columns.length > width) {
+      this.columns.length = width;
+    }
+    this.width = width;
+    this.height = height;
+  }
+
   update() {
     for (const col of this.columns) {
       if (!col.active) continue;
@@ -107,6 +132,13 @@ class CodeSparkle {
     this.particles = [];
     this.maxParticles = density;
     this.exclusionZones = [];
+  }
+
+  resize(width, height) {
+    this.width = width;
+    this.height = height;
+    // Remove particles that are now out of bounds
+    this.particles = this.particles.filter(p => p.x < width && p.y < height);
   }
 
   update() {

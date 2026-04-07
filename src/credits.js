@@ -123,9 +123,32 @@ function awardWager(amount) {
   return data.balance;
 }
 
+// ─── Card Crate Keys ───
+
+function getCardKeys() {
+  const data = loadCredits();
+  return data.cardKeys || 0;
+}
+
+function addCardKeys(count = 1) {
+  const data = loadCredits();
+  data.cardKeys = (data.cardKeys || 0) + count;
+  saveCredits(data);
+  return data.cardKeys;
+}
+
+function spendCardKey() {
+  const data = loadCredits();
+  if (!data.cardKeys || data.cardKeys < 1) return false;
+  data.cardKeys--;
+  saveCredits(data);
+  return true;
+}
+
 module.exports = {
   getBalance, getLifetimeEarned,
   addCredits, spendCredits,
   deductWager, awardWager,
+  getCardKeys, addCardKeys, spendCardKey,
   calculateBattleCredits, calculateDashCredits, printCreditEarned, formatBalance,
 };

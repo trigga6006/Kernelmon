@@ -9,6 +9,7 @@ const { MatrixRain, CodeSparkle } = require('./effects/matrix');
 const { GlitchEffect, FloatingText } = require('./effects/glitch');
 const { ProjectileManager } = require('./effects/projectile');
 const { BlackHoleEffect, MaelstromEffect, IonCannonEffect, QuantumRiftEffect, SupernovaEffect } = require('./effects/special');
+const { CardAuraManager, getCardTheme } = require('./effects/cardaura');
 const { createRNG } = require('./rng');
 const { getSprite } = require('./sprites');
 const {
@@ -32,7 +33,7 @@ const { getCategoryMultiplier } = require('./balance');
 const { SIGNATURE_COLOR, SIGNATURE_ACCENT, SIGNATURE_ICON } = require('./signature');
 const { drawTitle, getTitleText } = require('./titles');
 const { drawCard: drawFullCard, drawCollapsedCard, drawCardHand, CARD_W, CARD_H, COLLAPSED_W } = require('./cardart');
-const { CARD_RARITY_COLORS_RGB, CARD_RARITY_ICONS, CARD_TYPE_LABELS, CARD_TYPE_COLORS_RGB } = require('./cards');
+const { CARDS, CARD_RARITY_COLORS_RGB, CARD_RARITY_ICONS, CARD_TYPE_LABELS, CARD_TYPE_COLORS_RGB } = require('./cards');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -141,6 +142,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   const glitch = new GlitchEffect(rng);
   const floats = new FloatingText();
   const projectiles = new ProjectileManager(rng, screen.width, screen.height);
+  const cardAura = new CardAuraManager(screen.width, screen.height, rng);
 
   // Tame the intro rain
   for (const col of matrix.columns) {
@@ -200,6 +202,8 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   let cardCursor = 0;          // which card in hand is selected
   let cardPopup = false;       // whether the full card popup is showing
   let lastCardTurn = -10;      // turn when last active card was used
+  // Configure passive card aura based on equipped passive cards
+  if (cardMode && myCards.length > 0) cardAura.configurePassive(myCards);
   // Special attack effects — full-screen animations (black hole, maelstrom)
   let specialEffect = null; // BlackHoleEffect | MaelstromEffect instance
   let frameCount = 0;
@@ -468,6 +472,31 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
 
     readyDone = true;
     clearInterval(readyInterval);
+  }
+
+  // ─── Online card exchange ───
+  // Both players exchange card IDs via turn -2 so both clients
+  // have identical card state before the battle begins.
+  if (cardMode && isOnline) {
+    const CARD_EXCHANGE_TURN = -2;
+    const myCards = isHost ? (cardsA || []) : (cardsB || []);
+    const myCardIds = myCards.map(c => c.id).join(',');
+
+    try {
+      const result = await submitAndWait(relayUrl, roomCode, role, myCardIds, CARD_EXCHANGE_TURN);
+      const oppCardStr = isHost ? result.joinerMove : result.hostMove;
+      if (oppCardStr && oppCardStr !== '__READY__') {
+        const { CARDS: CARD_DB } = require('./cards');
+        const oppCardIds = oppCardStr.split(',').filter(Boolean);
+        const oppCards = oppCardIds.map(id => ({ id, ...CARD_DB[id] })).filter(c => c.name);
+        // Update opponent's cards in battle state
+        battleState[oppSlot].cards = oppCards.map(c => ({ ...c, used: false, cooldown: 0 }));
+        battleState[oppSlot]._cardBoosts = [];
+        battleState[oppSlot]._cardDebuffs = [];
+      }
+    } catch (e) {
+      // If card exchange fails, proceed with whatever cards are already set
+    }
   }
 
   // ─── Battle intro ───
@@ -1037,6 +1066,23 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     screen.exit();
   }
 
+  // ─── Battle start: fire battle_start reactive triggers (e.g. genesis_protocol) ───
+  if (cardMode) {
+    const { checkReactiveCards } = require('./cardbalance');
+    const startEvents = [];
+    for (const who of ['a', 'b']) {
+      startEvents.push(...checkReactiveCards(battleState, who, 'battle_start'));
+    }
+    if (startEvents.length > 0) {
+      // Show battle_start card triggers via the animation pipeline
+      for (const evt of startEvents) {
+        processAnimEvent(evt);
+      }
+      syncDisplayHpFromState();
+      await animateIdle(1800);
+    }
+  }
+
   // ─── Main battle loop ───
   try {
     while (!isOver(battleState)) {
@@ -1118,26 +1164,28 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         }
         myMove = null; // item use consumes the turn — no attack
       } else if (choice.type === 'card' && cardMode) {
-        // Active card activation — applies effect immediately, still pick a move
+        // Active card activation — consumes the turn (replaces attack)
         const { activateCard } = require('./turnbattle');
         const cardEvent = activateCard(battleState, meSlot, choice.cardIdx);
         if (cardEvent) {
           const card = myCards[choice.cardIdx];
           addLog(`♦ Activated: ${card.name}`, rgb(...(CARD_TYPE_COLORS_RGB.active)));
           lastCardTurn = turnNum;
-          // Card activation doesn't consume the turn — player still picks a move
-          // Go back to move selection for this turn
-          const moveChoice = await waitForMove();
-          if (moveChoice.type === 'move') {
-            myMove = moveChoice.move;
-            const moveIcon = myMove.signature ? SIGNATURE_ICON : (CAT_ICONS[myMove.cat] || '·');
-            addLog(`${moveIcon} You chose: ${myMove.label}`, colors.p1);
-          } else if (moveChoice.type === 'forfeit') {
-            forfeited = true;
-          } else {
-            myMove = null;
-          }
+          myMove = null; // card use consumes the turn — no attack
           syncDisplayHpFromState();
+
+          // Trigger environmental card animation directly (this bypasses processAnimEvent)
+          const actCardDef = Object.values(CARDS).find(c => c.name === card.name);
+          if (actCardDef) {
+            const meCx = plyCenterX, meCy = plyCenterY;
+            const oppCx2 = oppCenterX, oppCy2 = oppCenterY;
+            cardAura.trigger({
+              rarity: actCardDef.rarity, themeName: getCardTheme(actCardDef),
+              triggerType: 'active',
+              cx: meCx, cy: meCy, targetCx: oppCx2, targetCy: oppCy2,
+              startFrame: frameCount,
+            });
+          }
         } else {
           addLog('Card activation failed!', colors.rose);
           // Let player retry
@@ -1310,6 +1358,16 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
 
     sparkle.update();
     sparkle.draw(screen);
+
+    // Card aura exclusion zones — only character sprites (user requirement:
+    // card effects CAN overlay environment/UI, but NEVER the characters)
+    cardAura.setExclusions([
+      { x: plyX - 1, y: plyY - 1, w: 18, h: 14 },   // player sprite
+      { x: oppX - 1, y: oppY - 1, w: 16, h: 12 },    // opponent sprite
+    ]);
+    cardAura.update(frameCount);
+    cardAura.drawPassive(screen, frameCount);
+
     glitch.update();
     floats.update();
     projectiles.update();
@@ -1503,6 +1561,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     glitch.draw(screen);
     floats.draw(screen);
     if (specialEffect) specialEffect.draw(screen, frameCount);
+    cardAura.drawEffects(screen, frameCount);
 
     // Opponent info
     const oppArch = fighterB.archetype?.name || '';
@@ -1945,6 +2004,21 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         floats.add(cx - 1, cy, 'CLEANSE', colors.mint, 12);
       }
 
+      // Environmental card aura — reactive burst
+      const reactCard = Object.values(CARDS).find(c => c.name === event.card);
+      if (reactCard) {
+        const casterCx = dWho === 'a' ? plyCenterX : oppCenterX;
+        const casterCy = dWho === 'a' ? plyCenterY : oppCenterY;
+        const tgtCx = dWho === 'a' ? oppCenterX : plyCenterX;
+        const tgtCy = dWho === 'a' ? oppCenterY : plyCenterY;
+        cardAura.trigger({
+          rarity: reactCard.rarity, themeName: getCardTheme(reactCard),
+          triggerType: 'reactive',
+          cx: casterCx, cy: casterCy, targetCx: tgtCx, targetCy: tgtCy,
+          startFrame: frameCount,
+        });
+      }
+
     } else if (event.type === 'card_activate') {
       const dWho = toDisplay(event.who);
       const whoLabel = dWho === 'a' ? nameA : nameB;
@@ -1955,6 +2029,21 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       addLog(`♦ ${whoLabel.slice(0, 10)} activates ${event.card}!`, rgb(230, 140, 170));
       glitch.burst(cx, cy, 4, 4);
 
+      // Environmental card aura — dramatic active animation
+      const actCard = Object.values(CARDS).find(c => c.name === event.card);
+      if (actCard) {
+        const casterCx = dWho === 'a' ? plyCenterX : oppCenterX;
+        const casterCy = dWho === 'a' ? plyCenterY : oppCenterY;
+        const tgtCx = dWho === 'a' ? oppCenterX : plyCenterX;
+        const tgtCy = dWho === 'a' ? oppCenterY : plyCenterY;
+        cardAura.trigger({
+          rarity: actCard.rarity, themeName: getCardTheme(actCard),
+          triggerType: 'active',
+          cx: casterCx, cy: casterCy, targetCx: tgtCx, targetCy: tgtCy,
+          startFrame: frameCount,
+        });
+      }
+
     } else if (event.type === 'card_shield') {
       const dWho = toDisplay(event.who);
       const cx = dWho === 'a' ? plyCenterX : oppCenterX;
@@ -1962,11 +2051,31 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       floats.add(cx - 1, cy, 'SHIELD', colors.sky, 14);
       addLog(`Shield absorbed the attack!`, colors.sky);
 
+      // Protective environmental burst
+      cardAura.trigger({
+        rarity: 'epic', themeName: 'protective', triggerType: 'reactive',
+        cx: dWho === 'a' ? plyCenterX : oppCenterX,
+        cy: dWho === 'a' ? plyCenterY : oppCenterY,
+        targetCx: dWho === 'a' ? oppCenterX : plyCenterX,
+        targetCy: dWho === 'a' ? oppCenterY : plyCenterY,
+        startFrame: frameCount,
+      });
+
     } else if (event.type === 'card_invulnerable') {
       const dWho = toDisplay(event.who);
       const cx = dWho === 'a' ? plyCenterX : oppCenterX;
       const cy = dWho === 'a' ? plyCenterY - 3 : oppCenterY - 2;
       floats.add(cx - 2, cy, 'INVULNERABLE', colors.gold, 16);
+
+      // Protective environmental burst (legendary-tier visual for invulnerability)
+      cardAura.trigger({
+        rarity: 'legendary', themeName: 'protective', triggerType: 'reactive',
+        cx: dWho === 'a' ? plyCenterX : oppCenterX,
+        cy: dWho === 'a' ? plyCenterY : oppCenterY,
+        targetCx: dWho === 'a' ? oppCenterX : plyCenterX,
+        targetCy: dWho === 'a' ? oppCenterY : plyCenterY,
+        startFrame: frameCount,
+      });
     }
   }
 }

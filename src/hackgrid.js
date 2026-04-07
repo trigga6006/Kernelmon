@@ -263,7 +263,7 @@ async function renderHackGrid(fighter) {
   const resultPromise = new Promise(r => { resolve = r; });
 
   function onKey(key) {
-    if (key === '\x03') {
+    if (key === '\x03' || key === '\x1b') {
       cleanup();
       screen.exit();
       resolve({ score, level, reason: 'quit' });
@@ -330,9 +330,9 @@ async function renderHackGrid(fighter) {
 
       // HUD
       screen.text(2, 0, `HACK THE GRID`, rgb(0, 220, 120), null, true);
-      screen.text(w - 12, 0, `Level ${level}`, colors.dim);
+      screen.text(screen.width - 12, 0, `Level ${level}`, colors.dim);
       const bootMsg = bootFrame < BOOT_FRAMES ? `Mapping network... ${Math.floor((bootFrame / BOOT_FRAMES) * 100)}%` : '> READY';
-      screen.text(2, h - 1, bootMsg, bootFrame < BOOT_FRAMES ? rgb(0, 100, 60) : rgb(0, 255, 120));
+      screen.text(2, screen.height - 1, bootMsg, bootFrame < BOOT_FRAMES ? rgb(0, 100, 60) : rgb(0, 255, 120));
 
       screen.render();
       if (bootFrame >= BOOT_FRAMES) gameState = 'play';
@@ -639,18 +639,20 @@ async function renderHackGrid(fighter) {
     }
 
     // ── HUD (minimal, top and bottom bars) ──
+    const sw = screen.width;
+    const sh = screen.height;
     screen.text(1, 0, 'HACK THE GRID', rgb(0, 180, 100));
     screen.text(16, 0, `Lv.${level}`, colors.dim);
 
     const livesStr = `${LIFE_FULL.repeat(lives)}${LIFE_EMPTY.repeat(3 - lives)}`;
-    screen.text(Math.floor(w / 2) - 2, 0, livesStr, LIFE_COLOR);
+    screen.text(Math.floor(sw / 2) - 2, 0, livesStr, LIFE_COLOR);
 
-    screen.text(w - 14, 0, `Score: ${score}`, rgb(0, 220, 120));
+    screen.text(sw - 14, 0, `Score: ${score}`, rgb(0, 220, 120));
 
     const nodesLeft = levelData.nodes.length;
     const totalNodes = nodesLeft + nodesCollected;
-    screen.text(1, h - 1, `Nodes: ${nodesCollected}/${totalNodes}`, rgb(0, 160, 100));
-    screen.text(w - 24, h - 1, 'WASD/Arrows  Collect all', rgb(50, 60, 55));
+    screen.text(1, sh - 1, `Nodes: ${nodesCollected}/${totalNodes}`, rgb(0, 160, 100));
+    screen.text(sw - 28, sh - 1, 'WASD/Arrows  Collect all  Esc', rgb(50, 60, 55));
 
     screen.render();
   }, FRAME_MS);
