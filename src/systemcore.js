@@ -1287,6 +1287,46 @@ async function openSystemCore() {
   scr.exit();
 }
 
+// ─── Transcendent badge for battle HUD ───
+// Draws an animated "⚛ TRANSCENDENT" indicator inline at (x, y).
+// Call AFTER drawRankBadge and offset x by its returned length + 1.
+// Returns the drawn text length so callers can chain.
+
+function _transcendentHash(i, frame) {
+  let h = (i * 2654435761 + frame * 340573321) >>> 0;
+  h = ((h >> 16) ^ h) * 0x45d9f3b >>> 0;
+  return (h & 0xFFFF) / 0xFFFF;
+}
+
+function drawTranscendentBadge(screen, x, y, frameCount) {
+  if (!isFullyMaxed()) return 0;
+
+  const text = '⚛ TRANSCENDENT';
+  const t = frameCount * 0.07;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === ' ') { screen.set(x + i, y, ' '); continue; }
+
+    // Wave of purple-white energy flowing through the text
+    const wave = Math.sin(t + i * 0.4) * 0.5 + 0.5;
+    // Occasional bright spike
+    const spike = _transcendentHash(i, frameCount) < 0.06;
+
+    let r, g, b;
+    if (spike) {
+      r = 255; g = 240; b = 255; // white flash
+    } else {
+      r = Math.floor(140 + wave * 115); // 140-255
+      g = Math.floor(60 + wave * 80);   // 60-140
+      b = Math.floor(180 + wave * 75);  // 180-255
+    }
+    screen.set(x + i, y, ch, rgb(r, g, b), null, spike);
+  }
+
+  return text.length;
+}
+
 module.exports = {
   openSystemCore,
   getBuff,
@@ -1303,4 +1343,5 @@ module.exports = {
   getTotalCoreLevel,
   getCoreTier,
   isFullyMaxed,
+  drawTranscendentBadge,
 };

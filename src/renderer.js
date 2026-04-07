@@ -13,6 +13,7 @@ const { getSprite } = require('./sprites');
 const { toneColor } = require('./benchmark');
 const { drawTitle } = require('./titles');
 const { drawRankBadge, getRp: getLocalRp } = require('./ranked');
+const { drawTranscendentBadge } = require('./systemcore');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -407,8 +408,9 @@ async function renderBattle(fighterA, fighterB, events) {
     screen.text(plyBarX, plyInfoY + 2, `STR:${ast.str} MAG:${ast.mag} SPD:${ast.spd}`, colors.dimmer);
     // GPU
     screen.text(plyBarX, plyInfoY + 3, `GPU: ${fighterA.gpu.slice(0, 26)}`, colors.ghost);
-    // Player rank badge
-    drawRankBadge(screen, plyBarX, plyInfoY + 4, getLocalRp(), frameCount);
+    // Player rank badge + transcendent indicator
+    const plyRankLen = drawRankBadge(screen, plyBarX, plyInfoY + 4, getLocalRp(), frameCount);
+    drawTranscendentBadge(screen, plyBarX + plyRankLen + 1, plyInfoY + 4, frameCount);
   }
 
   function drawLogPanel(screen) {

@@ -33,6 +33,7 @@ const { getCategoryMultiplier } = require('./balance');
 const { SIGNATURE_COLOR, SIGNATURE_ACCENT, SIGNATURE_ICON } = require('./signature');
 const { drawTitle, getTitleText } = require('./titles');
 const { drawRankBadge, getRp: getLocalRp } = require('./ranked');
+const { drawTranscendentBadge } = require('./systemcore');
 const { drawCard: drawFullCard, drawCollapsedCard, drawCardHand, CARD_W, CARD_H, COLLAPSED_W } = require('./cardart');
 const { CARDS, CARD_RARITY_COLORS_RGB, CARD_RARITY_ICONS, CARD_TYPE_LABELS, CARD_TYPE_COLORS_RGB } = require('./cards');
 
@@ -1624,7 +1625,8 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     screen.bar(plyBarX, plyBarY + 1, barW, ratioA, hpColor(ratioA), colors.dimmer);
     screen.text(plyBarX + barW, plyBarY + 1, ` ${Math.round(clampedHpA)}/${fighterA.stats.maxHp}`, hpColor(ratioA));
     // Player rank badge (always shown — uses local RP)
-    drawRankBadge(screen, plyBarX, plyBarY + 2, getLocalRp(), frameCount);
+    const plyRankLen = drawRankBadge(screen, plyBarX, plyBarY + 2, getLocalRp(), frameCount);
+    drawTranscendentBadge(screen, plyBarX + plyRankLen + 1, plyBarY + 2, frameCount);
 
     // Log divider
     screen.hline(1, logY - 1, w - 2, '─', colors.dimmer);
