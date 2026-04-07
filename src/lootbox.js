@@ -13,6 +13,7 @@ const { drawArt, getItemArt, getPartArt } = require('./itemart');
 const { SKINS, addSkin } = require('./skins');
 const { TITLES, TITLE_RARITY_COLORS, TITLE_RARITY_ICONS, addTitle } = require('./titles');
 const { CARDS, CARD_RARITY_ICONS, CARD_RARITY_COLORS_RGB, CARD_TYPE_LABELS, CARD_TYPE_COLORS_RGB, addCard } = require('./cards');
+const { ARTIFACTS, ARTIFACT_SLOT_LABELS, ARTIFACT_SLOT_COLORS, addArtifact } = require('./artifacts');
 
 // ─── Box tiers ───
 
@@ -115,6 +116,14 @@ function buildRewardPool() {
     });
   }
 
+  // Add all artifacts
+  for (const [id, artifact] of Object.entries(ARTIFACTS)) {
+    pool.push({
+      type: 'artifact', id, rarity: artifact.rarity, name: artifact.name,
+      icon: artifact.icon, artifactSlot: artifact.slot,
+    });
+  }
+
   // Add all cards (divine & primordial only reachable via Card Crate weights)
   for (const [id, card] of Object.entries(CARDS)) {
     const icon = CARD_RARITY_ICONS[card.rarity] || '·';
@@ -138,6 +147,7 @@ const TYPE_WEIGHTS = {
   skin: 1,
   title: 2,
   card: 2,
+  artifact: 2,
 };
 
 function rollReward(box, rng) {
@@ -196,6 +206,8 @@ async function openLootBoxAnimated(box, screen) {
     addTitle(reward.id, 'lootbox:' + box.key);
   } else if (reward.type === 'card') {
     addCard(reward.id);
+  } else if (reward.type === 'artifact') {
+    addArtifact(reward.id);
   } else {
     addPart(reward.id);
   }

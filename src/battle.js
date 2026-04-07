@@ -6,6 +6,13 @@ const { createRNG } = require('./rng');
 const { getCombatModifiers, effectiveStat } = require('./balance');
 const { getBenchmarkConditionEvents, normalizeBenchmarkProfile } = require('./benchmark');
 
+// Artifact imports — lazy-loaded
+let _artifacts = null;
+function artifacts() {
+  if (!_artifacts) _artifacts = require('./artifacts');
+  return _artifacts;
+}
+
 // Attack move pools — names reference actual hardware
 const MOVES = {
   physical: [
@@ -59,6 +66,30 @@ function simulate(fighterA, fighterB, seed) {
     },
   };
 
+  // Initialize artifact state
+  const artMod = artifacts();
+  if (fighterA.artifacts && Object.keys(fighterA.artifacts).length > 0) {
+    state.a._artifacts = fighterA.artifacts;
+    state.a._artifactState = artMod.getArtifactBattleState(fighterA.artifacts, rng);
+    if (state.a._artifactState.hpBonusRatio) {
+      const bonus = Math.round(state.a.maxHp * state.a._artifactState.hpBonusRatio);
+      state.a.maxHp += bonus;
+      state.a.hp += bonus;
+    }
+  }
+  if (fighterB.artifacts && Object.keys(fighterB.artifacts).length > 0) {
+    state.b._artifacts = fighterB.artifacts;
+    state.b._artifactState = artMod.getArtifactBattleState(fighterB.artifacts, rng);
+    if (state.b._artifactState.hpBonusRatio) {
+      const bonus = Math.round(state.b.maxHp * state.b._artifactState.hpBonusRatio);
+      state.b.maxHp += bonus;
+      state.b.hp += bonus;
+    }
+  }
+  state.rng = rng; // needed by artifact reactive checks
+  artMod.applyRootOverflow(state, 'a');
+  artMod.applyRootOverflow(state, 'b');
+
   events.push({ tick: tick++, type: 'intro', a: fighterA, b: fighterB });
   for (const event of getBenchmarkConditionEvents(fighterA, 'a')) events.push({ tick: tick++, ...event });
   for (const event of getBenchmarkConditionEvents(fighterB, 'b')) events.push({ tick: tick++, ...event });
@@ -98,6 +129,15 @@ function simulate(fighterA, fighterB, seed) {
       }
     }
 
+    // Artifact turn-start triggers
+    state.turn = round; // needed by artifact checks
+    for (const who of ['a', 'b']) {
+      if (state[who]._artifacts) {
+        const artEvents = artMod.checkArtifactReactive(state, who, 'turn_start');
+        for (const e of artEvents) events.push({ tick: tick++, ...e, round });
+      }
+    }
+
     // Determine attack order by SPD (with archetype penalties)
     const spdA = state.a.spd + (modsA.initiativeBonus || 0) - (modsA.spdPenalty || 0) + rng.int(-5, 5);
     const spdB = state.b.spd + (modsB.initiativeBonus || 0) - (modsB.spdPenalty || 0) + rng.int(-5, 5);
@@ -119,8 +159,13 @@ function simulate(fighterA, fighterB, seed) {
         continue;
       }
 
-      // Skip if stunned
+      // Skip if stunned (artifact Failsafe Switch may cleanse)
       if (atk.stunned) {
+        if (atk._artifacts) {
+          const stunEvents = artMod.checkArtifactReactive(state, attacker, 'on_stun');
+          for (const e of stunEvents) events.push({ tick: tick++, ...e, round });
+          if (!atk.stunned) continue; // cleansed
+        }
         events.push({ tick: tick++, type: 'stunned', who: attacker, round });
         atk.stunned = false;
         atk.consecutiveAttacks = 0;
@@ -141,6 +186,14 @@ function simulate(fighterA, fighterB, seed) {
       }
 
       const move = rng.pick(MOVES[category]);
+
+      // Artifact: Bit Flip stat swap
+      let _bfStr = null, _bfMag = null;
+      if (mods._bitFlipSwap) {
+        _bfStr = atk.str; _bfMag = atk.mag;
+        const tmp = atk.str; atk.str = atk.mag; atk.mag = tmp;
+      }
+
       const baseStat = effectiveStat(atk[move.base] || atk.str);
 
       // Variance (archetype may override)
@@ -150,10 +203,14 @@ function simulate(fighterA, fighterB, seed) {
       // Apply archetype damage multiplier + underdog flat damage
       damage = Math.round(damage * mods.damageMult) + (mods.flatDamage || 0);
 
-      // Defense reduction (with defender's passive defense bonus)
-      const defValue = effectiveStat(def.def);
-      const defReduction = defValue * rng.float(0.15, 0.35) * (defMods.defMult || 1);
-      damage = Math.max(1, Math.round(damage - defReduction));
+      // Defense reduction (artifact Kernel Panic may skip)
+      if (mods._ignoreDefense) {
+        // Skip defense entirely
+      } else {
+        const defValue = effectiveStat(def.def);
+        const defReduction = defValue * rng.float(0.15, 0.35) * (defMods.defMult || 1);
+        damage = Math.max(1, Math.round(damage - defReduction));
+      }
 
       // Debuffed attacker does less
       if (atk.debuffed) {
@@ -190,12 +247,22 @@ function simulate(fighterA, fighterB, seed) {
 
       if (isDodge) {
         atk.consecutiveAttacks++;
+        // Artifact: Echo Buffer on dodge
+        if (def._artifacts) {
+          const dodgeEvents = artMod.checkArtifactReactive(state, defender, 'on_dodge');
+          for (const e of dodgeEvents) events.push({ tick: tick++, ...e, round });
+        }
         events.push({
           tick: tick++, type: 'dodge', who: defender, attacker, round,
           move: move.name, flavor: move.flavor,
           hpA: state.a.hp, hpB: state.b.hp,
         });
         continue;
+      }
+
+      // Artifact: Null Pointer immunity
+      if (def._artifacts?.relic === 'null_pointer' && def._artifactState?.nullPointerImmune > 0) {
+        damage = 0;
       }
 
       // Apply damage
@@ -237,6 +304,44 @@ function simulate(fighterA, fighterB, seed) {
       if (selfDmg > 0) attackEvent.selfDamage = selfDmg;
 
       events.push(attackEvent);
+
+      // ── Artifact post-damage triggers ──
+      if (damage > 0) {
+        if (def._artifacts) {
+          const hitEvents = artMod.checkArtifactReactive(state, defender, 'on_hit_received', { damage });
+          for (const e of hitEvents) events.push({ tick: tick++, ...e, round });
+        }
+        if (isCrit && def._artifacts) {
+          const critEvents = artMod.checkArtifactReactive(state, defender, 'on_crit_received', { damage });
+          for (const e of critEvents) events.push({ tick: tick++, ...e, round });
+        }
+        if (isCrit && atk._artifacts) {
+          const critDealtEvents = artMod.checkArtifactReactive(state, attacker, 'on_crit_dealt', { damage });
+          for (const e of critDealtEvents) events.push({ tick: tick++, ...e, round });
+        }
+        if (atk._artifacts) {
+          const afterEvents = artMod.checkArtifactReactive(state, attacker, 'after_damage_dealt', { damage });
+          for (const e of afterEvents) events.push({ tick: tick++, ...e, round });
+          if (mods._consumeEchoBuffer) artMod.checkArtifactReactive(state, attacker, 'after_attack');
+        }
+      }
+
+      // Restore Bit Flip swapped stats
+      if (_bfStr !== null) { atk.str = _bfStr; atk.mag = _bfMag; }
+
+      // Artifact: Parity Bomb HP equalization check
+      for (const w of ['a', 'b']) {
+        if (state[w]._artifacts) {
+          const lowEvents = artMod.checkArtifactReactive(state, w, 'on_low_hp');
+          for (const e of lowEvents) events.push({ tick: tick++, ...e, round });
+        }
+      }
+
+      // Artifact: Null Pointer survive-lethal
+      if (def.hp <= 0 && def._artifacts) {
+        const lethalEvents = artMod.checkArtifactReactive(state, defender, 'on_lethal');
+        for (const e of lethalEvents) events.push({ tick: tick++, ...e, round });
+      }
 
       if (def.hp <= 0) break;
     }

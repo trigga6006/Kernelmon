@@ -10,6 +10,7 @@ const { GlitchEffect, FloatingText } = require('./effects/glitch');
 const { ProjectileManager } = require('./effects/projectile');
 const { BlackHoleEffect, MaelstromEffect, IonCannonEffect, QuantumRiftEffect, SupernovaEffect } = require('./effects/special');
 const { CardAuraManager, getCardTheme } = require('./effects/cardaura');
+const { ArtifactVisualManager } = require('./effects/artifactvisuals');
 const { createRNG } = require('./rng');
 const { getSprite } = require('./sprites');
 const {
@@ -145,6 +146,8 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   const floats = new FloatingText();
   const projectiles = new ProjectileManager(rng, screen.width, screen.height);
   const cardAura = new CardAuraManager(screen.width, screen.height, rng);
+  const artifactVisuals = new ArtifactVisualManager(screen.width, screen.height, rng);
+  artifactVisuals.setArtifacts(fighterA.artifacts || null, fighterB.artifacts || null);
 
   // Tame the intro rain
   for (const col of matrix.columns) {
@@ -1453,6 +1456,12 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     else if (p2HitFrames > 0) sprB?.drawFrontHit(screen, oppX, oppY, frameCount);
     else sprB?.front.draw(screen, oppX, oppY, null, frameCount);
 
+    // ─── Artifact floating visuals ───
+    artifactVisuals.draw(screen, frameCount,
+      { x: plyCenterX, y: plyCenterY },
+      { x: oppCenterX, y: oppCenterY }
+    );
+
     // ─── Evolution aura — ultraviolet/oxidized swirl with code flickers ───
     if (evolved || oppEvolved) {
       // Code fragments that flicker in the aura
@@ -1601,6 +1610,19 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     if (fighterB.rp !== undefined) {
       drawRankBadge(screen, oppBarX, oppInfoY + 2, fighterB.rp, frameCount);
     }
+    // Opponent artifact icons
+    if (fighterB.artifacts) {
+      let artIconX = oppBarX;
+      const artIconY = oppInfoY + 3;
+      const { ARTIFACTS: ART_DB, ARTIFACT_SLOT_ICONS: ASI, ARTIFACT_SLOT_COLORS_RGB: ASCR } = require('./artifacts');
+      for (const slot of ['core', 'module', 'relic']) {
+        const id = fighterB.artifacts[slot];
+        if (id && ART_DB[id]) {
+          screen.set(artIconX, artIconY, ASI[slot], rgb(...ASCR[slot]));
+          artIconX += 2;
+        }
+      }
+    }
 
     // Player info
     const plyArch = fighterA.archetype?.name || '';
@@ -1627,6 +1649,19 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     // Player rank badge (always shown — uses local RP)
     const plyRankLen = drawRankBadge(screen, plyBarX, plyBarY + 2, getLocalRp(), frameCount);
     drawTranscendentBadge(screen, plyBarX + plyRankLen + 1, plyBarY + 2, frameCount);
+    // Player artifact icons
+    if (fighterA.artifacts) {
+      let artIconX = plyBarX;
+      const artIconY = plyBarY + 3;
+      const { ARTIFACTS: ART_DB, ARTIFACT_SLOT_ICONS: ASI, ARTIFACT_SLOT_COLORS_RGB: ASCR } = require('./artifacts');
+      for (const slot of ['core', 'module', 'relic']) {
+        const id = fighterA.artifacts[slot];
+        if (id && ART_DB[id]) {
+          screen.set(artIconX, artIconY, ASI[slot], rgb(...ASCR[slot]));
+          artIconX += 2;
+        }
+      }
+    }
 
     // Log divider
     screen.hline(1, logY - 1, w - 2, '─', colors.dimmer);
@@ -2106,6 +2141,102 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         targetCy: dWho === 'a' ? oppCenterY : plyCenterY,
         startFrame: frameCount,
       });
+
+    } else if (event.type === 'artifact_trigger') {
+      // Artifact reactive effect fired
+      const dWho = toDisplay(event.who);
+      const cx = dWho === 'a' ? plyCenterX : oppCenterX;
+      const cy = dWho === 'a' ? plyCenterY - 3 : oppCenterY - 2;
+      const artName = event.artifact || 'Artifact';
+
+      // Color by slot type (determined from artifact catalog)
+      const _artColors = {
+        core:   rgb(240, 200, 80),
+        module: rgb(80, 200, 220),
+        relic:  rgb(160, 60, 220),
+      };
+      let artSlot = 'core';
+      try {
+        const { ARTIFACTS } = require('./artifacts');
+        const found = Object.values(ARTIFACTS).find(a => a.name === artName);
+        if (found) artSlot = found.slot;
+      } catch {}
+      const artColor = _artColors[artSlot] || rgb(200, 200, 200);
+
+      switch (event.effect) {
+        case 'cleanse_stun':
+          addLog(`  ${artName}: Auto-cleansed stun!`, artColor);
+          floats.add(cx - 3, cy, 'CLEANSE', artColor, 14);
+          break;
+        case 'spd_steal':
+          addLog(`  ${artName}: Stole ${event.amount} SPD`, artColor);
+          break;
+        case 'self_damage':
+          addLog(`  ${artName}: -${event.damage} HP (instability)`, rgb(180, 80, 80));
+          break;
+        case 'pierce_defense':
+          addLog(`  ${artName}: DEFENSE BYPASSED`, artColor);
+          floats.add(cx - 3, cy, 'PIERCE', artColor, 12);
+          break;
+        case 'stat_swap':
+          addLog(`  ${artName}: STR↔MAG swapped!`, artColor);
+          break;
+        case 'stack_gained':
+          addLog(`  ${artName}: Charge x${event.stacks}`, artColor);
+          break;
+        case 'charged':
+          addLog(`  ${artName}: Fully charged!`, artColor);
+          floats.add(cx - 2, cy, 'CHARGED', artColor, 14);
+          break;
+        case 'reflect':
+          addLog(`  ${artName}: Reflected ${event.damage} damage!`, artColor);
+          floats.add(cx - 3, cy, `⟨${event.damage}⟩`, artColor, 14);
+          break;
+        case 'counter':
+          addLog(`  ${artName}: Counter! ${event.damage} damage`, artColor);
+          floats.add(cx - 3, cy, 'COUNTER', artColor, 16);
+          break;
+        case 'crit_burn':
+          addLog(`  ${artName}: Burn! +${event.damage} bonus`, artColor);
+          break;
+        case 'discharge':
+          addLog(`  ${artName}: Discharged! Enemy debuffed`, artColor);
+          floats.add(cx - 3, cy, 'DISCHARGE', artColor, 14);
+          break;
+        case 'survive_lethal':
+          addLog(`  ${artName}: SURVIVED LETHAL!`, artColor);
+          floats.add(cx - 4, cy - 1, 'NULL DEREF', artColor, 20);
+          glitch.burst(cx, cy, 6, 6);
+          break;
+        case 'immune':
+          addLog(`  ${artName}: Immune — damage negated`, artColor);
+          floats.add(cx - 3, cy, 'IMMUNE', artColor, 14);
+          break;
+        case 'equalize': {
+          addLog(`  ${artName}: HP EQUALIZED to ${event.newHp}!`, artColor);
+          floats.add(cx - 3, cy, 'EQUALIZE', artColor, 18);
+          glitch.screenTear(w, 4);
+          // Update both HP targets
+          syncDisplayHpFromState();
+          break;
+        }
+        case 'cooldown_reset':
+          addLog(`  ${artName}: Reset opponent's ${event.move}!`, artColor);
+          break;
+        default:
+          addLog(`  ${artName}: ${event.effect}`, artColor);
+      }
+
+    } else if (event.type === 'heal_tick') {
+      // Passive heal per turn (archetype + artifact)
+      const dWho = toDisplay(event.who);
+      if (event.amount > 0) {
+        const cx = dWho === 'a' ? plyCenterX : oppCenterX;
+        const cy = dWho === 'a' ? plyCenterY - 3 : oppCenterY - 2;
+        floats.add(cx, cy, `+${event.amount}`, colors.mint, 10);
+        if (dWho === 'a') targetHpA = Math.min(targetHpA + event.amount, battleState[meSlot].maxHp);
+        else targetHpB = Math.min(targetHpB + event.amount, battleState[oppSlot].maxHp);
+      }
     }
   }
 }

@@ -213,7 +213,7 @@ function saveParts(inv) {
 // Index 0 is always the main character (real hardware + optional overrides)
 // Index 1+ are custom characters built entirely from parts
 
-const DEFAULT_BUILDS = { active: 0, builds: [{ name: 'My Rig', main: true, parts: {} }] };
+const DEFAULT_BUILDS = { active: 0, builds: [{ name: 'My Rig', main: true, parts: {}, artifacts: {} }] };
 
 function refundEquippedPartsToInventory(parts) {
   for (const partId of Object.values(parts || {})) {
@@ -246,6 +246,11 @@ function loadBuilds() {
       data.builds = [{ name: 'My Rig', main: true, parts: {} }];
     }
     if (!data.builds[0].main) data.builds[0].main = true;
+
+    // Ensure artifacts field exists on all builds
+    for (const build of data.builds) {
+      if (!build.artifacts) build.artifacts = {};
+    }
 
     return data;
   } catch { return JSON.parse(JSON.stringify(DEFAULT_BUILDS)); }

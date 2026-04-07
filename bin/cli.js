@@ -54,7 +54,11 @@ async function buildFighter(rawSpecs) {
     sprite = applyTranscendentPartEffects(sprite, equippedParts);
   } catch {}
 
-  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, equippedParts };
+  // Load equipped artifacts
+  const { getEquippedArtifacts } = require('../src/artifacts');
+  const artifacts = getEquippedArtifacts(buildIdx);
+
+  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, equippedParts, artifacts };
 }
 
 async function prepareBenchToBattle(fighter, opponent = null) {

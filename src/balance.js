@@ -252,6 +252,13 @@ function effectiveStat(raw) {
 // ─── Main combat modifier function ───
 // Called once per attack. Returns combined modifiers from passive + underdog.
 
+// Lazy-load artifacts to avoid circular deps
+let _artifactsMod = null;
+function artifactsMod() {
+  if (!_artifactsMod) _artifactsMod = require('./artifacts');
+  return _artifactsMod;
+}
+
 function getCombatModifiers(ctx) {
   const { atkArchetype, defArchetype, atk, def, rng, turn, consecutiveAttacks, move } = ctx;
   const hpRatio = atk.hp / atk.maxHp;
@@ -267,27 +274,44 @@ function getCombatModifiers(ctx) {
   const benchmarkMods = getBenchmarkCombatModifiers(atk.benchmark, turn, move) || {};
 
   // Category effectiveness: move category vs defender archetype
-  const categoryMult = getCategoryMultiplier(move?.cat || 'special', defArchetype);
+  let categoryMult = getCategoryMultiplier(move?.cat || 'special', defArchetype);
+
+  // Artifact passive modifiers
+  const artMods = atk._artifacts
+    ? artifactsMod().getArtifactCombatModifiers(atk._artifacts, atk._artifactState || {}, { atk, def, rng, turn, move })
+    : {};
+
+  // Bit Flip relic: invert category effectiveness
+  if (artMods._invertEffectiveness) {
+    if (categoryMult > 1.0) categoryMult = 0.8;
+    else if (categoryMult < 1.0) categoryMult = 1.25;
+  }
 
   // Combine multiplicatively for damage/def, additively for crit/dodge
   return {
-    damageMult: (passiveMods.damageMult || 1) * (underdogMods.damageMult || 1) * (benchmarkMods.damageMult || 1),
+    damageMult: (passiveMods.damageMult || 1) * (underdogMods.damageMult || 1) * (benchmarkMods.damageMult || 1) * (artMods.damageMult || 1),
     categoryMult,
     flatDamage: (passiveMods.flatDamage || 0) + (underdogMods.flatDamage || 0),
-    defMult: (passiveMods.defMult || 1) * (underdogMods.defMult || 1),
-    critBonus: (passiveMods.critBonus || 0) + (underdogMods.critBonus || 0) + (benchmarkMods.critBonus || 0),
+    defMult: (passiveMods.defMult || 1) * (underdogMods.defMult || 1) * (artMods.defMult || 1),
+    critBonus: (passiveMods.critBonus || 0) + (underdogMods.critBonus || 0) + (benchmarkMods.critBonus || 0) + (artMods.critBonus || 0),
     critMult: passiveMods.critMult || null,  // override crit multiplier if set
-    dodgeBonus: (passiveMods.dodgeBonus || 0) + (underdogMods.dodgeBonus || 0) + (benchmarkMods.dodgeBonus || 0),
+    dodgeBonus: (passiveMods.dodgeBonus || 0) + (underdogMods.dodgeBonus || 0) + (benchmarkMods.dodgeBonus || 0) + (artMods.dodgeBonus || 0),
     skipChance: Math.max(0, (passiveMods.skipChance || 0) * (benchmarkMods.skipChanceMult || 1)),
     spdPenalty: passiveMods.spdPenalty || 0,
     initiativeBonus: benchmarkMods.initiativeBonus || 0,
     statusResist: benchmarkMods.statusResist || 0,
     selfDamageOnCrit: passiveMods.selfDamageOnCrit || 0,
     selfDamageAmount: passiveMods.selfDamageAmount || 0,
-    varianceOverride: passiveMods.varianceOverride || null,
+    varianceOverride: artMods.varianceOverride || passiveMods.varianceOverride || null,
     fizzle: passiveMods.fizzle || false,
     healBonus: passiveMods.healBonus || 0,
-    healPerTurn: passiveMods.healPerTurn || 0,
+    healPerTurn: (passiveMods.healPerTurn || 0) + (artMods.healPerTurn || 0),
+    // Artifact special flags
+    _ignoreDefense: artMods._ignoreDefense || false,
+    _bitFlipSwap: artMods._bitFlipSwap || false,
+    _consumeEchoBuffer: artMods._consumeEchoBuffer || false,
+    _siliconFurnaceCritBonus: artMods._siliconFurnaceCritBonus || 0,
+    _deadlockMirrorActive: artMods._deadlockMirrorActive || false,
   };
 }
 

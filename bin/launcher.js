@@ -89,6 +89,7 @@ const MENU_ITEMS = [
   { key: 'demo_turns',  label: 'TURN BATTLE',     desc: 'Turn-based vs Chromebook',   icon: '◆' },
   { key: 'dash',        label: 'DASH MODE',       desc: 'Side-scroll obstacle runner', icon: '▸' },
   { key: 'hackgrid',    label: 'HACK THE GRID',   desc: 'Dodge sentries, grab data',   icon: '⌬' },
+  { key: 'packitpanic', label: 'PACK IT PANIC',   desc: 'Real-time packet defense',    icon: '⚡' },
   { key: 'rogue',       label: 'SOLO MODE',       desc: 'Explore the void, find battles', icon: '◉' },
   { key: 'gym',         label: 'GYM LADDER',      desc: 'Fight gym leaders in order',    icon: '▲' },
   { key: 'profile',     label: 'MY PROFILE',      desc: 'View your fighter stats',    icon: '◈' },
@@ -125,6 +126,7 @@ const ITEM_COLORS = {
   rogue:       rgb(75, 150, 90),
   gym:         rgb(255, 180, 60),
   hackgrid:    rgb(0, 255, 180),
+  packitpanic: rgb(255, 100, 180),
   profile:     colors.cyan,
   loadout:     colors.lavender,
   bag:         colors.mint,
@@ -251,7 +253,11 @@ async function buildFighter(rawSpecs) {
   let rp = 0;
   try { rp = require('../src/ranked').getRp(); } catch {}
 
-  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId, equippedParts, titleId, rp };
+  // Load equipped artifacts
+  const { getEquippedArtifacts } = require('../src/artifacts');
+  const artifacts = getEquippedArtifacts(buildIdx);
+
+  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId, equippedParts, artifacts, titleId, rp };
 }
 
 async function ensureSessionSpecs(sessionState, loadingLabel = 'Scanning hardware') {
@@ -1828,6 +1834,85 @@ async function handleHackGrid(fighter, sessionState) {
     if (partDrop) {
       const rc = RARITY_COLORS[partDrop.rarity] || colors.dim;
       scr.centerText(rewardLine, `▸ PART: ${partDrop.label || partDrop.id}  (${partDrop.rarity})`, rc, null, true);
+      rewardLine++;
+    }
+
+    scr.hline(2, h - 4, w - 4, '─', colors.ghost);
+    scr.centerText(h - 3, '[R] Retry    [Q] Return to Menu', colors.white);
+    scr.render();
+
+    const key = await waitForKeyReturn();
+    scr.exit();
+    playAgain = (key === 'r' || key === 'R');
+  }
+}
+
+async function handlePackItPanic(fighter, sessionState) {
+  fighter = await ensureSessionFighter(sessionState, fighter);
+
+  let renderPackItPanic;
+  try { renderPackItPanic = require('../src/packitpanic').renderPackItPanic; } catch (e) {}
+
+  if (!renderPackItPanic) {
+    await showInfoScreen('PACK IT PANIC', (scr, w, h) => {
+      scr.centerText(Math.floor(h / 2), 'Pack It Panic unavailable.', colors.rose);
+    });
+    return;
+  }
+
+  let playAgain = true;
+  while (playAgain) {
+    const result = await renderPackItPanic(fighter);
+
+    // Credits: base 50, +1 per integrity remaining, +100 win bonus
+    const { addCredits } = require('../src/credits');
+    let earned = 50 + Math.max(0, result.myIntegrity);
+    if (result.won) earned += 100;
+    earned = Math.max(earned, 10);
+    const newBal = addCredits(earned);
+
+    // Item drops on win
+    let itemDrop = null;
+    if (result.won) {
+      const itemRng = createRNG(Date.now());
+      const tier = result.myIntegrity > 70 ? 'high' : result.myIntegrity > 40 ? 'mid' : 'low';
+      const itemRewards = rollRewards(itemRng, tier, true);
+      if (itemRewards.length > 0) {
+        itemDrop = itemRewards[0];
+        addItem(itemDrop.id);
+      }
+    }
+
+    const scr = new Screen();
+    scr.enter();
+    scr.padded();
+    const w = scr.width;
+    const h = scr.height;
+    const cy = Math.floor(h / 2);
+
+    scr.centerText(0, '─'.repeat(w), colors.dimmer);
+    scr.centerText(0, ' MATCH COMPLETE ', rgb(255, 100, 180), null, true);
+
+    scr.centerText(cy - 4, '⚡  P A C K  I T  P A N I C  ⚡', rgb(255, 100, 180), null, true);
+
+    if (result.won) {
+      scr.centerText(cy - 2, 'V I C T O R Y', colors.mint, null, true);
+    } else if (result.reason === 'quit') {
+      scr.centerText(cy - 2, 'Disconnected.', colors.dim);
+    } else {
+      scr.centerText(cy - 2, 'D E F E A T', colors.rose, null, true);
+    }
+
+    scr.centerText(cy, `Your Integrity: ${result.myIntegrity}%  |  Opponent: ${result.oppIntegrity}%`, colors.white);
+
+    // Credits
+    scr.centerText(cy + 2, `◆ +${earned} credits  (balance: ${newBal})`, colors.gold);
+
+    // Item drop
+    let rewardLine = cy + 4;
+    if (itemDrop) {
+      const rc = RARITY_COLORS[itemDrop.rarity] || colors.dim;
+      scr.centerText(rewardLine, `▸ ${itemDrop.icon}  ${itemDrop.name}  (${itemDrop.rarity})`, rc, null, true);
       rewardLine++;
     }
 
@@ -3973,6 +4058,7 @@ async function handleMinigameMenu() {
   return openPlaySubmenu('M I N I G A M E', rgb(0, 255, 180), [
     { key: 'dash',     label: 'DASH MODE', desc: 'Side-scroll obstacle runner', sub: 'Dodge and dash to survive', icon: '▸', color: colors.coral },
     { key: 'hackgrid', label: 'HACK THE GRID', desc: 'Dodge sentries, grab data', sub: 'Stealth grid infiltration', icon: '⌬', color: rgb(0, 255, 180) },
+    { key: 'packitpanic', label: 'PACK IT PANIC', desc: 'Real-time packet defense PvP', sub: 'Clear lanes, sabotage opponents', icon: '⚡', color: rgb(255, 100, 180) },
   ]);
 }
 
@@ -4015,6 +4101,7 @@ async function run() {
         const sub = await handleMinigameMenu();
         if (sub === 'dash') await handleDash(fighter, sessionState);
         else if (sub === 'hackgrid') await handleHackGrid(fighter, sessionState);
+        else if (sub === 'packitpanic') await handlePackItPanic(fighter, sessionState);
         break;
       }
       case 'demo':
@@ -4028,6 +4115,9 @@ async function run() {
         break;
       case 'hackgrid':
         await handleHackGrid(fighter, sessionState);
+        break;
+      case 'packitpanic':
+        await handlePackItPanic(fighter, sessionState);
         break;
       case 'rogue':
         await handleRogue(fighter, sessionState);

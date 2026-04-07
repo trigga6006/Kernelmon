@@ -14,6 +14,7 @@ const { toneColor } = require('./benchmark');
 const { drawTitle } = require('./titles');
 const { drawRankBadge, getRp: getLocalRp } = require('./ranked');
 const { drawTranscendentBadge } = require('./systemcore');
+const { ArtifactVisualManager } = require('./effects/artifactvisuals');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -51,6 +52,8 @@ async function renderBattle(fighterA, fighterB, events) {
   const glitch = new GlitchEffect(rng);
   const floats = new FloatingText();
   const projectiles = new ProjectileManager(rng, screen.width, screen.height);
+  const artifactVisuals = new ArtifactVisualManager(screen.width, screen.height, rng);
+  artifactVisuals.setArtifacts(fighterA.artifacts || null, fighterB.artifacts || null);
 
   // Tame the intro rain
   for (const col of matrix.columns) {
@@ -268,6 +271,43 @@ async function renderBattle(fighterA, fighterB, events) {
       const sy = event.who === 'a' ? plyCenterY - 3 : oppCenterY - 2;
       floats.add(sx, sy, 'STUNNED', colors.rose, 12);
 
+    } else if (event.type === 'artifact_trigger') {
+      const artName = event.artifact || 'Artifact';
+      const _artSlotColors = {
+        core: rgb(240, 200, 80), module: rgb(80, 200, 220), relic: rgb(160, 60, 220),
+      };
+      let artSlot = 'core';
+      try {
+        const { ARTIFACTS: ADB } = require('./artifacts');
+        const found = Object.values(ADB).find(a => a.name === artName);
+        if (found) artSlot = found.slot;
+      } catch {}
+      const artColor = _artSlotColors[artSlot];
+      const cx = event.who === 'a' ? plyCenterX : oppCenterX;
+      const cy = event.who === 'a' ? plyCenterY - 3 : oppCenterY - 2;
+
+      if (event.effect === 'reflect' || event.effect === 'counter') {
+        addLog(`${artName}: ${event.damage} dmg`, artColor);
+        floats.add(cx - 2, cy, `${event.damage}`, artColor, 14);
+      } else if (event.effect === 'survive_lethal') {
+        addLog(`${artName}: SURVIVED LETHAL!`, artColor);
+        floats.add(cx - 3, cy, 'SURVIVE', artColor, 18);
+        glitch.burst(cx, cy, 6, 6);
+      } else if (event.effect === 'equalize') {
+        addLog(`${artName}: HP EQUALIZED`, artColor);
+        floats.add(cx - 3, cy, 'EQUALIZE', artColor, 16);
+        targetHpA = event.hpA; targetHpB = event.hpB;
+      } else if (event.effect === 'cleanse_stun') {
+        addLog(`${artName}: Cleansed stun`, artColor);
+        floats.add(cx - 2, cy, 'CLEANSE', artColor, 12);
+      } else if (event.effect === 'pierce_defense') {
+        floats.add(cx - 2, cy, 'PIERCE', artColor, 12);
+      } else if (event.effect === 'crit_burn' || event.effect === 'discharge') {
+        addLog(`${artName}: ${event.effect}`, artColor);
+      }
+      // Update HP targets for reflect/counter damage
+      if (event.hpA !== undefined) { targetHpA = event.hpA; targetHpB = event.hpB; }
+
     } else if (event.type === 'ko') {
       winner = event.winner;
       if (event.loser === 'a') p1KO = true;
@@ -360,6 +400,12 @@ async function renderBattle(fighterA, fighterB, events) {
     } else {
       sprB ? sprB.front.draw(screen, oppX, oppY, null, frameCount) : null;
     }
+
+    // Artifact floating visuals
+    artifactVisuals.draw(screen, frameCount,
+      { x: plyCenterX, y: plyCenterY },
+      { x: oppCenterX, y: oppCenterY }
+    );
   }
 
   function drawUI(screen, elapsed) {
@@ -391,6 +437,19 @@ async function renderBattle(fighterA, fighterB, events) {
     if (fighterB.rp !== undefined) {
       drawRankBadge(screen, oppBarX, oppInfoY + 3, fighterB.rp, frameCount);
     }
+    // Opponent artifact icons
+    if (fighterB.artifacts) {
+      let artIconX = oppBarX;
+      const artIconY = oppInfoY + 4;
+      const { ARTIFACTS: ART_DB, ARTIFACT_SLOT_ICONS: ASI, ARTIFACT_SLOT_COLORS_RGB: ASCR } = require('./artifacts');
+      for (const slot of ['core', 'module', 'relic']) {
+        const id = fighterB.artifacts[slot];
+        if (id && ART_DB[id]) {
+          screen.set(artIconX, artIconY, ASI[slot], rgb(...ASCR[slot]));
+          artIconX += 2;
+        }
+      }
+    }
 
     // ─── Player info (centered, below opponent — matches turn-based layout) ───
     const plyInfoY = plyBarY;
@@ -411,6 +470,19 @@ async function renderBattle(fighterA, fighterB, events) {
     // Player rank badge + transcendent indicator
     const plyRankLen = drawRankBadge(screen, plyBarX, plyInfoY + 4, getLocalRp(), frameCount);
     drawTranscendentBadge(screen, plyBarX + plyRankLen + 1, plyInfoY + 4, frameCount);
+    // Player artifact icons
+    if (fighterA.artifacts) {
+      let artIconX = plyBarX;
+      const artIconY = plyInfoY + 5;
+      const { ARTIFACTS: ART_DB, ARTIFACT_SLOT_ICONS: ASI, ARTIFACT_SLOT_COLORS_RGB: ASCR } = require('./artifacts');
+      for (const slot of ['core', 'module', 'relic']) {
+        const id = fighterA.artifacts[slot];
+        if (id && ART_DB[id]) {
+          screen.set(artIconX, artIconY, ASI[slot], rgb(...ASCR[slot]));
+          artIconX += 2;
+        }
+      }
+    }
   }
 
   function drawLogPanel(screen) {
