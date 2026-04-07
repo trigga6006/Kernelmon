@@ -344,7 +344,17 @@ function processTurn(state, moveA, moveB) {
         const critEvents = cb.checkReactiveCards(state, defender, 'on_crit_received');
         events.push(...critEvents);
       }
-      // Attacker dodge triggers (handled above in dodge block, but counter-check here)
+      // Trap trigger: if defender has a trap set, attacker takes reflect damage + stun chance
+      if (def._trap) {
+        const reflectDmg = Math.round(atk.maxHp * def._trap.reflectDamage);
+        atk.hp = Math.max(1, atk.hp - reflectDmg);
+        if (Math.random() < def._trap.stunChance) atk.stunned = true;
+        events.push({
+          type: 'card_trigger', who: defender, card: 'Segfault Trap',
+          cardType: 'reactive', subtype: 'counter', damage: reflectDmg,
+          hpA: state.a.hp, hpB: state.b.hp,
+        });
+      }
     }
 
     if (def.hp <= 0) {
@@ -407,7 +417,14 @@ function applyBattleStateSnapshot(state, snapshot) {
 // ─── Card mode: activate an active card (passthrough to cardbalance) ───
 function activateCard(state, who, cardIdx) {
   if (!state.cardMode) return null;
-  return cardBalance().applyActiveCard(state, who, cardIdx);
+  const result = cardBalance().applyActiveCard(state, who, cardIdx);
+  // Check opponent's reactive triggers for on_enemy_card (e.g. Trojan Horse)
+  if (result) {
+    const opponent = who === 'a' ? 'b' : 'a';
+    const stealEvents = cardBalance().checkReactiveCards(state, opponent, 'on_enemy_card');
+    if (stealEvents.length > 0) result._reactiveEvents = stealEvents;
+  }
+  return result;
 }
 
 module.exports = {

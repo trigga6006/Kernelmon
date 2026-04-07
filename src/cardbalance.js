@@ -172,6 +172,12 @@ function checkReactiveCards(state, who, triggerType, triggerCtx = {}) {
       case 'battle_start':
         if (triggerType === 'battle_start') triggered = true;
         break;
+      case 'hit_count':
+        if (triggerType === 'after_damage') triggered = true;
+        break;
+      case 'on_enemy_card':
+        if (triggerType === 'on_enemy_card') triggered = true;
+        break;
     }
 
     if (!triggered) continue;
@@ -291,6 +297,65 @@ function applyReactiveEffect(eff, fighter, opponent, card, who, state) {
       fighter._cardBoosts.push({ stat: 'all', value: eff.value, turns: eff.duration || 5 });
       event.subtype = 'mega_boost';
       event.value = eff.value;
+      break;
+    }
+    case 'resist_heal': {
+      // Resist the stun + heal a bit
+      if (Math.random() < (eff.resistChance || 0.4)) {
+        fighter.stunned = false;
+        const amt = Math.round(fighter.maxHp * (eff.healValue || 0.05));
+        fighter.hp = Math.min(fighter.maxHp, fighter.hp + amt);
+        event.subtype = 'heal';
+        event.amount = amt;
+      } else {
+        return null; // didn't resist
+      }
+      break;
+    }
+    case 'strip_buff': {
+      // Remove opponent's strongest buff
+      if (opponent._cardBoosts && opponent._cardBoosts.length > 0) {
+        let bestIdx = 0;
+        for (let i = 1; i < opponent._cardBoosts.length; i++) {
+          if (opponent._cardBoosts[i].value > opponent._cardBoosts[bestIdx].value) bestIdx = i;
+        }
+        opponent._cardBoosts.splice(bestIdx, 1);
+        event.subtype = 'cleanse';
+      } else {
+        return null; // nothing to strip
+      }
+      break;
+    }
+    case 'release_damage': {
+      // Track accumulated damage taken, release it after N hits
+      if (!fighter._accumulatedHits) fighter._accumulatedHits = 0;
+      if (!fighter._accumulatedDmg) fighter._accumulatedDmg = 0;
+      fighter._accumulatedHits++;
+      fighter._accumulatedDmg += (state._lastDamage || 0);
+      if (fighter._accumulatedHits >= (eff.hitThreshold || 4)) {
+        const releaseDmg = Math.round(fighter._accumulatedDmg * (eff.releaseRatio || 0.25));
+        opponent.hp = Math.max(1, opponent.hp - releaseDmg);
+        fighter._accumulatedHits = 0;
+        fighter._accumulatedDmg = 0;
+        event.subtype = 'counter';
+        event.damage = releaseDmg;
+      } else {
+        return null; // still accumulating
+      }
+      break;
+    }
+    case 'steal_effect': {
+      // Steal opponent's most recent buff
+      if (opponent._cardBoosts && opponent._cardBoosts.length > 0) {
+        const stolen = opponent._cardBoosts.pop();
+        if (!fighter._cardBoosts) fighter._cardBoosts = [];
+        fighter._cardBoosts.push({ ...stolen });
+        event.subtype = 'boost';
+        event.stat = stolen.stat;
+        event.value = stolen.value;
+      } else {
+        return null; // nothing to steal
+      }
       break;
     }
     default:
@@ -425,6 +490,38 @@ function applyActiveCard(state, who, cardIdx) {
       event.damage = dmg;
       break;
     }
+    case 'drain': {
+      const dmg = Math.round(opponent.maxHp * eff.damage);
+      opponent.hp = Math.max(1, opponent.hp - dmg);
+      fighter.hp = Math.min(fighter.maxHp, fighter.hp + dmg);
+      event.subtype = 'drain';
+      event.damage = dmg;
+      event.amount = dmg;
+      break;
+    }
+    case 'set_trap': {
+      fighter._trap = {
+        reflectDamage: eff.reflectDamage || 0.3,
+        stunChance: eff.stunChance || 0.5,
+        turns: eff.trapDuration || 3,
+      };
+      event.subtype = 'set_trap';
+      break;
+    }
+    case 'multi_hit': {
+      let totalDmg = 0;
+      const hits = eff.hits || 3;
+      for (let i = 0; i < hits; i++) {
+        const dmg = Math.round(opponent.maxHp * eff.damage);
+        opponent.hp = Math.max(1, opponent.hp - dmg);
+        totalDmg += dmg;
+        if (Math.random() < (eff.stunChance || 0)) opponent.stunned = true;
+      }
+      event.subtype = 'multi_hit';
+      event.damage = totalDmg;
+      event.hits = hits;
+      break;
+    }
     case 'reset': {
       const hpVal = Math.round(fighter.maxHp * eff.hpValue);
       fighter.hp = hpVal;
@@ -472,6 +569,11 @@ function tickCardEffects(fighter) {
   if (fighter._invulnerable > 0) fighter._invulnerable--;
   // Tick silence
   if (fighter._silenced > 0) fighter._silenced--;
+  // Tick trap
+  if (fighter._trap) {
+    fighter._trap.turns--;
+    if (fighter._trap.turns <= 0) fighter._trap = null;
+  }
   // Tick card cooldowns
   if (fighter.cards) {
     for (const c of fighter.cards) {

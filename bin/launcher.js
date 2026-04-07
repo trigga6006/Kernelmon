@@ -95,6 +95,7 @@ const MENU_ITEMS = [
   { key: 'loadout',     label: 'LOADOUT',          desc: 'Configure equipped moves',   icon: '⚔' },
   { key: 'bag',         label: 'BAG',              desc: 'View collected items',       icon: '◰' },
   { key: 'workshop',    label: 'WORKSHOP',         desc: 'Swap parts on your build',   icon: '▣' },
+  { key: 'ranked',      label: 'RANKED',            desc: 'View your competitive rank', icon: '▲' },
   { key: 'titles',      label: 'TITLES',            desc: 'View & equip title tags',         icon: '◈' },
   { key: 'skins',       label: 'SKIN LOCKER',      desc: 'View & equip Transcendent skins', icon: '✧' },
   { key: 'lootbox',     label: 'LOOT BOX',         desc: 'Spend credits on crates',    icon: '✦' },
@@ -127,6 +128,7 @@ const ITEM_COLORS = {
   loadout:     colors.lavender,
   bag:         colors.mint,
   workshop:    rgb(255, 215, 0),
+  ranked:      rgb(255, 100, 100),
   titles:      rgb(180, 200, 255),
   skins:       rgb(200, 120, 255),
   lootbox:     rgb(240, 170, 50),
@@ -172,6 +174,7 @@ const MENU_GROUPS = [
   },
   { type: 'item', key: 'bag' },
   { type: 'item', key: 'workshop' },
+  { type: 'item', key: 'ranked' },
   {
     type: 'section',
     key: 'etc',
@@ -241,7 +244,11 @@ async function buildFighter(rawSpecs) {
   // Apply equipped title
   const titleId = getEquippedTitleId(buildIdx);
 
-  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId, equippedParts, titleId };
+  // Embed ranked RP so opponents can see our rank badge
+  let rp = 0;
+  try { rp = require('../src/ranked').getRp(); } catch {}
+
+  return { id: rawSpecs.id, name, gpu, stats, specs, sprite, archetype, skinId, equippedParts, titleId, rp };
 }
 
 async function ensureSessionSpecs(sessionState, loadingLabel = 'Scanning hardware') {
@@ -723,7 +730,7 @@ async function mainMenu(sessionState = {}) {
     drawLogo(screen, w, h, frameCount);
     drawMenu(screen, w, h, frameCount, currentMenuEntries(), cursor);
     drawProfileCard(screen, w, h, frameCount, scanning);
-    drawWallet(screen, w, h);
+    drawWallet(screen, w, h, frameCount);
     drawFooter(screen, w, h);
 
     screen.render();
@@ -991,22 +998,150 @@ async function mainMenu(sessionState = {}) {
     }
   }
 
-  function drawWallet(screen, w, h) {
+  function drawWallet(screen, w, h, frame) {
     const { getBalance, formatBalance, getCardKeys } = require('../src/credits');
+    const { getCurrentRank, getRp, getRankIndex } = require('../src/ranked');
     const balance = getBalance();
     const keys = getCardKeys();
+    const rank = getCurrentRank();
+    const rp = getRp();
+    const idx = getRankIndex(rp);
     const footY = h - 2;
     const walletY = footY - 2;
-    const items = [
-      { label: `◆ ${formatBalance(balance)} credits`, color: colors.gold },
-      { label: `♦ ${keys} card key${keys !== 1 ? 's' : ''}`, color: rgb(255, 180, 100) },
-    ];
-    let totalLen = items.reduce((s, i) => s + i.label.length, 0) + (items.length - 1) * 4;
+
+    // Credits + keys (always static)
+    const creditLabel = `◆ ${formatBalance(balance)} credits`;
+    const keyLabel = `♦ ${keys} card key${keys !== 1 ? 's' : ''}`;
+    const rankLabel = `${rank.icon} ${rank.name} (${rp.toLocaleString()} RP)`;
+
+    const totalLen = creditLabel.length + keyLabel.length + rankLabel.length + 8;
     let x = Math.floor((w - totalLen) / 2);
-    for (let i = 0; i < items.length; i++) {
-      screen.text(x, walletY, items[i].label, items[i].color);
-      x += items[i].label.length + 4;
+
+    screen.text(x, walletY, creditLabel, colors.gold);
+    x += creditLabel.length + 4;
+    screen.text(x, walletY, keyLabel, rgb(255, 180, 100));
+    x += keyLabel.length + 4;
+
+    const rankX = x;
+    frame = frame || 0;
+
+    // ─── Animated rank display for high tiers ───
+    if (rank.id === 'root_origin') {
+      // //ROOT — void glitch: chars phase between white and deep purple, occasional corruption
+      const glitchChars = '▓▒░█╪╫╬◊◈⟐';
+      const t = frame * 0.1;
+      for (let i = 0; i < rankLabel.length; i++) {
+        let ch = rankLabel[i];
+        const h2 = _walletHash(i, frame);
+        const spike = Math.sin(t * 6.7) > 0.9;
+        let color;
+        if (spike) {
+          color = rgb(255, 255, 255);
+        } else if (h2 < 0.08 && ch !== ' ' && ch !== '(' && ch !== ')') {
+          ch = glitchChars[Math.floor(_walletHash(i + 77, frame) * glitchChars.length)];
+          color = h2 < 0.04 ? rgb(15, 0, 30) : rgb(255, 240, 255);
+        } else {
+          const p = Math.sin(t + i * 0.4) * 0.5 + 0.5;
+          color = rgb(Math.round(120 + p * 135), Math.round(80 + p * 140), Math.round(200 + p * 55));
+        }
+        screen.set(rankX + i, walletY, ch, color, null, true);
+      }
+      // Bracket accents on the line above
+      const bracketY = walletY - 1;
+      if (bracketY > 0) {
+        const bw = rankLabel.length + 2;
+        const bx = rankX - 1;
+        const pulse = Math.sin(t) * 0.5 + 0.5;
+        const bColor = rgb(Math.round(80 + pulse * 80), Math.round(40 + pulse * 60), Math.round(140 + pulse * 60));
+        screen.set(bx, bracketY, '╸', bColor);
+        screen.set(bx + bw, bracketY, '╺', bColor);
+        for (let i = 1; i < bw; i++) {
+          if (_walletHash(i, Math.floor(frame / 6)) < 0.15) {
+            const gc = glitchChars[Math.floor(_walletHash(i + 30, frame) * glitchChars.length)];
+            screen.set(bx + i, bracketY, gc, rgb(60, 20, 100));
+          } else {
+            screen.set(bx + i, bracketY, '─', bColor);
+          }
+        }
+      }
+    } else if (rank.id === 'kernel_panic') {
+      // KERNEL_PANIC — red glitch/static text
+      const glitchChars = '▓▒░█▌▐╪╫╬╳※';
+      const t = frame * 0.15;
+      for (let i = 0; i < rankLabel.length; i++) {
+        let ch = rankLabel[i];
+        const h2 = _walletHash(i, frame);
+        const flicker = Math.sin(t * 3 + i) > 0.7;
+        let color;
+        if (h2 < 0.12 && ch !== ' ' && ch !== '(' && ch !== ')') {
+          ch = glitchChars[Math.floor(_walletHash(i + 33, frame) * glitchChars.length)];
+          color = flicker ? rgb(255, 40, 40) : rgb(80, 0, 0);
+        } else {
+          const p = Math.sin(t + i * 0.3) * 0.5 + 0.5;
+          color = rgb(Math.round(180 + p * 75), Math.round(30 + p * 30), Math.round(30 + p * 30));
+        }
+        screen.set(rankX + i, walletY, ch, color, null, true);
+      }
+      // Fire accents on line above
+      const fireY = walletY - 1;
+      if (fireY > 0) {
+        const fireChars = '░▒▓▀';
+        for (let i = 0; i < rankLabel.length; i++) {
+          if (_walletHash(i, Math.floor(frame / 3)) < 0.2) {
+            const ch = fireChars[Math.floor(_walletHash(i * 7, Math.floor(frame / 2)) * fireChars.length)];
+            const life = _walletHash(i, frame);
+            screen.set(rankX + i, fireY, ch, rgb(Math.round(255 - life * 80), Math.round(80 * life), 20));
+          }
+        }
+      }
+    } else if (rank.id === 'black_ice') {
+      // BLACK_ICE — ice shimmer text
+      const t = frame * 0.08;
+      for (let i = 0; i < rankLabel.length; i++) {
+        let ch = rankLabel[i];
+        const sparkle = _walletHash(i, frame) < 0.06 && ch !== ' ' && ch !== '(' && ch !== ')';
+        const wave = Math.sin(t + i * 0.5) * 0.15 + 0.85;
+        let color;
+        if (sparkle) {
+          color = rgb(240, 250, 255);
+          ch = '✦';
+        } else {
+          color = rgb(Math.round(100 + wave * 60), Math.round(200 + wave * 30), Math.round(240 + wave * 15));
+        }
+        screen.set(rankX + i, walletY, ch, color, null, true);
+      }
+      // Frost accents on line above
+      const frostY = walletY - 1;
+      if (frostY > 0) {
+        const frostChars = '·✦*✧';
+        for (let i = 0; i < rankLabel.length + 2; i++) {
+          if (_walletHash(i, Math.floor(frame / 6)) < 0.12) {
+            const ch = frostChars[Math.floor(_walletHash(i * 5, Math.floor(frame / 8)) * frostChars.length)];
+            const b = 200 + Math.round(_walletHash(i, frame) * 55);
+            screen.set(rankX - 1 + i, frostY, ch, rgb(140, 220, b));
+          }
+        }
+      }
+    } else if (idx >= 8) {
+      // Ornate tier (PERSIST through ROOTKIT) — pulsing color
+      const t = frame * 0.05;
+      const pulse = Math.sin(t) * 0.2 + 0.8;
+      const nums = rank.color.match(/\d+/g).map(Number);
+      const r = Math.min(Math.round((nums[2] || 100) * pulse), 255);
+      const g = Math.min(Math.round((nums[3] || 100) * pulse), 255);
+      const b = Math.min(Math.round((nums[4] || 100) * pulse), 255);
+      screen.text(rankX, walletY, rankLabel, rgb(r, g, b), null, true);
+    } else {
+      // Static for lower ranks
+      screen.text(rankX, walletY, rankLabel, rank.color);
     }
+  }
+
+  // Deterministic hash for wallet animations (no Math.random in render)
+  function _walletHash(i, frame) {
+    let h = (i * 2654435761 + frame * 340573321) >>> 0;
+    h = ((h >> 16) ^ h) * 0x45d9f3b >>> 0;
+    return (h & 0xFFFF) / 0xFFFF;
   }
 
   function drawFooter(screen, w, h) {
@@ -2257,6 +2392,15 @@ async function handleWorkshop(fighter, sessionState) {
   }
 }
 
+async function handleRanked() {
+  const { openRankedScreen } = require('../src/rankedscreen');
+  const rankedScreen = new Screen();
+  rankedScreen.enter();
+  rankedScreen.padded();
+  await openRankedScreen(rankedScreen);
+  rankedScreen.exit();
+}
+
 async function handleLootBox() {
   try {
     const { openLootShop } = require('../src/lootbox');
@@ -2848,11 +2992,15 @@ async function handleWagerHost(fighter, sessionState) {
     const won = winner === 'a';
     const pot = wagerAmount * 2;
 
+    // Update ranked rating
+    const { updateRank } = require('../src/ranked');
+    const rankResult = updateRank(won, wagerAmount);
+
     if (won) {
       const newBal = awardWager(pot);
-      await showWagerResults(true, pot, newBal, myFighter, opponent);
+      await showWagerResults(true, pot, newBal, myFighter, opponent, rankResult);
     } else {
-      await showWagerResults(false, pot, getBalance(), myFighter, opponent);
+      await showWagerResults(false, pot, getBalance(), myFighter, opponent, rankResult);
     }
 
     // Still save match history (but no normal credit rewards — wager replaces them)
@@ -2993,11 +3141,15 @@ async function handleWagerJoin(fighter, sessionState) {
     const won = winner === 'a';
     const pot = wagerAmount * 2;
 
+    // Update ranked rating
+    const { updateRank } = require('../src/ranked');
+    const rankResult = updateRank(won, wagerAmount);
+
     if (won) {
       const newBal = awardWager(pot);
-      await showWagerResults(true, pot, newBal, myFighter, opponent);
+      await showWagerResults(true, pot, newBal, myFighter, opponent, rankResult);
     } else {
-      await showWagerResults(false, pot, getBalance(), myFighter, opponent);
+      await showWagerResults(false, pot, getBalance(), myFighter, opponent, rankResult);
     }
 
     // Save match history (no normal credit rewards — wager replaces them)
@@ -3018,7 +3170,7 @@ async function handleWagerJoin(fighter, sessionState) {
 }
 
 // ─── Wager results screen ───
-async function showWagerResults(won, pot, currentBalance, myFighter, opponent) {
+async function showWagerResults(won, pot, currentBalance, myFighter, opponent, rankResult) {
   const { formatBalance } = require('../src/credits');
   const scr = new Screen();
   scr.enter();
@@ -3049,6 +3201,20 @@ async function showWagerResults(won, pot, currentBalance, myFighter, opponent) {
     scr.centerText(cy - 3, 'You lost the wager.', colors.dim);
     scr.centerText(cy - 1, `\u25C6 -${(pot / 2).toLocaleString()} credits`, colors.rose, null, true);
     scr.centerText(cy + 1, `Balance: ${formatBalance(currentBalance)} credits`, colors.dim);
+  }
+
+  // ─── Ranked section ───
+  if (rankResult) {
+    const { formatRankChange } = require('../src/ranked');
+    const rankLines = formatRankChange(rankResult);
+    const rankStartY = cy + 3;
+
+    scr.centerText(rankStartY, '─── RANKED ───', colors.dimmer);
+    for (let i = 0; i < rankLines.length; i++) {
+      const line = rankLines[i];
+      const lineColor = line.bold ? `\x1b[1m${line.color}` : line.color;
+      scr.centerText(rankStartY + 1 + i, line.text, lineColor, null, !!line.bold);
+    }
   }
 
   scr.hline(2, h - 4, w - 4, '\u2500', colors.ghost);
@@ -3392,11 +3558,16 @@ async function handleHost(fighter, sessionState) {
     if (wagerAmount > 0) {
       const won = winner === 'a';
       const pot = wagerAmount * 2;
+
+      // Update ranked rating
+      const { updateRank } = require('../src/ranked');
+      const rankResult = updateRank(won, wagerAmount);
+
       if (won) {
         const newBal = awardWager(pot);
-        await showWagerResults(true, pot, newBal, myFighter, opponent);
+        await showWagerResults(true, pot, newBal, myFighter, opponent, rankResult);
       } else {
-        await showWagerResults(false, pot, getBalance(), myFighter, opponent);
+        await showWagerResults(false, pot, getBalance(), myFighter, opponent, rankResult);
       }
       saveMatch(myFighter, opponent, winner, mode === 'cards' ? 'cards' : turnMode ? 'turns' : 'auto');
     } else {
@@ -3574,11 +3745,16 @@ async function handleJoin(fighter, sessionState) {
     if (wagerAmount > 0) {
       const won = winner === 'a';
       const pot = wagerAmount * 2;
+
+      // Update ranked rating
+      const { updateRank } = require('../src/ranked');
+      const rankResult = updateRank(won, wagerAmount);
+
       if (won) {
         const newBal = awardWager(pot);
-        await showWagerResults(true, pot, newBal, myFighter, opponent);
+        await showWagerResults(true, pot, newBal, myFighter, opponent, rankResult);
       } else {
-        await showWagerResults(false, pot, getBalance(), myFighter, opponent);
+        await showWagerResults(false, pot, getBalance(), myFighter, opponent, rankResult);
       }
       saveMatch(myFighter, opponent, winner, mode === 'cards' ? 'cards' : turnMode ? 'turns' : 'auto');
     } else {
@@ -3854,6 +4030,9 @@ async function run() {
         break;
       case 'workshop':
         await handleWorkshop(fighter, sessionState);
+        break;
+      case 'ranked':
+        await handleRanked();
         break;
       case 'titles':
         await handleTitles(fighter, sessionState);

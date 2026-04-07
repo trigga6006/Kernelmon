@@ -179,9 +179,24 @@ function openProfile(fighter, screen, opts) {
           }
         }
 
-        // Credits balance (if provided)
-        if (creditsStr && H - 3 > factsY + lore.facts.length + 1) {
-          screen.text(loreX, H - 3, 'Credits: ' + creditsStr, rgb(255, 215, 0));
+        // Credits balance and ranked rating
+        const bottomY = H - 3;
+        if (bottomY > factsY + lore.facts.length + 1) {
+          if (creditsStr) {
+            screen.text(loreX, bottomY, 'Credits: ' + creditsStr, rgb(255, 215, 0));
+          }
+          try {
+            const { getCurrentRank, getRp, getNextRank } = require('./ranked');
+            const rank = getCurrentRank();
+            const rp = getRp();
+            const next = getNextRank(rp);
+            const rankX = creditsStr ? loreX + ('Credits: ' + creditsStr).length + 4 : loreX;
+            screen.text(rankX, bottomY, `${rank.icon} ${rank.name}`, rank.color);
+            const rpText = next
+              ? ` (${rp} RP — ${next.rp - rp} to ${next.name})`
+              : ` (${rp} RP — MAX RANK)`;
+            screen.text(rankX + rank.name.length + 3, bottomY, rpText, DIMMER);
+          } catch {}
         }
       }
 

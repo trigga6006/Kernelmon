@@ -32,6 +32,7 @@ const { getBenchmarkLogEntries } = require('./benchmark');
 const { getCategoryMultiplier } = require('./balance');
 const { SIGNATURE_COLOR, SIGNATURE_ACCENT, SIGNATURE_ICON } = require('./signature');
 const { drawTitle, getTitleText } = require('./titles');
+const { drawRankBadge, getRp: getLocalRp } = require('./ranked');
 const { drawCard: drawFullCard, drawCollapsedCard, drawCardHand, CARD_W, CARD_H, COLLAPSED_W } = require('./cardart');
 const { CARDS, CARD_RARITY_COLORS_RGB, CARD_RARITY_ICONS, CARD_TYPE_LABELS, CARD_TYPE_COLORS_RGB } = require('./cards');
 
@@ -198,7 +199,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
   let lastItemTurn = 0;
 
   // Card mode state
-  const myCards = cardMode ? (battleState[meSlot].cards || []) : [];
+  let myCards = cardMode ? (battleState[meSlot].cards || []) : [];
   let cardCursor = 0;          // which card in hand is selected
   let cardPopup = false;       // whether the full card popup is showing
   let lastCardTurn = -10;      // turn when last active card was used
@@ -914,7 +915,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
             r({ type: 'card', cardIdx: cardCursor });
           }
         } else if (card && card.type === 'active' && card.cooldown > 0) {
-          addLog(`${card.name} on cooldown (${card.cooldown} turns)`, colors.dim);
+          addLog(`${card.name} on cooldown — ${card.cooldown} turn${card.cooldown !== 1 ? 's' : ''} left`, colors.dim);
         } else if (card && card.type !== 'active') {
           addLog(`${card.name} is ${card.type} (auto-triggers)`, colors.dim);
         } else if (battleState[meSlot]._silenced > 0) {
@@ -1166,10 +1167,17 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       } else if (choice.type === 'card' && cardMode) {
         // Active card activation — consumes the turn (replaces attack)
         const { activateCard } = require('./turnbattle');
-        const cardEvent = activateCard(battleState, meSlot, choice.cardIdx);
+        const card = myCards[choice.cardIdx];
+        let cardEvent;
+        try {
+          cardEvent = activateCard(battleState, meSlot, choice.cardIdx);
+        } catch (err) {
+          addLog(`Card error: ${err.message}`, colors.rose);
+          cardEvent = null;
+        }
         if (cardEvent) {
-          const card = myCards[choice.cardIdx];
           addLog(`♦ Activated: ${card.name}`, rgb(...(CARD_TYPE_COLORS_RGB.active)));
+          if (card.cooldown > 0) addLog(`  Cooldown: ${card.cooldown} turns`, colors.dimmer);
           lastCardTurn = turnNum;
           myMove = null; // card use consumes the turn — no attack
           syncDisplayHpFromState();
@@ -1187,11 +1195,14 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
             });
           }
         } else {
-          addLog('Card activation failed!', colors.rose);
-          // Let player retry
-          const retryChoice = await waitForMove();
-          if (retryChoice.type === 'move') myMove = retryChoice.move;
-          else if (retryChoice.type === 'forfeit') forfeited = true;
+          // Debug: show why activation failed
+          const stateCard = battleState[meSlot].cards?.[choice.cardIdx];
+          const reason = !stateCard ? 'card not found'
+            : stateCard.type !== 'active' ? `type=${stateCard.type}`
+            : stateCard.cooldown > 0 ? `cooldown=${stateCard.cooldown}`
+            : `action=${stateCard.effect?.action || 'none'}`;
+          addLog(`Card failed (${reason})`, colors.rose);
+          myMove = null; // card attempt still consumes the turn
         }
       } else {
         myMove = choice.move;
@@ -1311,7 +1322,11 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
 
       await runAnimation(events);
 
-      if (stateSnapshot) applyBattleStateSnapshot(battleState, stateSnapshot);
+      if (stateSnapshot) {
+        applyBattleStateSnapshot(battleState, stateSnapshot);
+        // Re-sync myCards reference — snapshot replaces the fighter objects
+        if (cardMode) myCards = battleState[meSlot].cards || [];
+      }
       syncDisplayHpFromState();
       await animateIdle(500);
     }
@@ -1563,23 +1578,28 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     if (specialEffect) specialEffect.draw(screen, frameCount);
     cardAura.drawEffects(screen, frameCount);
 
-    // Opponent info
+    // Opponent info (pushed down 2 rows so title/tag has breathing room)
+    const oppInfoY = 3;
     const oppArch = fighterB.archetype?.name || '';
     if (fighterB.titleId) {
-      drawTitle(screen, oppBarX, 1, fighterB.titleId, frameCount);
+      drawTitle(screen, oppBarX, oppInfoY - 1, fighterB.titleId, frameCount);
     }
-    screen.text(oppBarX, 2, nameB, colors.p2, null, true);
+    screen.text(oppBarX, oppInfoY, nameB, colors.p2, null, true);
     if (oppEvolved) {
       const remaining = Math.max(0, EVOLVE_DURATION - (turnNum - oppEvolvedTurn));
       const pulse = frameCount % 12 < 6;
-      screen.text(oppBarX + nameB.length + 1, 2, `◆EVOLVED (${remaining})◆`, pulse ? colors.rose : rgb(180, 60, 60), null, true);
+      screen.text(oppBarX + nameB.length + 1, oppInfoY, `◆EVOLVED (${remaining})◆`, pulse ? colors.rose : rgb(180, 60, 60), null, true);
     } else if (oppArch) {
-      screen.text(oppBarX + nameB.length + 1, 2, oppArch, colors.dimmer);
+      screen.text(oppBarX + nameB.length + 1, oppInfoY, oppArch, colors.dimmer);
     }
     const clampedHpB = Math.max(0, Math.min(hpB, fighterB.stats.maxHp));
     const ratioB = clampedHpB / fighterB.stats.maxHp;
-    screen.bar(oppBarX, 3, barW, ratioB, hpColor(ratioB), colors.dimmer);
-    screen.text(oppBarX + barW, 3, ` ${Math.round(clampedHpB)}/${fighterB.stats.maxHp}`, hpColor(ratioB));
+    screen.bar(oppBarX, oppInfoY + 1, barW, ratioB, hpColor(ratioB), colors.dimmer);
+    screen.text(oppBarX + barW, oppInfoY + 1, ` ${Math.round(clampedHpB)}/${fighterB.stats.maxHp}`, hpColor(ratioB));
+    // Opponent rank badge (if they have RP data embedded)
+    if (fighterB.rp !== undefined) {
+      drawRankBadge(screen, oppBarX, oppInfoY + 2, fighterB.rp, frameCount);
+    }
 
     // Player info
     const plyArch = fighterA.archetype?.name || '';
@@ -1603,6 +1623,8 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
     const ratioA = clampedHpA / fighterA.stats.maxHp;
     screen.bar(plyBarX, plyBarY + 1, barW, ratioA, hpColor(ratioA), colors.dimmer);
     screen.text(plyBarX + barW, plyBarY + 1, ` ${Math.round(clampedHpA)}/${fighterA.stats.maxHp}`, hpColor(ratioA));
+    // Player rank badge (always shown — uses local RP)
+    drawRankBadge(screen, plyBarX, plyBarY + 2, getLocalRp(), frameCount);
 
     // Log divider
     screen.hline(1, logY - 1, w - 2, '─', colors.dimmer);
@@ -1681,7 +1703,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
         screen.text(logX, logY + 3, `│ ${String(ownedCount).padStart(2)} │`, bagOnCooldown ? colors.dimmer : colors.dim);
         screen.text(logX, logY + 4, '└────┘', bagColor);
         if (bagOnCooldown) {
-          screen.text(logX, logY + 5, ' CD  ', colors.rose);
+          screen.text(logX, logY + 5, 'COOLDOWN', colors.rose);
         } else {
           screen.text(logX, logY + 5, '◂ bag', colors.dimmer);
         }
@@ -1692,10 +1714,16 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
           const card = myCards[i];
           const cx = cardHandX + i * (COLLAPSED_W + 1);
           const isCardSelected = selectMode === 'cards' && cardCursor === i;
+          const onCooldown = card.type === 'active' && card.cooldown > 0;
           drawCollapsedCard(screen, cx, logY + 1, card, {
             selected: isCardSelected,
+            dimmed: onCooldown,
             frameCounter: frameCount,
           });
+          // Overlay cooldown number on dimmed cards
+          if (onCooldown) {
+            screen.text(cx + 2, logY + 4, String(card.cooldown), colors.rose, null, true);
+          }
         }
         // Card hand label
         const silenced = battleState[meSlot]._silenced > 0;
@@ -1724,7 +1752,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
           screen.text(infoX, logY + 3, card.desc.slice(0, 18), colors.dim);
           if (card.type === 'active') {
             if (card.cooldown > 0) {
-              screen.text(infoX, logY + 4, `CD: ${card.cooldown}`, colors.rose);
+              screen.text(infoX, logY + 4, `Cooldown: ${card.cooldown} turns`, colors.rose);
             } else {
               screen.text(infoX, logY + 4, 'ENTER activate', colors.mint);
             }

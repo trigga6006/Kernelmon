@@ -12,6 +12,7 @@ const { createRNG } = require('./rng');
 const { getSprite } = require('./sprites');
 const { toneColor } = require('./benchmark');
 const { drawTitle } = require('./titles');
+const { drawRankBadge, getRp: getLocalRp } = require('./ranked');
 
 const FPS = 20;
 const FRAME_MS = 1000 / FPS;
@@ -371,8 +372,8 @@ async function renderBattle(fighterA, fighterB, events) {
     const timerStr = `${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, '0')}`;
     screen.text(w - 8, 0, timerStr, colors.dim);
 
-    // ─── Opponent info (centered, above player — matches turn-based layout) ───
-    const oppInfoY = 2;
+    // ─── Opponent info (pushed down so title/tag has breathing room) ───
+    const oppInfoY = 3;
     if (fighterB.titleId) drawTitle(screen, oppBarX, oppInfoY - 1, fighterB.titleId, frameCount);
     screen.text(oppBarX, oppInfoY, fighterB.name.slice(0, 24), colors.p2, null, true);
     const oppArch = fighterB.archetype?.name || '';
@@ -385,6 +386,10 @@ async function renderBattle(fighterA, fighterB, events) {
     // Mini stats
     const bst = fighterB.stats;
     screen.text(oppBarX, oppInfoY + 2, `STR:${bst.str} MAG:${bst.mag} SPD:${bst.spd}`, colors.dimmer);
+    // Opponent rank badge (if RP data embedded)
+    if (fighterB.rp !== undefined) {
+      drawRankBadge(screen, oppBarX, oppInfoY + 3, fighterB.rp, frameCount);
+    }
 
     // ─── Player info (centered, below opponent — matches turn-based layout) ───
     const plyInfoY = plyBarY;
@@ -402,6 +407,8 @@ async function renderBattle(fighterA, fighterB, events) {
     screen.text(plyBarX, plyInfoY + 2, `STR:${ast.str} MAG:${ast.mag} SPD:${ast.spd}`, colors.dimmer);
     // GPU
     screen.text(plyBarX, plyInfoY + 3, `GPU: ${fighterA.gpu.slice(0, 26)}`, colors.ghost);
+    // Player rank badge
+    drawRankBadge(screen, plyBarX, plyInfoY + 4, getLocalRp(), frameCount);
   }
 
   function drawLogPanel(screen) {
