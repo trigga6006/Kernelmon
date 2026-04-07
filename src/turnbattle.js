@@ -205,7 +205,7 @@ function processTurn(state, moveA, moveB) {
 
     // Variance (Sentinel overrides to tight range)
     const variance = mods.varianceOverride || [0.7, 1.3];
-    let damage = Math.round(baseStat * move.mult * rng.float(variance[0], variance[1]));
+    let damage = Math.round(baseStat * move.mult * 1.8 * rng.float(variance[0], variance[1]));
 
     // Apply archetype damage multiplier + underdog flat damage
     damage = Math.round(damage * mods.damageMult) + (mods.flatDamage || 0);

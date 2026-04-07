@@ -67,6 +67,7 @@ const CARDS = {
   // ══════════════════════════════════════
 
   // ── Common ──
+  // (no new common passives — already 4)
   efficient_cooling: {
     name: 'Efficient Cooling',
     desc: 'Reduce thermal self-damage by 30%',
@@ -105,6 +106,15 @@ const CARDS = {
   },
 
   // ── Uncommon ──
+  copper_trace: {
+    name: 'Copper Trace',
+    desc: '+6% STR, +6% MAG, +6% SPD',
+    flavor: 'Follow the current. It knows the way.',
+    type: 'passive',
+    rarity: 'uncommon',
+    effect: { stat: 'str', value: 0.06, stat2: 'mag', value2: 0.06, stat3: 'spd', value3: 0.06 },
+    dropWeight: 15,
+  },
   overclocked_bus: {
     name: 'Overclocked Bus',
     desc: '+10% SPD passively',
@@ -181,6 +191,15 @@ const CARDS = {
   },
 
   // ── Epic ──
+  polymorphic_shield: {
+    name: 'Polymorphic Shield',
+    desc: '+10% DEF; each turn randomly gain +8% STR, MAG, or SPD',
+    flavor: 'It changes shape. So does your strategy.',
+    type: 'passive',
+    rarity: 'epic',
+    effect: { stat: 'def', value: 0.10, mechanic: 'random_rotate_buff', pool: ['str', 'mag', 'spd'], value2: 0.08 },
+    dropWeight: 2.5,
+  },
   photonic_armor: {
     name: 'Photonic Armor',
     desc: '+20% DEF, -5% SPD',
@@ -209,6 +228,15 @@ const CARDS = {
     rarity: 'legendary',
     effect: { stat: 'all', value: 0.12 },
     dropWeight: 0.5,
+  },
+  quantum_tunneling: {
+    name: 'Quantum Tunneling',
+    desc: '+10% dodge, attacks bypass 20% of enemy DEF',
+    flavor: 'Matter is a suggestion.',
+    type: 'passive',
+    rarity: 'legendary',
+    effect: { mechanic: 'dodge_bonus', value: 0.10, mechanic2: 'armor_pen', value2: 0.20 },
+    dropWeight: 0.45,
   },
 
   // ── Mythic ──
@@ -239,6 +267,15 @@ const CARDS = {
   // ══════════════════════════════════════
 
   // ── Common ──
+  syntax_error: {
+    name: 'Syntax Error',
+    desc: 'On enemy crit: their next attack deals 30% less (once)',
+    flavor: 'Unexpected token at line 1.',
+    type: 'reactive',
+    rarity: 'common',
+    effect: { trigger: 'on_crit_received', action: 'enemy_debuff', stat: 'str', value: 0.30, duration: 1, once: true },
+    dropWeight: 27,
+  },
   fail_safe_boot: {
     name: 'Fail-Safe Boot',
     desc: 'Below 30% HP: restore 15% HP (once)',
@@ -315,6 +352,24 @@ const CARDS = {
   },
 
   // ── Rare ──
+  race_condition: {
+    name: 'Race Condition',
+    desc: 'When enemy heals: steal 50% of the heal amount',
+    flavor: 'First thread wins. You were first.',
+    type: 'reactive',
+    rarity: 'rare',
+    effect: { trigger: 'on_enemy_heal', action: 'steal_heal', value: 0.50 },
+    dropWeight: 6,
+  },
+  buffer_overflow: {
+    name: 'Buffer Overflow',
+    desc: 'After dealing 3 crits: next attack deals +60% damage',
+    flavor: 'The buffer was not big enough.',
+    type: 'reactive',
+    rarity: 'rare',
+    effect: { trigger: 'crit_count', threshold: 3, action: 'boost_next_attack', value: 0.60, once: true },
+    dropWeight: 5,
+  },
   revenge_protocol: {
     name: 'Revenge Protocol',
     desc: 'When hit for >25% HP: next attack deals +40% (once)',
@@ -402,8 +457,35 @@ const CARDS = {
     effect: { trigger: 'heavy_hit', threshold: 0.20, action: 'debuff_all', value: 0.10, duration: 3 },
     dropWeight: 0.05,
   },
+  phantom_thread: {
+    name: 'Phantom Thread',
+    desc: 'On dodge: become untargetable for 1 turn (3 turn cooldown)',
+    flavor: 'You swung at nothing. Nothing swung back.',
+    type: 'reactive',
+    rarity: 'mythic',
+    effect: { trigger: 'on_dodge', action: 'phase_out', duration: 1, internalCooldown: 3 },
+    dropWeight: 0.05,
+  },
+  deadlock_spiral: {
+    name: 'Deadlock Spiral',
+    desc: 'Every 3 turns: lock enemy\'s strongest stat at current value for 2 turns',
+    flavor: 'Neither thread yields. Both threads starve.',
+    type: 'reactive',
+    rarity: 'mythic',
+    effect: { trigger: 'every_n_turns', interval: 3, action: 'stat_lock', lockTarget: 'highest', duration: 2 },
+    dropWeight: 0.05,
+  },
 
   // ── Transcendent ──
+  entropy_weaver: {
+    name: 'Entropy Weaver',
+    desc: 'Each time enemy buffs: gain the same buff at 50% strength',
+    flavor: 'Order is a pattern. Patterns can be copied.',
+    type: 'reactive',
+    rarity: 'transcendent',
+    effect: { trigger: 'on_enemy_buff', action: 'mirror_buff', value: 0.50 },
+    dropWeight: 0.007,
+  },
   temporal_rewind: {
     name: 'Temporal Rewind',
     desc: 'On KO: rewind to 50% HP and full cleanse (once)',
@@ -420,6 +502,15 @@ const CARDS = {
   // ══════════════════════════════════════
 
   // ── Common ──
+  interrupt_handler: {
+    name: 'Interrupt Handler',
+    desc: 'Cancel enemy\'s active card cooldown reset (adds 2 turns)',
+    flavor: 'IRQ fired. Your process can wait.',
+    type: 'active',
+    rarity: 'common',
+    effect: { action: 'delay_enemy_cooldown', value: 2, cooldown: 4 },
+    dropWeight: 26,
+  },
   quick_patch: {
     name: 'Quick Patch',
     desc: 'Heal 15% HP immediately',
@@ -516,6 +607,15 @@ const CARDS = {
   },
 
   // ── Epic ──
+  logic_bomb: {
+    name: 'Logic Bomb',
+    desc: 'Plant bomb: detonates in 3 turns for 35% enemy HP + stun',
+    flavor: 'if (turn === now + 3) explode();',
+    type: 'active',
+    rarity: 'epic',
+    effect: { action: 'delayed_detonate', damage: 0.35, delay: 3, stunChance: 0.70, cooldown: 8 },
+    dropWeight: 2,
+  },
   kernel_panic: {
     name: 'Kernel Panic',
     desc: 'Deal 25% opponent HP + all stats -10% for 2 turns',
@@ -545,6 +645,15 @@ const CARDS = {
   },
 
   // ── Legendary ──
+  wormhole_exploit: {
+    name: 'Wormhole Exploit',
+    desc: 'Swap your HP% with enemy\'s HP% (once per battle)',
+    flavor: 'What was yours is mine. What was mine is yours.',
+    type: 'active',
+    rarity: 'legendary',
+    effect: { action: 'hp_swap', cooldown: 99 },
+    dropWeight: 0.35,
+  },
   zero_day_cascade: {
     name: 'Zero-Day Cascade',
     desc: 'Deal 30% opponent HP + stun + -15% all stats 2 turns',
@@ -576,6 +685,15 @@ const CARDS = {
   },
 
   // ── Transcendent ──
+  null_pointer: {
+    name: 'Null Pointer',
+    desc: 'Disable enemy\'s equipped passive card for 4 turns',
+    flavor: 'Segmentation fault: object does not exist.',
+    type: 'active',
+    rarity: 'transcendent',
+    effect: { action: 'silence_passive', duration: 4, cooldown: 10 },
+    dropWeight: 0.006,
+  },
   big_bang_reboot: {
     name: 'Big Bang Reboot',
     desc: 'Reset both fighters to 50% HP + cleanse all',
@@ -608,11 +726,29 @@ const CARDS = {
     effect: { trigger: 'on_lethal', action: 'survive', value: 1, once: true },
     dropWeight: 0.002,
   },
+  reality_shatter: {
+    name: 'Reality Shatter',
+    desc: 'Deal 40% enemy HP + strip all buffs + silence 2 turns',
+    flavor: 'The rules were always optional.',
+    type: 'active',
+    rarity: 'divine',
+    effect: { action: 'shatter', damage: 0.40, stripBuffs: true, silenceDuration: 2, cooldown: 12 },
+    dropWeight: 0.002,
+  },
 
   // ══════════════════════════════════════
   // PRIMORDIAL TIER — the rarest
   // ══════════════════════════════════════
 
+  eternal_compiler: {
+    name: 'Eternal Compiler',
+    desc: '+20% all stats; each turn gain +2% all stats permanently',
+    flavor: 'It compiles forever. It optimizes forever.',
+    type: 'passive',
+    rarity: 'primordial',
+    effect: { stat: 'all', value: 0.20, mechanic: 'scaling_buff', scalePerTurn: 0.02 },
+    dropWeight: 0.001,
+  },
   genesis_protocol: {
     name: 'Genesis Protocol',
     desc: 'Start battle with +30% all stats for 5 turns',

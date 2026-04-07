@@ -180,7 +180,7 @@ function mockOpponent() {
     storage: { type: 'eMMC' },
   };
   const mockStats = {
-    str: 22, vit: 25, mag: 15, spd: 20, def: 22, hp: 700, maxHp: 700,
+    str: 22, vit: 25, mag: 15, spd: 20, def: 22, hp: 713, maxHp: 713,
   };
   return {
     id: 'mock-chromebook-001',

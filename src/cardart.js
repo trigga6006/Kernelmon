@@ -86,11 +86,28 @@ const CARD_INNER_ART = {
   blackout_protocol: ['  ████████  ', '  █  ◈  █  ', '  ████████  '],
   big_bang_reboot:   ['  ···✧···  ', '  ·✧✧✧✧✧·  ', '  ···✧···  '],
 
+  // New cards
+  copper_trace:      ['  ─┬─┬─┬─  ', '  ╰┤◆├╯╰┤  ', '  ─┴─┴─┴─  '],
+  syntax_error:      ['  !? ERR !? ', '  ▒▓╳╳╳▓▒  ', '  ?! 404 ?! '],
+  interrupt_handler: ['  ╔►──◄╗  ', '  ║ !! ║    ', '  ╚►──◄╝  '],
+  race_condition:    ['  →→ ←← →  ', '  ◆►  ◄◇  ', '  →→ ←← →  '],
+  buffer_overflow:   ['  ████████  ', '  █▒▒▒▒▒▒█  ', '  ▒▒▒▒▒▒▒▒  '],
+  polymorphic_shield:['  ╱◇╲╱◆╲  ', '  ◆ ═══ ◇  ', '  ╲◇╱╲◆╱  '],
+  logic_bomb:        ['  ╭─●─╮    ', '  │ ◈ │    ', '  ╰─▼─╯    '],
+  quantum_tunneling: ['  ┊ · ┊ · ┊', '  ─◈┈┈◈─  ', '  ┊ · ┊ · ┊'],
+  wormhole_exploit:  ['  ○═════○  ', '  ║~~~~~║  ', '  ○═════○  '],
+  phantom_thread:    ['  ┊┊┊┊┊┊┊  ', '  ┊·◈·◈·┊  ', '  ·········'],
+  deadlock_spiral:   ['  ╭→↓←╮    ', '  ↑ ◈ ↓    ', '  ╰←↑→╯    '],
+  entropy_weaver:    ['  ≈≈≈≈≈≈≈  ', '  ≈✧≈✧≈✧≈  ', '  ≈≈≈≈≈≈≈  '],
+  null_pointer:      ['  →→→ NULL ', '  ◈─── ∅   ', '  →→→ VOID '],
+
   // Divine — base frames (animated versions generated dynamically)
   omniscient_core:   ['  ⟐⟐⟐⟐⟐⟐⟐  ', '  ⟐◈◈◈◈◈⟐  ', '  ⟐⟐⟐⟐⟐⟐⟐  '],
   causality_anchor:  ['  ─═─═─═─  ', '  ═⟐◈⟐═  ', '  ─═─═─═─  '],
+  reality_shatter:   ['  ╳╳╳╳╳╳╳  ', '  ╳⟐◈⟐╳  ', '  ╳╳╳╳╳╳╳  '],
 
   // Primordial — base frames (animated versions generated dynamically)
+  eternal_compiler:  ['  ⊛═══════⊛', '  ║✧◈◈◈✧║  ', '  ⊛═══════⊛'],
   genesis_protocol:  ['  ⊛⊛⊛⊛⊛⊛⊛  ', '  ⊛✧◈✧◈✧⊛  ', '  ⊛⊛⊛⊛⊛⊛⊛  '],
   heat_death:        ['  ▓▓▓▓▓▓▓  ', '  ▓▓◈✧◈▓▓  ', '  ░░░░░░░  '],
 };
@@ -123,13 +140,38 @@ function getDivineAnimatedArt(cardId, frame) {
   }
 
   // causality_anchor — rippling fate-lines
-  const barChars = ['─', '═', '─', '~'];
-  const row0 = '  ' + Array.from({ length: 7 }, (_, i) => pick(barChars, i * 0.5)).join('') + '  ';
-  const anchor = pick(DIVINE_CYCLE_CHARS, 0);
-  const gem = pick(DIVINE_ACCENT_CHARS, 1.5);
-  const row1 = `  ═${anchor}${anchor}${gem}${anchor}${anchor}═  `;
-  const row2 = '  ' + Array.from({ length: 7 }, (_, i) => pick(barChars, i * 0.5 + 2)).join('') + '  ';
-  return [row0, row1, row2];
+  if (cardId === 'causality_anchor') {
+    const barChars = ['─', '═', '─', '~'];
+    const row0 = '  ' + Array.from({ length: 7 }, (_, i) => pick(barChars, i * 0.5)).join('') + '  ';
+    const anchor = pick(DIVINE_CYCLE_CHARS, 0);
+    const gem = pick(DIVINE_ACCENT_CHARS, 1.5);
+    const row1 = `  ═${anchor}${anchor}${gem}${anchor}${anchor}═  `;
+    const row2 = '  ' + Array.from({ length: 7 }, (_, i) => pick(barChars, i * 0.5 + 2)).join('') + '  ';
+    return [row0, row1, row2];
+  }
+
+  // reality_shatter — fracture lines radiate outward from center, rotating
+  const SHATTER_CHARS = ['╳', '╱', '╲', '│', '─', '·'];
+  const SHATTER_CENTER = ['◈', '⟐', '★', '✦'];
+  const crackAngle = (t * 1.5) % 1;
+  const shatterRow = (rowIdx) => {
+    let line = '  ';
+    for (let col = 0; col < 7; col++) {
+      if (rowIdx === 1 && col === 3) {
+        // center gem pulses
+        line += pick(SHATTER_CENTER, col * 0.3);
+      } else {
+        const dx = col - 3;
+        const dy = rowIdx - 1;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const angle = (Math.atan2(dy, dx) / Math.PI + 1 + crackAngle) % 1;
+        const idx = Math.floor((angle * 3 + dist * 1.5) % SHATTER_CHARS.length);
+        line += SHATTER_CHARS[idx];
+      }
+    }
+    return line + '  ';
+  };
+  return [shatterRow(0), shatterRow(1), shatterRow(2)];
 }
 
 // ─── Primordial Animated Inner Art ───
@@ -142,9 +184,13 @@ const VORTEX_CHARS = [' ', ' ', '░', '░', '▒', '▓', '█', '▓', '▒',
 
 // Center symbols that show through the vortex
 const PRIMORDIAL_CENTER = {
+  eternal_compiler: { '7,0': '⊛', '9,0': '⊛', '6,1': '◈', '8,1': '✧', '10,1': '◈', '7,2': '⊛', '9,2': '⊛' },
   genesis_protocol: { '7,0': '⊛', '9,0': '⊛', '6,1': '✧', '8,1': '◈', '10,1': '✧', '7,2': '⊛', '9,2': '⊛' },
   heat_death:       { '7,0': '▓', '9,0': '▓', '7,1': '◈', '8,1': '✧', '9,1': '◈', '7,2': '░', '9,2': '░' },
 };
+
+// Compilation cascade characters — scrolling code pattern for eternal_compiler
+const CASCADE_CHARS = ['0', '1', '·', '░', '▒', ':', ';', '='];
 
 function getPrimordialAnimatedArt(cardId, frame) {
   const center = PRIMORDIAL_CENTER[cardId];
@@ -155,7 +201,32 @@ function getPrimordialAnimatedArt(cardId, frame) {
   const cx = (W - 1) / 2;  // 8
   const cy = (H - 1) / 2;  // 1
 
-  // Slow rotation: full turn every ~100 frames (~5 seconds at 20fps)
+  // eternal_compiler: horizontal scrolling binary cascade (unique from vortex)
+  if (cardId === 'eternal_compiler') {
+    const scroll = frame * 0.3; // smooth horizontal scroll
+    const lines = [];
+    for (let row = 0; row < H; row++) {
+      let line = '';
+      for (let col = 0; col < W; col++) {
+        const key = `${col},${row}`;
+        if (center[key]) {
+          line += center[key];
+          continue;
+        }
+        // Cascading columns at different speeds per row
+        const speed = 1 + row * 0.5;
+        const phase = (col * 1.7 + scroll * speed + row * 4.3) % CASCADE_CHARS.length;
+        const wave = Math.sin((col + frame * 0.05 * speed) * 0.8 + row * 2);
+        const bright = wave > 0.3;
+        const idx = Math.floor(Math.abs(phase)) % CASCADE_CHARS.length;
+        line += bright ? CASCADE_CHARS[idx] : ' ';
+      }
+      lines.push(line);
+    }
+    return lines;
+  }
+
+  // All other primordials: vortex spiral
   const rotation = (frame / 100) * Math.PI * 2;
 
   const lines = [];

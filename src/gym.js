@@ -38,7 +38,7 @@ const GYMS = [
         dropParts: false,
         // SCRAPPER — integrated GPU + low avg → Survival Instinct (comeback mechanic)
         specs: { id: 'gym-sf-01', cpu: { brand: 'Intel Celeron N4020', manufacturer: 'Intel', cores: 2, threads: 2, speed: 1.1, speedMax: 2.8 }, ram: { totalGB: 4 }, gpu: { model: 'Intel UHD Graphics 600', vramMB: 0, vendor: 'Intel' }, storage: { type: 'eMMC' } },
-        stats: { str: 22, vit: 24, mag: 15, spd: 20, def: 20, hp: 600, maxHp: 600 },
+        stats: { str: 22, vit: 24, mag: 15, spd: 20, def: 20, hp: 694, maxHp: 694 },
         displayName: 'Celeron N4020', displayGpu: 'Intel UHD 600',
       },
       {
@@ -51,7 +51,7 @@ const GYMS = [
         dropParts: false,
         // PHANTOM — high spd, low HP → evasion tank
         specs: { id: 'gym-sf-02', cpu: { brand: 'Intel Pentium Gold G7400', manufacturer: 'Intel', cores: 2, threads: 4, speed: 3.7, speedMax: 3.7 }, ram: { totalGB: 8 }, gpu: { model: 'Intel UHD Graphics 710', vramMB: 0, vendor: 'Intel' }, storage: { type: 'SSD' } },
-        stats: { str: 20, vit: 18, mag: 18, spd: 55, def: 22, hp: 580, maxHp: 580 },
+        stats: { str: 20, vit: 18, mag: 18, spd: 55, def: 22, hp: 592, maxHp: 592 },
         displayName: 'Pentium G7400', displayGpu: 'Intel UHD 710',
       },
       {
@@ -64,7 +64,7 @@ const GYMS = [
         dropParts: false,
         // BERSERKER — str dominant, str >= mag+10 → high risk/reward
         specs: { id: 'gym-sf-03', cpu: { brand: 'AMD Ryzen 3 3200G', manufacturer: 'AMD', cores: 4, threads: 4, speed: 3.6, speedMax: 4.0 }, ram: { totalGB: 8 }, gpu: { model: 'AMD Radeon Vega 8', vramMB: 512, vendor: 'AMD' }, storage: { type: 'SSD' } },
-        stats: { str: 56, vit: 30, mag: 28, spd: 32, def: 30, hp: 720, maxHp: 720 },
+        stats: { str: 56, vit: 30, mag: 28, spd: 32, def: 30, hp: 814, maxHp: 814 },
         displayName: 'Ryzen 3 3200G', displayGpu: 'Radeon Vega 8',
       },
       {
@@ -77,7 +77,7 @@ const GYMS = [
         dropParts: false,
         // ARCMAGE — mag dominant → Shader Burnout (high ceiling/low floor)
         specs: { id: 'gym-sf-04', cpu: { brand: 'Intel Core i5-12400', manufacturer: 'Intel', cores: 6, threads: 12, speed: 2.5, speedMax: 4.4 }, ram: { totalGB: 16 }, gpu: { model: 'NVIDIA GeForce GTX 1660 Super', vramMB: 6144, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 500 } },
-        stats: { str: 35, vit: 36, mag: 62, spd: 38, def: 34, hp: 830, maxHp: 830 },
+        stats: { str: 35, vit: 36, mag: 62, spd: 38, def: 34, hp: 953, maxHp: 953 },
         displayName: 'i5-12400', displayGpu: 'GTX 1660 Super',
       },
       {
@@ -91,7 +91,7 @@ const GYMS = [
         isLeader: true,
         // BLITZ — spd dominant, spd >= str+10 → Zero-Day Exploit (devastating first strike)
         specs: { id: 'gym-sf-05', cpu: { brand: 'AMD Ryzen 5 5600X', manufacturer: 'AMD', cores: 6, threads: 12, speed: 3.7, speedMax: 4.6 }, ram: { totalGB: 16 }, gpu: { model: 'AMD Radeon RX 6600', vramMB: 8192, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 1000 } },
-        stats: { str: 42, vit: 40, mag: 48, spd: 66, def: 40, hp: 880, maxHp: 880 },
+        stats: { str: 42, vit: 40, mag: 48, spd: 66, def: 40, hp: 1056, maxHp: 1056 },
         displayName: 'Ryzen 5 5600X', displayGpu: 'RX 6600',
       },
     ],
@@ -113,7 +113,7 @@ const GYMS = [
         dropParts: false,
         // BERSERKER — str dominant, offense-heavy → Overclock Instability
         specs: { id: 'gym-nc-01', cpu: { brand: 'Intel Core i5-13600K', manufacturer: 'Intel', cores: 14, threads: 20, speed: 3.5, speedMax: 5.1 }, ram: { totalGB: 16 }, gpu: { model: 'NVIDIA GeForce RTX 3060', vramMB: 12288, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 1000 } },
-        stats: { str: 66, vit: 42, mag: 50, spd: 48, def: 44, hp: 900, maxHp: 900 },
+        stats: { str: 66, vit: 42, mag: 50, spd: 48, def: 44, hp: 1111, maxHp: 1111 },
         displayName: 'i5-13600K', displayGpu: 'RTX 3060',
       },
       {
@@ -126,7 +126,7 @@ const GYMS = [
         dropParts: false,
         // BLITZ — spd dominant → Zero-Day Exploit (fading advantage)
         specs: { id: 'gym-nc-02', cpu: { brand: 'AMD Ryzen 5 7600X', manufacturer: 'AMD', cores: 6, threads: 12, speed: 4.7, speedMax: 5.3 }, ram: { totalGB: 32 }, gpu: { model: 'AMD Radeon RX 6700 XT', vramMB: 12288, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 1000 } },
-        stats: { str: 44, vit: 48, mag: 52, spd: 68, def: 48, hp: 960, maxHp: 960 },
+        stats: { str: 44, vit: 48, mag: 52, spd: 68, def: 48, hp: 1287, maxHp: 1287 },
         displayName: 'Ryzen 5 7600X', displayGpu: 'RX 6700 XT',
       },
       {
@@ -139,7 +139,7 @@ const GYMS = [
         dropParts: false,
         // ARCMAGE — mag dominant → Shader Burnout (big crits or fizzle)
         specs: { id: 'gym-nc-03', cpu: { brand: 'Intel Core i7-13700K', manufacturer: 'Intel', cores: 16, threads: 24, speed: 3.4, speedMax: 5.4 }, ram: { totalGB: 32 }, gpu: { model: 'NVIDIA GeForce RTX 3070 Ti', vramMB: 8192, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 2000 } },
-        stats: { str: 52, vit: 50, mag: 68, spd: 55, def: 52, hp: 1000, maxHp: 1000 },
+        stats: { str: 52, vit: 50, mag: 68, spd: 55, def: 52, hp: 1350, maxHp: 1350 },
         displayName: 'i7-13700K', displayGpu: 'RTX 3070 Ti',
       },
       {
@@ -152,7 +152,7 @@ const GYMS = [
         dropParts: true,
         // FORTRESS — def >= 55, RAM >= 32GB → Memory Wall (tank)
         specs: { id: 'gym-nc-04', cpu: { brand: 'AMD Ryzen 7 7700X', manufacturer: 'AMD', cores: 8, threads: 16, speed: 4.5, speedMax: 5.4 }, ram: { totalGB: 64 }, gpu: { model: 'AMD Radeon RX 7800 XT', vramMB: 16384, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 2000 } },
-        stats: { str: 50, vit: 62, mag: 58, spd: 48, def: 60, hp: 1140, maxHp: 1140 },
+        stats: { str: 50, vit: 62, mag: 58, spd: 48, def: 60, hp: 1771, maxHp: 1771 },
         displayName: 'Ryzen 7 7700X', displayGpu: 'RX 7800 XT',
       },
       {
@@ -166,7 +166,7 @@ const GYMS = [
         isLeader: true,
         // HIVEMIND — 20 cores, str >= 65 → Thread Saturation (power but slow)
         specs: { id: 'gym-nc-05', cpu: { brand: 'Intel Core i7-14700K', manufacturer: 'Intel', cores: 20, threads: 28, speed: 3.4, speedMax: 5.6 }, ram: { totalGB: 64 }, gpu: { model: 'NVIDIA GeForce RTX 4070 Ti', vramMB: 12288, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 2000 } },
-        stats: { str: 70, vit: 58, mag: 62, spd: 55, def: 56, hp: 1100, maxHp: 1100 },
+        stats: { str: 70, vit: 58, mag: 62, spd: 55, def: 56, hp: 1623, maxHp: 1623 },
         displayName: 'i7-14700K', displayGpu: 'RTX 4070 Ti',
       },
     ],
@@ -188,7 +188,7 @@ const GYMS = [
         dropParts: true,
         // FORTRESS — def >= 55, RAM >= 32GB → Memory Wall (pure tank)
         specs: { id: 'gym-bi-01', cpu: { brand: 'AMD Ryzen 7 7800X3D', manufacturer: 'AMD', cores: 8, threads: 16, speed: 4.2, speedMax: 5.0 }, ram: { totalGB: 64 }, gpu: { model: 'Intel Arc A770', vramMB: 16384, vendor: 'Intel' }, storage: { type: 'NVMe', sizeGB: 2000 } },
-        stats: { str: 52, vit: 70, mag: 58, spd: 50, def: 65, hp: 1240, maxHp: 1240 },
+        stats: { str: 52, vit: 70, mag: 58, spd: 50, def: 65, hp: 2094, maxHp: 2094 },
         displayName: 'Ryzen 7 7800X3D', displayGpu: 'Arc A770',
       },
       {
@@ -201,7 +201,7 @@ const GYMS = [
         dropParts: true,
         // ARCMAGE — mag dominant → Shader Burnout (devastating but inconsistent)
         specs: { id: 'gym-bi-02', cpu: { brand: 'Intel Core i9-13900K', manufacturer: 'Intel', cores: 24, threads: 32, speed: 3.0, speedMax: 5.8 }, ram: { totalGB: 64 }, gpu: { model: 'NVIDIA GeForce RTX 4080', vramMB: 16384, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 4000 } },
-        stats: { str: 60, vit: 58, mag: 80, spd: 65, def: 58, hp: 1100, maxHp: 1100 },
+        stats: { str: 60, vit: 58, mag: 80, spd: 65, def: 58, hp: 1623, maxHp: 1623 },
         displayName: 'i9-13900K', displayGpu: 'RTX 4080',
       },
       {
@@ -214,7 +214,7 @@ const GYMS = [
         dropParts: true,
         // HIVEMIND — 16+ cores, str >= 65 → Thread Saturation (raw damage, slow)
         specs: { id: 'gym-bi-03', cpu: { brand: 'AMD Ryzen 9 7950X', manufacturer: 'AMD', cores: 16, threads: 32, speed: 4.5, speedMax: 5.7 }, ram: { totalGB: 64 }, gpu: { model: 'AMD Radeon RX 7900 XTX', vramMB: 24576, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 4000 } },
-        stats: { str: 78, vit: 60, mag: 72, spd: 62, def: 58, hp: 1120, maxHp: 1120 },
+        stats: { str: 78, vit: 60, mag: 72, spd: 62, def: 58, hp: 1696, maxHp: 1696 },
         displayName: 'Ryzen 9 7950X', displayGpu: 'RX 7900 XTX',
       },
       {
@@ -227,7 +227,7 @@ const GYMS = [
         dropParts: true,
         // TITAN — avg >= 76, minStat >= 68 → Overheat (massive burst, stall risk)
         specs: { id: 'gym-bi-04', cpu: { brand: 'Intel Core i9-14900KS', manufacturer: 'Intel', cores: 24, threads: 32, speed: 3.2, speedMax: 6.2 }, ram: { totalGB: 128 }, gpu: { model: 'NVIDIA GeForce RTX 4090', vramMB: 24576, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 4000 } },
-        stats: { str: 80, vit: 72, mag: 82, spd: 75, def: 74, hp: 1260, maxHp: 1260 },
+        stats: { str: 80, vit: 72, mag: 82, spd: 75, def: 74, hp: 2180, maxHp: 2180 },
         displayName: 'i9-14900KS', displayGpu: 'RTX 4090',
       },
       {
@@ -241,7 +241,7 @@ const GYMS = [
         isLeader: true,
         // APEX — avg >= 90, minStat >= 85 → Omniscience (consistent god-tier + regen)
         specs: { id: 'gym-bi-05', cpu: { brand: 'AMD Threadripper PRO 7975WX', manufacturer: 'AMD', cores: 32, threads: 64, speed: 4.0, speedMax: 5.3 }, ram: { totalGB: 256 }, gpu: { model: 'NVIDIA RTX 6000 Ada', vramMB: 49152, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 8000 } },
-        stats: { str: 92, vit: 88, mag: 95, spd: 90, def: 86, hp: 1500, maxHp: 1500 },
+        stats: { str: 92, vit: 88, mag: 95, spd: 90, def: 86, hp: 2941, maxHp: 2941 },
         displayName: 'TR PRO 7975WX', displayGpu: 'RTX 6000 Ada',
       },
     ],
@@ -264,7 +264,7 @@ const GYMS = [
         dropParts: true,
         // BLITZ — spd dominant, spd >= str+10 → Zero-Day Exploit (devastating opener)
         specs: { id: 'gym-ds-01', cpu: { brand: 'AMD Ryzen 9 7950X', manufacturer: 'AMD', cores: 16, threads: 32, speed: 4.5, speedMax: 5.7 }, ram: { totalGB: 64 }, gpu: { model: 'NVIDIA GeForce RTX 4070 Ti Super', vramMB: 16384, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 2000 } },
-        stats: { str: 62, vit: 58, mag: 65, spd: 84, def: 55, hp: 1100, maxHp: 1100 },
+        stats: { str: 62, vit: 58, mag: 65, spd: 84, def: 55, hp: 1623, maxHp: 1623 },
         displayName: 'Ryzen 9 7950X', displayGpu: 'RTX 4070 Ti S',
       },
       {
@@ -277,7 +277,7 @@ const GYMS = [
         dropParts: true,
         // ARCMAGE — mag dominant, mag >= str & mag >= spd → Shader Burnout (high ceiling)
         specs: { id: 'gym-ds-02', cpu: { brand: 'Intel Core i9-13900K', manufacturer: 'Intel', cores: 24, threads: 32, speed: 3.0, speedMax: 5.8 }, ram: { totalGB: 64 }, gpu: { model: 'NVIDIA GeForce RTX 4090', vramMB: 24576, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 4000 } },
-        stats: { str: 64, vit: 62, mag: 88, spd: 72, def: 60, hp: 1200, maxHp: 1200 },
+        stats: { str: 64, vit: 62, mag: 88, spd: 72, def: 60, hp: 1771, maxHp: 1771 },
         displayName: 'i9-13900K', displayGpu: 'RTX 4090',
       },
       {
@@ -290,7 +290,7 @@ const GYMS = [
         dropParts: true,
         // FORTRESS — def >= 55, RAM >= 32GB → Memory Wall (beefy tank)
         specs: { id: 'gym-ds-03', cpu: { brand: 'AMD Ryzen 9 7900X', manufacturer: 'AMD', cores: 12, threads: 24, speed: 4.7, speedMax: 5.6 }, ram: { totalGB: 128 }, gpu: { model: 'AMD Radeon RX 7900 XTX', vramMB: 24576, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 4000 } },
-        stats: { str: 76, vit: 80, mag: 72, spd: 62, def: 78, hp: 1450, maxHp: 1450 },
+        stats: { str: 76, vit: 80, mag: 72, spd: 62, def: 78, hp: 2544, maxHp: 2544 },
         displayName: 'Ryzen 9 7900X', displayGpu: 'RX 7900 XTX',
       },
       {
@@ -303,7 +303,7 @@ const GYMS = [
         dropParts: true,
         // HIVEMIND — cores >= 16, str >= 65 → Thread Saturation (raw damage, slow)
         specs: { id: 'gym-ds-04', cpu: { brand: 'AMD Threadripper 7970X', manufacturer: 'AMD', cores: 32, threads: 64, speed: 4.0, speedMax: 5.3 }, ram: { totalGB: 128 }, gpu: { model: 'NVIDIA GeForce RTX 5090', vramMB: 49152, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 8000 } },
-        stats: { str: 86, vit: 74, mag: 80, spd: 72, def: 65, hp: 1380, maxHp: 1380 },
+        stats: { str: 86, vit: 74, mag: 80, spd: 72, def: 65, hp: 2267, maxHp: 2267 },
         displayName: 'TR 7970X', displayGpu: 'RTX 5090',
       },
       {
@@ -317,7 +317,7 @@ const GYMS = [
         isLeader: true,
         // TITAN — avg >= 76, minStat >= 68, but avg < 90 → Overheat (massive burst, stall risk)
         specs: { id: 'gym-ds-05', cpu: { brand: 'AMD Threadripper PRO 7995WX', manufacturer: 'AMD', cores: 96, threads: 192, speed: 2.5, speedMax: 5.1 }, ram: { totalGB: 256 }, gpu: { model: 'NVIDIA H100', vramMB: 81920, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 8000 } },
-        stats: { str: 90, vit: 86, mag: 94, spd: 85, def: 82, hp: 1800, maxHp: 1800 },
+        stats: { str: 90, vit: 86, mag: 94, spd: 85, def: 82, hp: 2838, maxHp: 2838 },
         displayName: 'TR PRO 7995WX', displayGpu: 'H100 80GB',
       },
     ],
@@ -340,7 +340,7 @@ const GYMS = [
         dropParts: true,
         // HIVEMIND — cores >= 16, str >= 65 → Thread Saturation (raw power, slow)
         specs: { id: 'gym-st-01', cpu: { brand: 'Intel Xeon w9-3595X', manufacturer: 'Intel', cores: 60, threads: 120, speed: 3.2, speedMax: 4.8 }, ram: { totalGB: 128 }, gpu: { model: 'NVIDIA GeForce RTX 5090', vramMB: 49152, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 8000 } },
-        stats: { str: 86, vit: 70, mag: 80, spd: 76, def: 64, hp: 1400, maxHp: 1400 },
+        stats: { str: 86, vit: 70, mag: 80, spd: 76, def: 64, hp: 2094, maxHp: 2094 },
         displayName: 'Xeon w9-3595X', displayGpu: 'RTX 5090',
       },
       {
@@ -353,7 +353,7 @@ const GYMS = [
         dropParts: true,
         // BLITZ — spd >= 65, spd >= str+10, spd >= mag → Zero-Day Exploit
         specs: { id: 'gym-st-02', cpu: { brand: 'AMD Ryzen 9 7900X', manufacturer: 'AMD', cores: 12, threads: 24, speed: 4.7, speedMax: 5.6 }, ram: { totalGB: 64 }, gpu: { model: 'AMD Radeon RX 9070 XTX', vramMB: 40960, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 4000 } },
-        stats: { str: 72, vit: 70, mag: 82, spd: 96, def: 66, hp: 1350, maxHp: 1350 },
+        stats: { str: 72, vit: 70, mag: 82, spd: 96, def: 66, hp: 2094, maxHp: 2094 },
         displayName: 'Ryzen 9 7900X', displayGpu: 'RX 9070 XTX',
       },
       {
@@ -366,7 +366,7 @@ const GYMS = [
         dropParts: true,
         // ARCMAGE — mag dominant, mag >= str & mag >= spd → Shader Burnout (devastating)
         specs: { id: 'gym-st-03', cpu: { brand: 'Intel Core i9-14900KS', manufacturer: 'Intel', cores: 24, threads: 32, speed: 3.2, speedMax: 6.2 }, ram: { totalGB: 256 }, gpu: { model: 'NVIDIA H100', vramMB: 81920, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 8000 } },
-        stats: { str: 62, vit: 82, mag: 95, spd: 78, def: 66, hp: 1600, maxHp: 1600 },
+        stats: { str: 62, vit: 82, mag: 95, spd: 78, def: 66, hp: 2640, maxHp: 2640 },
         displayName: 'i9-14900KS', displayGpu: 'H100 80GB',
       },
       {
@@ -379,7 +379,7 @@ const GYMS = [
         dropParts: true,
         // TITAN — avg >= 76, minStat >= 68, avg < 90 → Overheat (colossal burst, stall risk)
         specs: { id: 'gym-st-04', cpu: { brand: 'Intel Xeon w9-3595X', manufacturer: 'Intel', cores: 60, threads: 120, speed: 3.2, speedMax: 4.8 }, ram: { totalGB: 512 }, gpu: { model: 'AMD Instinct MI300X', vramMB: 131072, vendor: 'AMD' }, storage: { type: 'NVMe', sizeGB: 8000 } },
-        stats: { str: 92, vit: 88, mag: 94, spd: 86, def: 84, hp: 1750, maxHp: 1750 },
+        stats: { str: 92, vit: 88, mag: 94, spd: 86, def: 84, hp: 2941, maxHp: 2941 },
         displayName: 'Xeon w9-3595X', displayGpu: 'MI300X',
       },
       {
@@ -393,7 +393,7 @@ const GYMS = [
         isLeader: true,
         // APEX — avg >= 90, minStat >= 85 → Omniscience (god-tier consistency + regen)
         specs: { id: 'gym-st-05', cpu: { brand: 'AMD Threadripper PRO 7995WX', manufacturer: 'AMD', cores: 96, threads: 192, speed: 2.5, speedMax: 5.1 }, ram: { totalGB: 1024 }, gpu: { model: 'NVIDIA H100', vramMB: 81920, vendor: 'NVIDIA' }, storage: { type: 'NVMe', sizeGB: 16000 } },
-        stats: { str: 98, vit: 95, mag: 100, spd: 96, def: 92, hp: 2200, maxHp: 2200 },
+        stats: { str: 98, vit: 95, mag: 100, spd: 96, def: 92, hp: 3317, maxHp: 3317 },
         displayName: 'TR PRO 7995WX', displayGpu: 'H100 80GB',
       },
     ],

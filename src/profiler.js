@@ -534,8 +534,8 @@ function buildStats(specs) {
     stats.def = Math.round(stats.def * penalty);
   }
 
-  // HP: 400 base + VIT scaling
-  const hp = 400 + stats.vit * 12;
+  // HP: 400 base + VIT linear + VIT² scaling (wide gap: ~580 low → 3600 high)
+  const hp = 400 + stats.vit * 6 + Math.round(stats.vit * stats.vit * 0.26);
 
   return { ...stats, hp, maxHp: hp, isLaptop: !!specs.isLaptop };
 }
@@ -625,7 +625,7 @@ function classifyArchetype(stats, specs) {
   if (str >= 55 && str >= mag + 10) return ARCHETYPES.BERSERKER;
 
   // PHANTOM — fast but fragile
-  if (spd >= 55 && hp <= 800) return ARCHETYPES.PHANTOM;
+  if (spd >= 55 && hp <= 1100) return ARCHETYPES.PHANTOM;
 
   // SENTINEL — balanced mid-range (default)
   return ARCHETYPES.SENTINEL;

@@ -108,7 +108,7 @@ function getTraits(stats, seed) {
   traits.push(pick(TRAIT_POOLS[highest[1].key], seed >> 3));
 
   // Archetype trait
-  if (str > 65 && hp < 750) traits.push(pick(TRAIT_POOLS.glass_cannon, seed >> 5));
+  if (str > 65 && hp < 1000) traits.push(pick(TRAIT_POOLS.glass_cannon, seed >> 5));
   else if (def > 55 && hp > 1000) traits.push(pick(TRAIT_POOLS.tank, seed >> 5));
   else traits.push(pick(TRAIT_POOLS.balanced, seed >> 5));
 

@@ -45,6 +45,9 @@ const CODES = {
     ['gpu_bios_flash', 2], ['firewall', 1], ['driver_update', 2],
     ['voltage_spike', 1], ['emp_charge', 1], ['surge_protector', 1],
   ], desc: '25 Bag Items' },
+  FAT10K: { type: 'credits', amount: 10000, desc: '10,000 Credits' },
+  CARDS1: { type: 'lootbox', box: 'card_crate', desc: 'Card Crate' },
+  CARDS2: { type: 'lootbox', box: 'card_crate', desc: 'Card Crate' },
 };
 
 // ─── Redemption tracking ───

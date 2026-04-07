@@ -110,6 +110,7 @@ const MENU_ITEMS = [
   { key: 'join',        label: 'JOIN BATTLE',      desc: 'Enter a room code to join',  icon: '↗' },
   { key: 'cardbattle',  label: 'CARD BATTLE',       desc: 'Battle with equipped cards',  icon: '♦' },
   { key: 'cards',       label: 'CARD BINDER',      desc: 'View your card collection',  icon: '♠' },
+  { key: 'systemcore',  label: 'SYSTEM CORE',       desc: 'Upgrade your core modules',  icon: '◆' },
   { key: 'update',      label: 'UPDATE',            desc: 'Pull latest and restart',    icon: '↻' },
   { key: 'quit',        label: 'EXIT',             desc: 'Disconnect',                 icon: '×' },
 ];
@@ -143,6 +144,7 @@ const ITEM_COLORS = {
   cards:       rgb(230, 180, 140),
   host:        colors.coral,
   join:        colors.lilac,
+  systemcore:  rgb(130, 200, 220),
   update:      colors.cyan,
   quit:        colors.rose,
 };
@@ -175,6 +177,7 @@ const MENU_GROUPS = [
   { type: 'item', key: 'bag' },
   { type: 'item', key: 'workshop' },
   { type: 'item', key: 'ranked' },
+  { type: 'item', key: 'systemcore' },
   {
     type: 'section',
     key: 'etc',
@@ -288,7 +291,7 @@ function mockOpponent() {
     gpu: { model: 'Intel UHD Graphics 600', vramMB: 0, vendor: 'Intel' },
     storage: { type: 'eMMC' },
   };
-  const mockStats = { str: 22, vit: 25, mag: 15, spd: 20, def: 22, hp: 700, maxHp: 700 };
+  const mockStats = { str: 22, vit: 25, mag: 15, spd: 20, def: 22, hp: 713, maxHp: 713 };
   return {
     id: 'mock-chromebook-001', name: 'Celeron N4020', gpu: 'Intel UHD 600',
     stats: mockStats, specs: mockSpecs, sprite: getSprite(mockSpecs),
@@ -313,14 +316,24 @@ function postBattle(myFighter, opponent, winner, mode) {
   recordResult(opponent, winner === 'a');
 
   const { calculateBattleCredits, addCredits } = require('../src/credits');
-  const earned = calculateBattleCredits(winner, myFighter, opponent, mode);
+  let earned = calculateBattleCredits(winner, myFighter, opponent, mode);
+
+  // System Core: credit multiplier
+  try {
+    const { getCreditMultiplier } = require('../src/systemcore');
+    earned = Math.round(earned * getCreditMultiplier());
+  } catch {}
+
   const newBal = addCredits(earned);
 
   // 8% chance to drop a bag item on win (not in card battles — cards only there)
+  // System Core: drop rate bonus
+  let dropBonus = 0;
+  try { dropBonus = require('../src/systemcore').getDropRateBonus(); } catch {}
   let itemDrop = null;
   if (winner === 'a' && mode !== 'cardbattle') {
     const rng = createRNG(Date.now());
-    if (rng.next() < 0.08) {
+    if (rng.next() < 0.08 + dropBonus) {
       const { ITEMS } = require('../src/items');
       const rarityW = { common: 50, uncommon: 30, rare: 15, epic: 4, legendary: 1 };
       const totalW = Object.values(rarityW).reduce((s, w) => s + w, 0);
@@ -452,6 +465,9 @@ async function showBattleRewards(winner, rewards, winMsg, loseMsg) {
 // ═══════════════════════════════════════════════════════════════
 
 async function mainMenu(sessionState = {}) {
+  // Collect any passive System Core income
+  try { require('../src/systemcore').collectPassiveIncome(); } catch {}
+
   const screen = new Screen();
   const rng = createRNG(42);
   const matrix = new MatrixRain(screen.width, screen.height, rng);
@@ -4082,6 +4098,16 @@ async function run() {
         break;
       case 'cards':
         await handleCardBinder(fighter, sessionState);
+        break;
+      case 'systemcore':
+        try {
+          const { openSystemCore } = require('../src/systemcore');
+          await openSystemCore();
+        } catch (e) {
+          await showInfoScreen('SYSTEM CORE', (scr) => {
+            scr.centerText(Math.floor(scr.height / 2), 'System Core module error: ' + e.message, colors.rose);
+          });
+        }
         break;
       case 'update':
         await handleUpdate();

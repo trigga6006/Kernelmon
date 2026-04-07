@@ -114,7 +114,10 @@ function calculateRpChange(won, wagerAmount, currentStreak) {
     const base = 20;
     const wagerBonus = Math.floor(wagerAmount * 0.05);
     const streakBonus = Math.min(currentStreak * 3, 20);
-    return base + wagerBonus + streakBonus;
+    let gain = base + wagerBonus + streakBonus;
+    // System Core: RP multiplier (wins only)
+    try { gain = Math.round(gain * require('./systemcore').getRpMultiplier()); } catch {}
+    return gain;
   } else {
     const base = 12;
     const wagerPenalty = Math.floor(wagerAmount * 0.025);
