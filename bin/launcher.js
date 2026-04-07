@@ -662,11 +662,21 @@ async function mainMenu(sessionState = {}) {
   function getLayout(w, h) {
     const useSmall = w < 65;
     const logo = useSmall ? LOGO_SMALL : LOGO;
-    const menuX = 4;
-    const menuY = logo.length + 5;
     const menuW = Math.min(50, w - 8);
     const boxW = Math.min(35, w - 8);
-    const cardX = w - boxW - 4;
+    const gap = 4;
+    const totalContentW = menuW + gap + boxW;
+    let menuX, cardX;
+    if (totalContentW + 8 <= w) {
+      // Enough room — center both panels together
+      menuX = Math.floor((w - totalContentW) / 2);
+      cardX = menuX + menuW + gap;
+    } else {
+      // Tight — pin menu left, card right (original behavior)
+      menuX = 4;
+      cardX = w - boxW - 4;
+    }
+    const menuY = logo.length + 5;
     const cardY = menuY;
     return { useSmall, logo, menuX, menuY, menuW, boxW, cardX, cardY };
   }
@@ -713,6 +723,7 @@ async function mainMenu(sessionState = {}) {
     drawLogo(screen, w, h, frameCount);
     drawMenu(screen, w, h, frameCount, currentMenuEntries(), cursor);
     drawProfileCard(screen, w, h, frameCount, scanning);
+    drawWallet(screen, w, h);
     drawFooter(screen, w, h);
 
     screen.render();
@@ -977,6 +988,24 @@ async function mainMenu(sessionState = {}) {
         screen.text(cardX, cardY + i, '│' + ' '.repeat(boxW) + '│', borderColor);
       }
       screen.text(cardX, cardY + 9, '└' + '─'.repeat(boxW) + '┘', borderColor);
+    }
+  }
+
+  function drawWallet(screen, w, h) {
+    const { getBalance, formatBalance, getCardKeys } = require('../src/credits');
+    const balance = getBalance();
+    const keys = getCardKeys();
+    const footY = h - 2;
+    const walletY = footY - 2;
+    const items = [
+      { label: `◆ ${formatBalance(balance)} credits`, color: colors.gold },
+      { label: `♦ ${keys} card key${keys !== 1 ? 's' : ''}`, color: rgb(255, 180, 100) },
+    ];
+    let totalLen = items.reduce((s, i) => s + i.label.length, 0) + (items.length - 1) * 4;
+    let x = Math.floor((w - totalLen) / 2);
+    for (let i = 0; i < items.length; i++) {
+      screen.text(x, walletY, items[i].label, items[i].color);
+      x += items[i].label.length + 4;
     }
   }
 
