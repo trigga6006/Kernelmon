@@ -522,6 +522,14 @@ function applyActiveCard(state, who, cardIdx) {
       event.hits = hits;
       break;
     }
+    case 'hp_swap': {
+      const myPct = fighter.hp / fighter.maxHp;
+      const oppPct = opponent.hp / opponent.maxHp;
+      fighter.hp = Math.max(1, Math.round(fighter.maxHp * oppPct));
+      opponent.hp = Math.max(1, Math.round(opponent.maxHp * myPct));
+      event.subtype = 'hp_swap';
+      break;
+    }
     case 'reset': {
       const hpVal = Math.round(fighter.maxHp * eff.hpValue);
       fighter.hp = hpVal;
