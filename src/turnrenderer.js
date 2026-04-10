@@ -1247,6 +1247,7 @@ async function renderTurnBattle(fighterA, fighterB, movesetA, movesetB, options 
       }
 
       if (opponentForfeited) addLog('Opponent forfeited turn', colors.rose);
+      else if (!opponentMove) addLog('Opponent used an item', colors.dim);
       else {
         const oppIcon = opponentMove.signature ? SIGNATURE_ICON : (CAT_ICONS[opponentMove.cat] || '·');
         addLog(`${oppIcon} Opponent chose: ${opponentMove.label}`, colors.p2);

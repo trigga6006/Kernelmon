@@ -66,7 +66,7 @@ class MazeGraph {
     this.screenW = w;
     this.screenH = h;
     this.mazeTop = 2;
-    this.mazeBot = h - 4;
+    this.mazeBot = h - 6;
     this.mazeH = this.mazeBot - this.mazeTop;
   }
 
@@ -813,7 +813,7 @@ async function renderPackItPanic(fighter) {
 
   // Battle log — shows recent events, scrolls
   const battleLog = [];
-  const MAX_LOG = 8;
+  const MAX_LOG = 6;
   function logEvent(text, color) {
     battleLog.push({ text, color: color || rgb(80, 85, 100), frame });
     if (battleLog.length > MAX_LOG) battleLog.shift();
@@ -1402,19 +1402,19 @@ async function renderPackItPanic(fighter) {
     const nodeLabel = playerNode === 'P1' ? 'LEFT' : playerNode === 'P2' ? 'CENTER' : 'RIGHT';
     screen.text(w - nodeLabel.length - 3, feedbackRow, `[${nodeLabel}]`, PLAYER_COLOR);
 
-    // Battle log (right side, below maze)
-    const logX = Math.floor(w / 2) + 2;
-    const logStartRow = h - 2;
+    // Battle log (top-right corner, renders downward)
+    const logMaxW = 22;
+    const logX = w - logMaxW - 1;
+    const logTopRow = 2;
     const logTitle = '── LOG ──';
-    screen.text(logX, logStartRow - battleLog.length - 1, logTitle, rgb(50, 55, 70));
+    screen.text(logX, logTopRow, logTitle, rgb(50, 55, 70));
     for (let i = 0; i < battleLog.length; i++) {
       const entry = battleLog[i];
       const age = frame - entry.frame;
       const fade = age > 60 ? 0.4 : age > 30 ? 0.7 : 1.0;
-      const row = logStartRow - battleLog.length + i;
-      if (row >= 2 && row < h) {
-        const maxLen = w - logX - 1;
-        const text = entry.text.length > maxLen ? entry.text.slice(0, maxLen) : entry.text;
+      const row = logTopRow + 1 + i;
+      if (row >= 2 && row < graph.mazeBot) {
+        const text = entry.text.length > logMaxW ? entry.text.slice(0, logMaxW) : entry.text;
         screen.text(logX, row, text, fade < 0.7 ? rgb(50, 55, 70) : entry.color);
       }
     }

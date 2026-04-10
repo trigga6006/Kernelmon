@@ -106,34 +106,43 @@ function getRp() {
 }
 
 // ─── RP Calculation ───
-// RP gain/loss scales with wager size. Higher stakes = more RP at risk.
-// Win streaks grant bonus RP to reward consistency.
+// RP gain/loss scales with wager size, win streaks, and opponent rank.
+// Beating a stronger opponent rewards more; farming weaker ones rewards less.
 
-function calculateRpChange(won, wagerAmount, currentStreak) {
+function calculateRpChange(won, wagerAmount, currentStreak, myRp, oppRp) {
+  // Opponent rank factor — Elo-inspired scaling based on RP difference
+  // Positive = opponent is stronger, negative = opponent is weaker
+  const rpDiff = (oppRp != null && myRp != null) ? (oppRp - myRp) : 0;
+  // Scale factor: ranges from ~0.5 (much weaker opponent) to ~2.0 (much stronger)
+  // Uses a sigmoid-like curve so it doesn't blow up at extremes
+  const rankFactor = 1 + Math.tanh(rpDiff / 2000) * 0.6;
+
   if (won) {
     const base = 20;
     const wagerBonus = Math.floor(wagerAmount * 0.05);
     const streakBonus = Math.min(currentStreak * 3, 20);
-    let gain = base + wagerBonus + streakBonus;
+    let gain = Math.round((base + wagerBonus + streakBonus) * rankFactor);
     // System Core: RP multiplier (wins only)
     try { gain = Math.round(gain * require('./systemcore').getRpMultiplier()); } catch {}
-    return gain;
+    return Math.max(5, gain); // minimum 5 RP per win
   } else {
     const base = 12;
     const wagerPenalty = Math.floor(wagerAmount * 0.025);
-    return -(base + wagerPenalty);
+    // Losing to a stronger opponent hurts less; losing to a weaker one hurts more
+    const lossRankFactor = 1 + Math.tanh(-rpDiff / 2000) * 0.5;
+    return -Math.max(5, Math.round((base + wagerPenalty) * lossRankFactor));
   }
 }
 
 // ─── Update rank after a wager match ───
 // Returns { rpChange, newRp, oldRank, newRank, promoted, demoted, data }
 
-function updateRank(won, wagerAmount) {
+function updateRank(won, wagerAmount, oppRp) {
   const data = loadRanked();
   const oldRp = data.rp;
   const oldRank = getRankForRp(oldRp);
 
-  const rpChange = calculateRpChange(won, wagerAmount, data.streak);
+  const rpChange = calculateRpChange(won, wagerAmount, data.streak, oldRp, oppRp);
 
   // Update streak
   if (won) {

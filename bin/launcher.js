@@ -3095,7 +3095,7 @@ async function handleWagerHost(fighter, sessionState) {
 
     // Update ranked rating
     const { updateRank } = require('../src/ranked');
-    const rankResult = updateRank(won, wagerAmount);
+    const rankResult = updateRank(won, wagerAmount, opponent.rp);
 
     if (won) {
       const newBal = awardWager(pot);
@@ -3244,7 +3244,7 @@ async function handleWagerJoin(fighter, sessionState) {
 
     // Update ranked rating
     const { updateRank } = require('../src/ranked');
-    const rankResult = updateRank(won, wagerAmount);
+    const rankResult = updateRank(won, wagerAmount, opponent.rp);
 
     if (won) {
       const newBal = awardWager(pot);
@@ -3662,7 +3662,7 @@ async function handleHost(fighter, sessionState) {
 
       // Update ranked rating
       const { updateRank } = require('../src/ranked');
-      const rankResult = updateRank(won, wagerAmount);
+      const rankResult = updateRank(won, wagerAmount, opponent.rp);
 
       if (won) {
         const newBal = awardWager(pot);
@@ -3849,7 +3849,7 @@ async function handleJoin(fighter, sessionState) {
 
       // Update ranked rating
       const { updateRank } = require('../src/ranked');
-      const rankResult = updateRank(won, wagerAmount);
+      const rankResult = updateRank(won, wagerAmount, opponent.rp);
 
       if (won) {
         const newBal = awardWager(pot);
@@ -4044,6 +4044,7 @@ async function handleLocalMenu() {
     { key: 'rogue',      label: 'SOLO MODE',    desc: 'Explore the void, find battles',  sub: 'Roguelike single-player adventure',  icon: '◉', color: rgb(75, 150, 90) },
     { key: 'gym',        label: 'GYM LADDER',   desc: 'Fight gym leaders in order',      sub: 'Climb the ranks, earn badges',       icon: '▲', color: rgb(255, 180, 60) },
     { key: 'cardbattle', label: 'CARD BATTLE',   desc: 'Battle with equipped cards',      sub: 'Turn-based combat with card effects', icon: '♦', color: rgb(255, 180, 100) },
+    { key: 'forkedkernel', label: 'FORKED KERNEL', desc: 'Tactical board strategy', sub: 'Simultaneous-order doctrine warfare', icon: '⚙', color: rgb(240, 220, 140) },
   ]);
 }
 
@@ -4059,6 +4060,7 @@ async function handleMinigameMenu() {
     { key: 'dash',     label: 'DASH MODE', desc: 'Side-scroll obstacle runner', sub: 'Dodge and dash to survive', icon: '▸', color: colors.coral },
     { key: 'hackgrid', label: 'HACK THE GRID', desc: 'Dodge sentries, grab data', sub: 'Stealth grid infiltration', icon: '⌬', color: rgb(0, 255, 180) },
     { key: 'packitpanic', label: 'PACK IT PANIC', desc: 'Real-time packet defense PvP', sub: 'Clear lanes, sabotage opponents', icon: '⚡', color: rgb(255, 100, 180) },
+    { key: 'forkedkernel', label: 'FORKED KERNEL', desc: 'Tactical board strategy', sub: 'Simultaneous-order doctrine warfare', icon: '⚙', color: rgb(240, 220, 140) },
   ]);
 }
 
@@ -4089,6 +4091,7 @@ async function run() {
         if (sub === 'rogue') await handleRogue(fighter, sessionState);
         else if (sub === 'gym') await handleGym(fighter, sessionState);
         else if (sub === 'cardbattle') await handleCardBattle(fighter, sessionState);
+        else if (sub === 'forkedkernel') await handleForkedKernel(fighter, sessionState);
         break;
       }
       case 'online': {
@@ -4102,6 +4105,7 @@ async function run() {
         if (sub === 'dash') await handleDash(fighter, sessionState);
         else if (sub === 'hackgrid') await handleHackGrid(fighter, sessionState);
         else if (sub === 'packitpanic') await handlePackItPanic(fighter, sessionState);
+        else if (sub === 'forkedkernel') await handleForkedKernel(fighter, sessionState);
         break;
       }
       case 'demo':
@@ -4382,6 +4386,28 @@ async function handleUpdate() {
   child.on('exit', (code) => process.exit(code || 0));
   // Stop the current event loop from continuing
   await new Promise(() => {}); // hang forever — child takes over
+}
+
+async function handleForkedKernel(fighter, sessionState) {
+  fighter = await ensureSessionFighter(sessionState, fighter);
+
+  let renderForkedKernel;
+  try { renderForkedKernel = require('../src/forkedkernel').renderForkedKernel; } catch (e) {}
+
+  if (!renderForkedKernel) {
+    await showInfoScreen('FORKED KERNEL', (scr, w, h) => {
+      scr.centerText(Math.floor(h / 2), 'Forked Kernel unavailable.', colors.rose);
+    });
+    return;
+  }
+
+  const result = await renderForkedKernel(fighter);
+
+  // Credits: base 50, +100 win bonus
+  const { addCredits } = require('../src/credits');
+  let earned = 50;
+  if (result.won) earned += 100;
+  addCredits(earned);
 }
 
 function waitForKey() {
